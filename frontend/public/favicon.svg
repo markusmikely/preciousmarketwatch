@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFA500;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Container div styling: h-10 w-10 rounded-lg bg-gradient-gold -->
+  <rect width="40" height="40" rx="8" fill="url(#goldGradient)"/>
+  
+  <!-- SVG icon centered in the container -->
+  <!-- Transform to center the 24x24 icon in the 40x40 container -->
+  <g transform="translate(8, 8)">
+    <!-- Icon styling: lucide lucide-trending-up h-5 w-5 text-navy -->
+    <!-- Scaled from original 24x24 to 5x5 (approximately h-5 w-5) -->
+    <g transform="scale(1)">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" stroke="#001f3f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <polyline points="16 7 22 7 22 13" stroke="#001f3f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+  </g>
+</svg>
