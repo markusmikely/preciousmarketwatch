@@ -1,0 +1,80 @@
+{
+  "key": "group_footer",
+  "title": "Footer Settings",
+  "fields": [
+    {
+      "key": "field_footer_blurb",
+      "label": "Footer Description",
+      "name": "footer_blurb",
+      "type": "textarea"
+    },
+    {
+      "key": "field_footer_links",
+      "label": "Footer Menu",
+      "name": "footer_menu",
+      "type": "repeater",
+      "sub_fields": [
+        {
+          "key": "field_footer_link_text",
+          "label": "Text",
+          "name": "text",
+          "type": "text"
+        },
+        {
+          "key": "field_footer_link_url",
+          "label": "URL",
+          "name": "url",
+          "type": "url"
+        }
+      ]
+    },
+    {
+      "key": "field_social_links",
+      "label": "Social Links",
+      "name": "social_links",
+      "type": "repeater",
+      "sub_fields": [
+        {
+          "key": "field_social_network",
+          "label": "Platform",
+          "name": "platform",
+          "type": "select",
+          "choices": {
+            "twitter": "Twitter",
+            "facebook": "Facebook",
+            "instagram": "Instagram",
+            "linkedin": "LinkedIn",
+            "youtube": "YouTube",
+            "tiktok": "TikTok"
+          }
+        },
+        {
+          "key": "field_social_url",
+          "label": "URL",
+          "name": "url",
+          "type": "url"
+        }
+      ]
+    },
+    {
+      "key": "field_footer_copyright",
+      "label": "Copyright Text",
+      "name": "copyright_text",
+      "type": "text"
+    }
+  ],
+  "location": [
+    [
+      {
+        "param": "post_type",
+        "operator": "==",
+        "value": "page"
+      },
+      {
+        "param": "post_name",
+        "operator": "==",
+        "value": "footer"
+      }
+    ]
+  ]
+}
