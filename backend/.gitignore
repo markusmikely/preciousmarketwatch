@@ -1,0 +1,41 @@
+# Ignore everything in the root
+/*
+/backup/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# But DO NOT ignore these files
+!.gitignore
+!composer.json
+!composer.lock
+!wp-config.php
+!index.php
+!.github/
+
+# Allow-list the content directory structure
+!wp-content/
+wp-content/*
+
+# Specifically allow your custom work
+!wp-content/themes/
+wp-content/themes/*
+!wp-content/themes/your-custom-theme-name/
+
+!wp-content/plugins/
+wp-content/plugins/*
+# If you have custom plugins, allow them here:
+# !wp-content/plugins/your-custom-plugin/
+
+!wp-content/languages/
+
+# Ignore standard dynamic folders
+wp-content/upgrade/
+wp-content/cache/
+wp-content/uploads/
+
+# Ignore Composer's vendor folder
+/vendor/
+/wordpress/
