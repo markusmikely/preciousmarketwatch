@@ -39,7 +39,7 @@ export const MarketProvider = ({ children }: { children: React.ReactNode }) => {
         change_percent: 0,
         high: 0,
         low: 0,
-        isUp: false
+        isUp: true
     }]);
     const [loading, setLoading] = useState(false);
 
@@ -78,4 +78,5 @@ export const MarketProvider = ({ children }: { children: React.ReactNode }) => {
 
 
 // Custom hook for cleaner usage
+// eslint-disable-next-line react-refresh/only-export-components
 export const useMarket = () => useContext(MarketContext);

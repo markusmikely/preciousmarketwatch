@@ -2,14 +2,14 @@
 
 ## Frontend
 
-- [x] 1. link precious market watch to github repo
-- [x] 2. push init commit
-- [x] 3. move frontend code into front directory
-- [x] 4. launch frontend
+- [X] 1. link precious market watch to github repo
+- [X] 2. push init commit
+- [X] 3. move frontend code into front directory
+- [X] 4. launch frontend
 - [X] 5. Menu - Style menu button hover style
 - [X] 6. Create AppContext Provider in order to store market data and its function to update
 - [X] 7. Mock Metals Data
-- [ ] 8. Mock Gemstone Data
+- [X] 8. Mock Gemstone Data
 - [X] 9. Spot Price ticket - Integrate with service
 - [X] 10. Market Overview Section - integrate with service. 
 - [ ] 11. WP Content Section - Bind latest insight category to section

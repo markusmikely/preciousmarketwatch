@@ -68,7 +68,7 @@ const mockData = {
         "name": "Palladium", 
         "symbol": "XPD",
         "change": "+0.65%", 
-        "isUp": true
+        "isUp": false
     }
 };
   

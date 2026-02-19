@@ -57,6 +57,7 @@ const gemstoneIndices = [
 export function MarketOverview() {
 
   const { marketData, loading, updateMarketData } = useMarket();
+
   console.log("marketData", marketData);
   return (
     <section className="py-16 lg:py-24 bg-background">
@@ -110,7 +111,9 @@ export function MarketOverview() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
+                      {/* {JSON.stringify(marketData)} */}
                       {marketData.map((metal) => (
+                        <>
                         <tr key={metal.symbol} className="hover:bg-muted/20 transition-colors">
                           <td className="px-6 py-4">
                             <div>
@@ -123,15 +126,15 @@ export function MarketOverview() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className={`flex items-center justify-end gap-1 font-medium ${
-                              metal.change >= 0 ? 'text-success' : 'text-destructive'
+                              metal.isUp ? 'text-success' : 'text-destructive'
                             }`}>
-                              {metal.change >= 0 ? (
+                              {metal.isUp ? (
                                 <TrendingUp className="h-4 w-4" />
                               ) : (
                                 <TrendingDown className="h-4 w-4" />
                               )}
                               <span>
-                                {metal.change >= 0 ? '+' : ''}{metal.change_percent.toFixed(2)}%
+                                {metal.isUp ? '+' : ''}{metal.change_percent.toFixed(2)}%
                               </span>
                             </div>
                           </td>
@@ -141,7 +144,7 @@ export function MarketOverview() {
                           <td className="hidden px-6 py-4 text-right text-muted-foreground sm:table-cell">
                             ${metal.low.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </td>
-                        </tr>
+                        </tr></>
                       ))}
                     </tbody>
                   </table>
