@@ -1,11 +1,5 @@
 # Ignore everything in the root
 /*
-/backup/
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # But DO NOT ignore these files
 !.gitignore
@@ -15,26 +9,23 @@
 !index.php
 !.github/
 
-# Allow-list the content directory structure
+# Allow the content directory
 !wp-content/
-wp-content/*
 
-# Specifically allow your custom work
-!wp-content/themes/
-wp-content/themes/*
-!wp-content/themes/your-custom-theme-name/
-
-!wp-content/plugins/
-wp-content/plugins/*
-# If you have custom plugins, allow them here:
-# !wp-content/plugins/your-custom-plugin/
-
-!wp-content/languages/
-
-# Ignore standard dynamic folders
+# Ignore dynamic/generated folders inside wp-content
 wp-content/upgrade/
 wp-content/cache/
 wp-content/uploads/
+
+# Allow themes and plugins (track everything, or be specific below)
+!wp-content/themes/
+!wp-content/plugins/
+!wp-content/languages/
+
+# If you only want ONE specific theme and nothing else, 
+# ignore other themes explicitly instead:
+# wp-content/themes/twentytwentyfour/
+# wp-content/themes/twentytwentythree/
 
 # Ignore Composer's vendor folder
 /vendor/
