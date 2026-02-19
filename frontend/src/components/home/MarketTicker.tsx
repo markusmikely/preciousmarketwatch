@@ -49,7 +49,7 @@ export function MarketTicker() {
                 ) : (
                   <TrendingDown className="h-3 w-3" />
                 )}
-                {item.change}
+                {item.change_percent.toFixed(2)}%
               </span>
             </div>
           ))}
