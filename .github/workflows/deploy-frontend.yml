@@ -31,8 +31,8 @@ jobs:
         working-directory: frontend
         env:
           VITE_IS_PRODUCTION: 'true'
-          VITE_METALS_DEV_API_KEY: ${{ secrets.METALS_DEV_API_KEY }}
-          VITE_WORDPRESS_API_URL: ${{ secrets.WORDPRESS_API_URL }}
+          VITE_METALS_DEV_API_KEY: ${{ secrets.VITE_METALS_DEV_API_KEY }}
+          VITE_WORDPRESS_API_URL: ${{ secrets.VITE_WORDPRESS_API_URL }}
         run: npm run build
 
       - name: Deploy to IONOS via SFTP
