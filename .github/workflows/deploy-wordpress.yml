@@ -26,14 +26,9 @@ jobs:
           password: ${{ secrets.IONOS_FTP_PASS }}
           port: 22
           local_path: 'backend/*'        # Was 'local-dir', now 'local_path'
-          remote_path: 'public/preciousmarketwatch/wp/wp-content/'   # Was 'server-dir', now 'remote_path'
+          remote_path: 'public/preciousmarketwatch/wp/wp-content/.'   # Was 'server-dir', now 'remote_path'
           sftp_only: true
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/.DS_Store
-            **/uploads/**
-
+          
   deploy-wp-config:
     name: Deploy wp-config.php to IONOS
     runs-on: ubuntu-latest
