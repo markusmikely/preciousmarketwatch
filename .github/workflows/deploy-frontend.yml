@@ -41,6 +41,7 @@ jobs:
           server: ${{ secrets.IONOS_FTP_HOST }}
           username: ${{ secrets.IONOS_FTP_USER }}
           password: ${{ secrets.IONOS_FTP_PASS }}
+          port: 22
           local-dir: frontend/dist/
           # Deploy to root of web hosting — adjust if needed
           server-dir: /
