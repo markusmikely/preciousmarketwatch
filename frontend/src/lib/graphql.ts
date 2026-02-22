@@ -1,9 +1,9 @@
 import { GraphQLClient } from 'graphql-request';
 
-const endpoint = 'http://127.0.0.1:8081/graphql';
+const endpoint = import.meta.env.VITE_WORDPRESS_API_URL || 'http://localhost:8888/wp/graphql';
 
 export const client = new GraphQLClient(endpoint, {
   headers: {
-    // If you have auth, add here, e.g. Authorization: `Bearer ${TOKEN}`
+    'Content-Type': 'application/json',
   },
 });
