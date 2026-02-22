@@ -18,15 +18,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy wp-content to IONOS via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Deploy wp-content to IONOS via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          server: ${{ secrets.IONOS_FTP_HOST }}
           username: ${{ secrets.IONOS_FTP_USER }}
+          server: ${{ secrets.IONOS_FTP_HOST }}
           password: ${{ secrets.IONOS_FTP_PASS }}
-          local-dir: backend/wp-content/
-          # WordPress lives in /wp/ subdirectory on IONOS
-          server-dir: /wp/wp-content/
+          port: 22
+          local_path: 'backend/*'        # Was 'local-dir', now 'local_path'
+          remote_path: 'public/preciousmarketwatch/wp/wp-content/'   # Was 'server-dir', now 'remote_path'
+          sftp_only: true
           exclude: |
             **/.git*
             **/.git*/**
@@ -45,12 +46,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy wp-config.php
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          server: ${{ secrets.IONOS_FTP_HOST }}
           username: ${{ secrets.IONOS_FTP_USER }}
+          server: ${{ secrets.IONOS_FTP_HOST }}
           password: ${{ secrets.IONOS_FTP_PASS }}
-          local-dir: backend/
-          server-dir: /wp/
+          port: 22
+          local_path: 'backend/*'        # Was 'local-dir', now 'local_path'
+          remote_path: 'public/preciousmarketwatch/wp/'   # Was 'server-dir', now 'remote_path'
           include: |
             wp-config.php
