@@ -36,7 +36,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to IONOS via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        uses: pressidium/sftp-deploy@v1
         with:
           server: ${{ secrets.IONOS_FTP_HOST }}
           username: ${{ secrets.IONOS_FTP_USER }}
