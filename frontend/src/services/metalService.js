@@ -1,5 +1,6 @@
-const IS_PRODUCTION = false; // Toggle this when ready to go live
-const API_KEY = "DBJQ1GO756IBOI9YBNIC4549YBNIC";
+// Set VITE_IS_PRODUCTION=true in .env (or via GitHub Actions secret) to use live data
+const IS_PRODUCTION = import.meta.env.VITE_IS_PRODUCTION === 'true';
+const API_KEY = import.meta.env.VITE_METALS_DEV_API_KEY;
 
 const mockData = {
     gold: {
@@ -84,10 +85,27 @@ export const fetchMetalData = async () => {
         const metalData = await Promise.all(metalList.map(async(metal) => {
             const response = await fetch(`https://api.metals.dev/v1/metal/spot?api_key=${API_KEY}&metal=${metal}&currency=USD`);
             const result = await response.json();
-            // TODO: Map the result to match the mockData format
-            return result.rate;
+
+            // metals.dev /v1/metal/spot returns: { rate: number }
+            // Map to the shape the FE expects
+            return {
+                metal,
+                currency: "USD",
+                unit: "toz",
+                price: result.rate,
+                ask: result.rate,   // Spot endpoint doesn't return ask/bid/high/low
+                bid: result.rate,   // Upgrade to /v1/latest for full OHLC data
+                high: result.rate,
+                low: result.rate,
+                change: 0,
+                change_percent: 0,
+                name: metal.charAt(0).toUpperCase() + metal.slice(1),
+                symbol: mockData[metal]?.symbol ?? metal.toUpperCase(),
+                isUp: true,
+                timestamp: new Date().toISOString(),
+            };
         }));
-        return metalData; // This returns the exact object {price, high, low, change_percent...}
+        return metalData;
     
     } catch (error) {
         console.error("API Fetch Failed, falling back to mock:", error);

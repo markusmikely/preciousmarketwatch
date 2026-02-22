@@ -1,0 +1,56 @@
+name: Deploy WordPress
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      # Only trigger when plugins or themes change
+      - 'backend/wp-content/**'
+      - 'backend/wp-config.php'
+
+jobs:
+  deploy-wordpress-content:
+    name: Sync Plugins & Themes to IONOS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy wp-content to IONOS via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.IONOS_FTP_HOST }}
+          username: ${{ secrets.IONOS_FTP_USER }}
+          password: ${{ secrets.IONOS_FTP_PASS }}
+          local-dir: backend/wp-content/
+          # WordPress lives in /wp/ subdirectory on IONOS
+          server-dir: /wp/wp-content/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.DS_Store
+            **/uploads/**
+
+  deploy-wp-config:
+    name: Deploy wp-config.php to IONOS
+    runs-on: ubuntu-latest
+    # Only runs when wp-config.php itself changes
+    # Secrets (.env) are managed manually on the server — never in git
+    if: contains(github.event.commits[0].modified, 'backend/wp-config.php')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy wp-config.php
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.IONOS_FTP_HOST }}
+          username: ${{ secrets.IONOS_FTP_USER }}
+          password: ${{ secrets.IONOS_FTP_PASS }}
+          local-dir: backend/
+          server-dir: /wp/
+          include: |
+            wp-config.php

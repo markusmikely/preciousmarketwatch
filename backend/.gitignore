@@ -3,11 +3,15 @@
 
 # But DO NOT ignore these files
 !.gitignore
+!.env.example
 !composer.json
 !composer.lock
 !wp-config.php
 !index.php
 !.github/
+
+# Never commit secrets
+.env
 
 # Allow the content directory
 !wp-content/

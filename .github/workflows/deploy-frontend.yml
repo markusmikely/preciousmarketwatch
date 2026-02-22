@@ -1,0 +1,53 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'frontend/**'
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy to IONOS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_IS_PRODUCTION: 'true'
+          VITE_METALS_DEV_API_KEY: ${{ secrets.METALS_DEV_API_KEY }}
+          VITE_WORDPRESS_API_URL: ${{ secrets.WORDPRESS_API_URL }}
+        run: npm run build
+
+      - name: Deploy to IONOS via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.IONOS_FTP_HOST }}
+          username: ${{ secrets.IONOS_FTP_USER }}
+          password: ${{ secrets.IONOS_FTP_PASS }}
+          local-dir: frontend/dist/
+          # Deploy to root of web hosting — adjust if needed
+          server-dir: /
+          # Don't wipe WordPress files that live alongside the FE
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            wp/
+            wp-content/
