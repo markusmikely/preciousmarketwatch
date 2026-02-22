@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchMetalData } from '../services/MetalService';
+import { fetchMetalData } from '../services/metalService';
 
 const MarketContext = createContext(null);
 
