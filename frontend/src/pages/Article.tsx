@@ -7,6 +7,7 @@ import { DealerCard } from "@/components/shared/DealerCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+
 // Demo article data - would come from WordPress API
 const articleData: Record<string, any> = {
   "lab-vs-natural": {
