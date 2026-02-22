@@ -22,7 +22,6 @@ A modern, AI-powered WordPress affiliate blog providing insights about precious 
 └── docs/ # Project documentation
 ```
 
-
 ## 🛠️ Tech Stack
 - **Frontend**: React 18, TypeScript, Tailwind CSS, React Router
 - **Backend**: WordPress (Headless), GraphQL, Custom PHP plugins
