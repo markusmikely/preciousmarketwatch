@@ -42,8 +42,8 @@ jobs:
           server: ${{ secrets.IONOS_FTP_HOST }}
           password: ${{ secrets.IONOS_FTP_PASS }}
           port: 22
-          local_path: 'frontend/dist/'        # Was 'local-dir', now 'local_path'
-          remote_path: '/'   # Was 'server-dir', now 'remote_path'
+          local_path: 'frontend/dist/*'        # Was 'local-dir', now 'local_path'
+          remote_path: 'public/preciousmarketwatch/.'   # Was 'server-dir', now 'remote_path'
           sftp_only: true
           # Don't wipe WordPress files that live alongside the FE
           exclude: |

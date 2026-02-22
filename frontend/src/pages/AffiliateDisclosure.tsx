@@ -16,7 +16,6 @@ export default function AffiliateDisclosure() {
           content.
         </p>
       </section>
-
       <section>
         <h2 className="font-display text-2xl font-bold text-foreground mb-4">What Are Affiliate Links?</h2>
         <p>
