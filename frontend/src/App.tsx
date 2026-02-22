@@ -24,6 +24,7 @@ import Article from "./pages/Article";
 import EditorialStandards from "./pages/EditorialStandards";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+
 import AffiliateDisclosure from "./pages/AffiliateDisclosure";
 import Cookies from "./pages/Cookies";
 
