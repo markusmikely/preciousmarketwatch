@@ -423,3 +423,4 @@ function pmw_register_acf_fields() {
         'graphql_field_name' => 'homepageSettings',
     ] );
 }
+
