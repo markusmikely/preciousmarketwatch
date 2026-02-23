@@ -120,7 +120,7 @@ export default function TopDealers() {
               <Award className="h-5 w-5 text-primary" />
               <h2 className="font-display text-2xl font-bold text-foreground">Featured Dealers</h2>
             </div>
-            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {featuredDealers.map((dealer: any) => (
                   <DealerCard key={dealer.id} {...dealer} />
@@ -142,7 +142,7 @@ export default function TopDealers() {
               </h2>
             </div>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
             {regularDealers.length > 0 ? (
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {regularDealers.map((dealer: any) => (

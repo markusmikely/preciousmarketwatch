@@ -150,7 +150,7 @@ export default function MarketInsights() {
               <span className="text-muted-foreground font-normal ml-2">({regularArticles.length})</span>
             </h2>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles..." hideError={true}>
             {regularArticles.length > 0 ? (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {regularArticles.map((article: any) => (
