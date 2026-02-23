@@ -1,16 +1,28 @@
 
-# BEGIN WordPress
-# The directives (lines) between "BEGIN WordPress" and "END WordPress" are
-# dynamically generated, and should only be modified via WordPress filters.
-# Any changes to the directives between these markers will be overwritten.
+# BEGIN WordPress & Frontend SPA Routing
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteBase /
-RewriteRule ^index\.php$ - [L]
+
+# Don't rewrite actual files and directories
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /index.php [L]
+
+# Exclude /wp/* paths - let WordPress handle them
+RewriteCond %{REQUEST_URI} !^/wp/
+RewriteCond %{REQUEST_URI} !^/wp-admin/
+RewriteCond %{REQUEST_URI} !^/wp-content/
+RewriteCond %{REQUEST_URI} !^/wp-includes/
+
+# Exclude known API endpoints
+RewriteCond %{REQUEST_URI} !^/graphql/?$
+RewriteCond %{REQUEST_URI} !^/index\.php$
+
+# Route everything else to frontend index.html (SPA)
+# This allows React Router to handle client-side routing
+RewriteRule ^(.*)$ /index.html [QSA,L]
+
 </IfModule>
 
-# END WordPress
+# END WordPress & Frontend SPA Routing
