@@ -70,10 +70,16 @@ export default function MarketInsights() {
     variables: { first: 50 },
   });
 
-  // Transform and filter articles
+  // Transform and filter articles — ALWAYS have fallback data
   const allArticles = useMemo(() => {
-    if (!data?.posts?.nodes) return fallbackArticles;
-    return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+    try {
+      if (data?.posts?.nodes && Array.isArray(data.posts.nodes) && data.posts.nodes.length > 0) {
+        return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+      }
+    } catch (e) {
+      console.warn("[MarketInsights] Error transforming articles, using fallback:", e);
+    }
+    return fallbackArticles;
   }, [data]);
 
   const filteredArticles = useMemo(() => {
@@ -144,7 +150,7 @@ export default function MarketInsights() {
               <span className="text-muted-foreground font-normal ml-2">({regularArticles.length})</span>
             </h2>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles..." hideError={true}>
             {regularArticles.length > 0 ? (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {regularArticles.map((article: any) => (

@@ -68,10 +68,16 @@ export default function TopDealers() {
     variables: { first: 50 },
   });
 
-  // Transform and filter dealers
+  // Transform and filter dealers — ALWAYS have fallback data
   const allDealers = useMemo(() => {
-    if (!data?.dealers?.nodes) return fallbackDealers;
-    return data.dealers.nodes.map((dealer: any) => transformDealer(dealer));
+    try {
+      if (data?.dealers?.nodes && Array.isArray(data.dealers.nodes) && data.dealers.nodes.length > 0) {
+        return data.dealers.nodes.map((dealer: any) => transformDealer(dealer));
+      }
+    } catch (e) {
+      console.warn("[TopDealers] Error transforming dealers, using fallback:", e);
+    }
+    return fallbackDealers;
   }, [data]);
 
   const filteredDealers = useMemo(() => {
@@ -114,7 +120,7 @@ export default function TopDealers() {
               <Award className="h-5 w-5 text-primary" />
               <h2 className="font-display text-2xl font-bold text-foreground">Featured Dealers</h2>
             </div>
-            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {featuredDealers.map((dealer: any) => (
                   <DealerCard key={dealer.id} {...dealer} />
@@ -136,7 +142,7 @@ export default function TopDealers() {
               </h2>
             </div>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
             {regularDealers.length > 0 ? (
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {regularDealers.map((dealer: any) => (

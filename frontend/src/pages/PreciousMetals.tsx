@@ -82,8 +82,14 @@ export default function PreciousMetals() {
   });
 
   const articles = useMemo(() => {
-    if (!data?.posts?.nodes) return [];
-    return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+    try {
+      if (data?.posts?.nodes && Array.isArray(data.posts.nodes) && data.posts.nodes.length > 0) {
+        return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+      }
+    } catch (e) {
+      console.warn("[PreciousMetals] Error transforming articles:", e);
+    }
+    return [];
   }, [data]);
 
   // Format market data for price cards
@@ -174,7 +180,7 @@ export default function PreciousMetals() {
               </Link>
             </Button>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles..." hideError={true}>
             {articles.length > 0 ? (
               <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {articles.map((article: any) => (
