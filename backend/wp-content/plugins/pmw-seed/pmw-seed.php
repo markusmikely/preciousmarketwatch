@@ -9,6 +9,9 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// Load dealer reviews
+require_once( __DIR__ . '/dealer-reviews.php' );
+
 register_activation_hook( __FILE__, 'pmw_seed_all' );
 add_action( 'admin_init', 'pmw_maybe_show_seed_notice' );
 
