@@ -41,8 +41,8 @@ interface WpDealer {
 
 function transformDealer(dealer: WpDealer) {
   const specialties = [
-    ...(dealer.metalTypes?.nodes.map((n: any) => n.name) || []),
-    ...(dealer.gemstoneTypes?.nodes.map((n: any) => n.name) || []),
+    ...(dealer.metalTypes?.nodes.map((n: {name: string}) => n.name) || []),
+    ...(dealer.gemstoneTypes?.nodes.map((n: {name: string}) => n.name) || []),
   ];
 
   return {
@@ -51,7 +51,7 @@ function transformDealer(dealer: WpDealer) {
     description: dealer.dealers?.shortDescription || dealer.excerpt || "",
     rating: dealer.dealers?.rating || 0,
     reviews: Math.floor(Math.random() * 15000) + 1000, // Generate random reviews for now
-    categories: dealer.dealerCategories?.nodes.map((n: any) => n.name) || ["All"],
+    categories: dealer.dealerCategories?.nodes.map((n: {name: string}) => n.name) || ["All"],
     features: ["Verified dealer", "Fast shipping", "Secure payment"],
     logo: dealer.dealers?.logo?.sourceUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80",
     href: "#", // Links would be from affiliateLink in dealers field
@@ -70,9 +70,10 @@ export default function TopDealers() {
 
   // Transform and filter dealers — ALWAYS have fallback data
   const allDealers = useMemo(() => {
+    console.log("data", data);
     try {
       if (data?.dealers?.nodes && Array.isArray(data.dealers.nodes) && data.dealers.nodes.length > 0) {
-        return data.dealers.nodes.map((dealer: any) => transformDealer(dealer));
+        return data.dealers.nodes.map((dealer: {id: string, title: string, slug: string, excerpt: string, dealers: {rating: number, shortDescription: string, featured: boolean, logo: {sourceUrl: string}}, metalTypes: {nodes: {name: string}[]}, gemstoneTypes: {nodes: {name: string}[]}, dealerCategories: {nodes: {name: string}[]}}) => transformDealer(dealer));
       }
     } catch (e) {
       console.warn("[TopDealers] Error transforming dealers, using fallback:", e);
@@ -81,14 +82,14 @@ export default function TopDealers() {
   }, [data]);
 
   const filteredDealers = useMemo(() => {
-    return allDealers.filter((dealer: any) => {
+    return allDealers.filter((dealer: {categories: string[], specialties: string[]}) => {
       if (activeCategory === "All") return true;
       return dealer.categories.includes(activeCategory) || dealer.specialties.some((s: string) => s === activeCategory);
     });
   }, [allDealers, activeCategory]);
 
-  const featuredDealers = useMemo(() => filteredDealers.filter((d: any) => d.featured), [filteredDealers]);
-  const regularDealers = useMemo(() => filteredDealers.filter((d: any) => !d.featured), [filteredDealers]);
+  const featuredDealers = useMemo(() => filteredDealers.filter((d: {featured: boolean}) => d.featured), [filteredDealers]);
+  const regularDealers = useMemo(() => filteredDealers.filter((d: {featured: boolean}) => !d.featured), [filteredDealers]);
 
   return (
     <PageLayout>
@@ -120,9 +121,9 @@ export default function TopDealers() {
               <Award className="h-5 w-5 text-primary" />
               <h2 className="font-display text-2xl font-bold text-foreground">Featured Dealers</h2>
             </div>
-            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {featuredDealers.map((dealer: any) => (
+                {featuredDealers.map((dealer: {id: string, name: string, description: string, rating: number, reviews: number, categories: string[], features: string[], logo: string, href: string, featured: boolean, specialties: string[]}) => (
                   <DealerCard key={dealer.id} {...dealer} />
                 ))}
               </div>
@@ -142,10 +143,10 @@ export default function TopDealers() {
               </h2>
             </div>
           </div>
-          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers...">
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading dealers..." hideError={true}>
             {regularDealers.length > 0 ? (
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {regularDealers.map((dealer: any) => (
+                {regularDealers.map((dealer: {id: string, name: string, description: string, rating: number, reviews: number, categories: string[], features: string[], logo: string, href: string, featured: boolean, specialties: string[]}) => (
                   <DealerCard key={dealer.id} {...dealer} />
                 ))}
               </div>
