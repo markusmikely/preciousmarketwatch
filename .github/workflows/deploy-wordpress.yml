@@ -5,50 +5,107 @@ on:
     branches:
       - master
     paths:
-      # Only trigger when plugins or themes change
       - 'backend/wp-content/**'
       - 'backend/wp-config.php'
 
 jobs:
   deploy-wordpress-content:
-    name: Sync Plugins & Themes to IONOS
+    name: Sync Changed Files to IONOS
     runs-on: ubuntu-latest
     environment: Production
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Deploy wp-content to IONOS via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
-          username: ${{ secrets.IONOS_FTP_USER }}
-          server: ${{ secrets.IONOS_FTP_HOST }}
-          password: ${{ secrets.IONOS_FTP_PASS }}
-          port: 22
-          local_path: 'backend/wp-content/*'        # Was 'local-dir', now 'local_path'
-          remote_path: 'public/preciousmarketwatch/wp/wp-content/.'   # Was 'server-dir', now 'remote_path'
-          sftp_only: true
+          fetch-depth: 2  # Need previous commit to diff against
+
+      - name: Identify changed files in wp-content
+        id: changed
+        run: |
+          echo "Checking for changed files..."
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- backend/wp-content/ \
+            | grep -v 'uploads/' \
+            | grep -v '.DS_Store')
+
+          if [ -z "$CHANGED" ]; then
+            echo "No wp-content files changed, skipping upload."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changed files:"
+            echo "$CHANGED"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+
+            # Extract unique top-level plugin/theme directories that changed
+            DIRS=$(echo "$CHANGED" \
+              | sed 's|backend/wp-content/||' \
+              | cut -d'/' -f1-2 \
+              | sort -u)
+            echo "Affected directories:"
+            echo "$DIRS"
+            echo "changed_dirs<<EOF" >> $GITHUB_OUTPUT
+            echo "$DIRS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install lftp
+        if: steps.changed.outputs.has_changes == 'true'
+        run: sudo apt-get install -y lftp
+
+      - name: Upload only changed files via SFTP
+        if: steps.changed.outputs.has_changes == 'true'
+        env:
+          SFTP_USER: ${{ secrets.IONOS_FTP_USER }}
+          SFTP_PASS: ${{ secrets.IONOS_FTP_PASS }}
+          SFTP_HOST: ${{ secrets.IONOS_FTP_HOST }}
+          REMOTE_BASE: public/preciousmarketwatch/wp/wp-content
+        run: |
+          # Upload each changed directory individually — much faster than full sync
+          while IFS= read -r dir; do
+            if [ -z "$dir" ]; then continue; fi
+            LOCAL="backend/wp-content/$dir"
+            REMOTE="$REMOTE_BASE/$dir"
+
+            if [ -d "$LOCAL" ]; then
+              echo "Syncing directory: $LOCAL → $REMOTE"
+              lftp -u "$SFTP_USER,$SFTP_PASS" sftp://$SFTP_HOST <<LFTP
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 3
+          mirror -R --only-newer --no-perms --parallel=4 "$LOCAL" "$REMOTE"
+          bye
+          LFTP
+            elif [ -f "backend/wp-content/$dir" ]; then
+              echo "Syncing file: backend/wp-content/$dir → $REMOTE_BASE/"
+              lftp -u "$SFTP_USER,$SFTP_PASS" sftp://$SFTP_HOST <<LFTP
+          set sftp:auto-confirm yes
+          put "backend/wp-content/$dir" -o "$REMOTE_BASE/$dir"
+          bye
+          LFTP
+            fi
+          done <<< "${{ steps.changed.outputs.changed_dirs }}"
 
   deploy-wp-config:
-    name: Deploy wp-config.php to IONOS
+    name: Deploy wp-config.php
     runs-on: ubuntu-latest
-    # Only runs when wp-config.php itself changes
-    # Secrets (.env) are managed manually on the server — never in git
-    if: contains(github.event.commits[0].modified, 'backend/wp-config.php')
+    environment: Production
+    if: contains(toJSON(github.event.commits.*.modified), 'backend/wp-config.php')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy wp-config.php
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
-        with:
-          username: ${{ secrets.IONOS_FTP_USER }}
-          server: ${{ secrets.IONOS_FTP_HOST }}
-          password: ${{ secrets.IONOS_FTP_PASS }}
-          port: 22
-          local_path: 'backend/*'        # Was 'local-dir', now 'local_path'
-          remote_path: 'public/preciousmarketwatch/wp/'   # Was 'server-dir', now 'remote_path'
-          include: |
-            wp-config.php
+      - name: Install lftp
+        run: sudo apt-get install -y lftp
+
+      - name: Upload wp-config.php
+        env:
+          SFTP_USER: ${{ secrets.IONOS_FTP_USER }}
+          SFTP_PASS: ${{ secrets.IONOS_FTP_PASS }}
+          SFTP_HOST: ${{ secrets.IONOS_FTP_HOST }}
+        run: |
+          lftp -u "$SFTP_USER,$SFTP_PASS" sftp://$SFTP_HOST <<LFTP
+          set sftp:auto-confirm yes
+          put backend/wp-config.php -o public/preciousmarketwatch/wp/wp-config.php
+          bye
+          LFTP
