@@ -316,11 +316,12 @@ function pmw_seed_dealers() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CATEGORY PAGES
+// CATEGORY & MAIN PAGES
 // ─────────────────────────────────────────────────────────────
 
 function pmw_seed_category_pages() {
     $pages = [
+        // Main category pages
         [
             'title' => 'Precious Metals',
             'slug'  => 'precious-metals',
@@ -330,6 +331,100 @@ function pmw_seed_category_pages() {
             'title' => 'Gemstones',
             'slug'  => 'gemstones',
             'content' => 'Expert insights on gemstone investment and valuation.',
+        ],
+        // Individual metal pages
+        [
+            'title' => 'Gold',
+            'slug'  => 'precious-metals/gold',
+            'content' => 'Complete guide to gold investment and market analysis.',
+        ],
+        [
+            'title' => 'Silver',
+            'slug'  => 'precious-metals/silver',
+            'content' => 'Silver investment strategies and industrial demand analysis.',
+        ],
+        [
+            'title' => 'Platinum',
+            'slug'  => 'precious-metals/platinum',
+            'content' => 'Platinum market analysis and investment opportunities.',
+        ],
+        [
+            'title' => 'Palladium',
+            'slug'  => 'precious-metals/palladium',
+            'content' => 'Palladium supply and demand insights.',
+        ],
+        // Individual gemstone pages
+        [
+            'title' => 'Diamonds',
+            'slug'  => 'gemstones/diamonds',
+            'content' => 'Diamond grading, valuation, and investment guide.',
+        ],
+        [
+            'title' => 'Rubies',
+            'slug'  => 'gemstones/rubies',
+            'content' => 'Ruby quality factors and investment potential.',
+        ],
+        [
+            'title' => 'Sapphires',
+            'slug'  => 'gemstones/sapphires',
+            'content' => 'Sapphire origins, colors, and investment value.',
+        ],
+        [
+            'title' => 'Emeralds',
+            'slug'  => 'gemstones/emeralds',
+            'content' => 'Emerald quality assessment and investment guide.',
+        ],
+        // Main content pages
+        [
+            'title' => 'Market Insights',
+            'slug'  => 'market-insights',
+            'content' => 'Latest market analysis and investment trends.',
+        ],
+        [
+            'title' => 'Top Dealers',
+            'slug'  => 'top-dealers',
+            'content' => 'Vetted precious metals and gemstone dealers.',
+        ],
+        [
+            'title' => 'About',
+            'slug'  => 'about',
+            'content' => 'Learn about Precious Market Watch and our mission.',
+        ],
+        [
+            'title' => 'Contact',
+            'slug'  => 'contact',
+            'content' => 'Get in touch with the Precious Market Watch team.',
+        ],
+        // Legal/Info pages
+        [
+            'title' => 'Editorial Standards',
+            'slug'  => 'editorial-standards',
+            'content' => 'Our commitment to accuracy, transparency, and ethical journalism.',
+        ],
+        [
+            'title' => 'Affiliate Disclosure',
+            'slug'  => 'affiliate-disclosure',
+            'content' => 'How we earn commissions and our affiliate partnerships.',
+        ],
+        [
+            'title' => 'Privacy Policy',
+            'slug'  => 'privacy',
+            'content' => 'Our privacy policy and data protection commitments.',
+        ],
+        [
+            'title' => 'Terms of Service',
+            'slug'  => 'terms',
+            'content' => 'Terms of service and user agreement.',
+        ],
+        [
+            'title' => 'Cookies Policy',
+            'slug'  => 'cookies',
+            'content' => 'Information about how we use cookies.',
+        ],
+        [
+            'title' => 'Jewelry Investment',
+            'slug'  => 'jewelry-investment',
+            'content' => 'Guide to investing in fine jewelry.',
         ],
     ];
 
