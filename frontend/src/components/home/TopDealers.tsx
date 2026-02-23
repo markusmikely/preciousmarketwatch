@@ -2,52 +2,81 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Star, Shield, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
-const dealers = [
+// Static fallback — shown while WP data loads or if no dealers exist yet
+const FALLBACK_DEALERS = [
   {
-    id: 1,
-    name: "APMEX",
-    description: "America's largest online precious metals dealer with extensive inventory.",
-    rating: 4.8,
-    reviews: 12450,
-    specialties: ["Gold", "Silver", "Platinum"],
-    verified: true,
+    id: "1",
+    name: "Augusta Precious Metals",
+    description: "Specialist in gold and silver IRAs with one of the most lucrative affiliate structures in the space.",
+    rating: 4.0,
     featured: true,
+    specialties: ["Gold", "Silver"],
   },
   {
-    id: 2,
-    name: "JM Bullion",
-    description: "Competitive pricing on bullion with free shipping over $199.",
-    rating: 4.7,
-    reviews: 8920,
-    specialties: ["Gold Coins", "Silver Bars"],
-    verified: true,
-    featured: false,
+    id: "2",
+    name: "GoldenCrest Metals",
+    description: "Premium precious metals dealer offering some of the highest commissions in the industry.",
+    rating: 5.0,
+    featured: true,
+    specialties: ["Gold", "Silver", "Platinum", "Palladium"],
   },
   {
-    id: 3,
-    name: "SD Bullion",
-    description: "Low premiums and fast shipping for precious metals investors.",
-    rating: 4.6,
-    reviews: 6340,
-    specialties: ["Bullion", "IRA Eligible"],
-    verified: true,
-    featured: false,
+    id: "3",
+    name: "Blue Nile",
+    description: "The world's largest online diamond retailer with exceptional brand recognition and high AOV.",
+    rating: 4.0,
+    featured: true,
+    specialties: ["Diamonds", "Gemstones"],
   },
   {
-    id: 4,
+    id: "4",
     name: "James Allen",
-    description: "Leading online diamond retailer with 360° diamond viewing technology.",
-    rating: 4.9,
-    reviews: 15280,
-    specialties: ["Diamonds", "Engagement Rings"],
-    verified: true,
+    description: "Premium diamond retailer famous for 360° viewing technology and high average order values.",
+    rating: 4.0,
     featured: true,
+    specialties: ["Diamonds", "Gemstones"],
   },
 ];
 
-export function TopDealers() {
+interface WpDealer {
+  id: string;
+  title: string;
+  dealers: {
+    rating: number;
+    shortDescription: string;
+    featured: boolean;
+    affiliateLink: string;
+    logo?: { sourceUrl: string; altText: string };
+  };
+  metalTypes?: { nodes: { name: string }[] };
+  gemstoneTypes?: { nodes: { name: string }[] };
+  dealerCategories?: { nodes: { name: string }[] };
+}
+
+interface TopDealersProps {
+  dealers?: WpDealer[];
+}
+
+export function TopDealers({ dealers: wpDealers }: TopDealersProps) {
+
+  // Map WP data to display shape, fall back to static if empty
+  const dealers = wpDealers && wpDealers.length > 0
+    ? wpDealers.map( d => ({
+        id: d.id,
+        name: d.title,
+        description: d.dealers?.shortDescription || '',
+        rating: d.dealers?.rating || 0,
+        featured: d.dealers?.featured || false,
+        affiliateLink: d.dealers?.affiliateLink || '#',
+        logo: d.dealers?.logo?.sourceUrl || null,
+        specialties: [
+          ...( d.metalTypes?.nodes.map( n => n.name ) || [] ),
+          ...( d.gemstoneTypes?.nodes.map( n => n.name ) || [] ),
+        ],
+      }))
+    : FALLBACK_DEALERS;
+
   return (
     <section className="py-16 lg:py-24 bg-muted/50">
       <div className="container mx-auto px-4 lg:px-8">
@@ -72,13 +101,16 @@ export function TopDealers() {
 
         {/* Dealers Grid */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {dealers.map((dealer) => (
+          {dealers.map( ( dealer ) => (
             <Card key={dealer.id} className="group border-border bg-card hover:shadow-lg hover:border-primary/30 transition-all duration-300">
               <CardContent className="p-6">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted font-display text-lg font-bold text-primary">
-                    {dealer.name.charAt(0)}
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted font-display text-lg font-bold text-primary overflow-hidden">
+                    {( dealer as any ).logo
+                      ? <img src={( dealer as any ).logo} alt={dealer.name} className="h-full w-full object-contain" />
+                      : dealer.name.charAt( 0 )
+                    }
                   </div>
                   {dealer.featured && (
                     <Badge className="bg-primary/10 text-primary hover:bg-primary/20">
@@ -87,14 +119,12 @@ export function TopDealers() {
                   )}
                 </div>
 
-                {/* Name & Verified */}
+                {/* Name */}
                 <div className="flex items-center gap-2 mb-2">
                   <h3 className="font-semibold text-card-foreground group-hover:text-primary transition-colors">
                     {dealer.name}
                   </h3>
-                  {dealer.verified && (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  )}
+                  <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
                 </div>
 
                 {/* Description */}
@@ -103,19 +133,16 @@ export function TopDealers() {
                 </p>
 
                 {/* Rating */}
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex items-center gap-1">
+                {dealer.rating > 0 && (
+                  <div className="flex items-center gap-2 mb-4">
                     <Star className="h-4 w-4 fill-primary text-primary" />
-                    <span className="font-semibold text-card-foreground">{dealer.rating}</span>
+                    <span className="font-semibold text-card-foreground">{dealer.rating.toFixed(1)}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    ({dealer.reviews.toLocaleString()} reviews)
-                  </span>
-                </div>
+                )}
 
                 {/* Specialties */}
                 <div className="flex flex-wrap gap-1.5">
-                  {dealer.specialties.map((specialty) => (
+                  {dealer.specialties.slice( 0, 3 ).map( ( specialty ) => (
                     <Badge key={specialty} variant="secondary" className="text-xs bg-muted text-muted-foreground">
                       {specialty}
                     </Badge>
@@ -126,7 +153,7 @@ export function TopDealers() {
           ))}
         </div>
 
-        {/* CTA */}
+        {/* Trust badge */}
         <div className="mt-12 text-center">
           <div className="inline-flex items-center gap-2 rounded-lg bg-card border border-border px-6 py-4">
             <Shield className="h-5 w-5 text-primary" />
@@ -136,7 +163,6 @@ export function TopDealers() {
           </div>
         </div>
 
-        {/* Mobile View All Link */}
         <Link
           to="/top-dealers"
           className="mt-8 flex sm:hidden items-center justify-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"

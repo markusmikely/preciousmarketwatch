@@ -3,56 +3,107 @@ import { ArrowRight, Clock, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
-const featuredArticles = [
+// Static fallback — shown while WP data loads or if no posts exist yet
+const FALLBACK_ARTICLES = [
   {
-    id: 1,
+    id: "1",
     title: "Gold Reaches New Highs Amid Global Uncertainty",
-    excerpt: "Investors flock to safe-haven assets as geopolitical tensions drive gold prices to record levels...",
+    excerpt: "Investors flock to safe-haven assets as geopolitical tensions drive gold prices to record levels.",
     category: "Precious Metals",
-    author: "Sarah Chen",
+    author: "Editorial Team",
     readTime: "5 min read",
-    date: "Dec 9, 2024",
+    date: "Coming soon",
     image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
+    slug: "gold-new-highs",
     featured: true,
   },
   {
-    id: 2,
+    id: "2",
     title: "Lab-Grown Diamonds: Market Disruption or Investment Opportunity?",
-    excerpt: "The lab-grown diamond market continues to reshape traditional gemstone valuations...",
+    excerpt: "The lab-grown diamond market continues to reshape traditional gemstone valuations.",
     category: "Gemstones",
-    author: "Michael Torres",
+    author: "Editorial Team",
     readTime: "7 min read",
-    date: "Dec 8, 2024",
+    date: "Coming soon",
     image: "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=800&q=80",
+    slug: "lab-grown-diamonds",
     featured: false,
   },
   {
-    id: 3,
+    id: "3",
     title: "Silver Industrial Demand Surges with Green Energy Transition",
-    excerpt: "Solar panel manufacturing drives unprecedented demand for silver in renewable energy sector...",
+    excerpt: "Solar panel manufacturing drives unprecedented demand for silver in renewable energy.",
     category: "Market Insights",
-    author: "Emma Rodriguez",
+    author: "Editorial Team",
     readTime: "4 min read",
-    date: "Dec 7, 2024",
+    date: "Coming soon",
     image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
+    slug: "silver-green-energy",
     featured: false,
   },
   {
-    id: 4,
+    id: "4",
     title: "Buying Guide: How to Evaluate Ruby Quality",
-    excerpt: "Expert tips on assessing color, clarity, and origin when investing in rubies...",
+    excerpt: "Expert tips on assessing colour, clarity and origin when investing in rubies.",
     category: "Gemstones",
-    author: "David Park",
+    author: "Editorial Team",
     readTime: "8 min read",
-    date: "Dec 6, 2024",
+    date: "Coming soon",
     image: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=800&q=80",
+    slug: "ruby-buying-guide",
     featured: false,
   },
 ];
 
-export function FeaturedArticles() {
-  const mainArticle = featuredArticles[0];
-  const secondaryArticles = featuredArticles.slice(1);
+interface WpPost {
+  id: string;
+  title: string;
+  slug: string;
+  date: string;
+  excerpt: string;
+  featuredImage?: { node: { sourceUrl: string; altText: string } };
+  author?: { node: { name: string } };
+  categories?: { nodes: { name: string }[] };
+  articleMeta?: { readTime: string };
+}
+
+interface FeaturedArticlesProps {
+  articles?: WpPost[];
+}
+
+function formatDate( dateStr: string ): string {
+  try {
+    return new Date( dateStr ).toLocaleDateString( 'en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function stripHtml( html: string ): string {
+  return html.replace( /<[^>]*>/g, '' ).trim();
+}
+
+export function FeaturedArticles({ articles: wpArticles }: FeaturedArticlesProps) {
+
+  const articles = wpArticles && wpArticles.length > 0
+    ? wpArticles.map( ( p, i ) => ({
+        id: p.id,
+        title: p.title,
+        excerpt: stripHtml( p.excerpt || '' ),
+        category: p.categories?.nodes[0]?.name || 'General',
+        author: p.author?.node?.name || 'Editorial Team',
+        readTime: p.articleMeta?.readTime || '5 min read',
+        date: formatDate( p.date ),
+        image: p.featuredImage?.node?.sourceUrl || FALLBACK_ARTICLES[i % FALLBACK_ARTICLES.length].image,
+        slug: p.slug,
+        featured: i === 0,
+      }))
+    : FALLBACK_ARTICLES;
+
+  const mainArticle = articles[0];
+  const secondaryArticles = articles.slice( 1 );
 
   return (
     <section className="py-16 lg:py-24 bg-background">
@@ -80,7 +131,7 @@ export function FeaturedArticles() {
         <div className="grid gap-8 lg:grid-cols-2">
           {/* Main Featured Article */}
           <Card className="group overflow-hidden border-border bg-card hover:shadow-lg transition-shadow">
-            <Link to={`/article/${mainArticle.id}`}>
+            <Link to={`/articles/${mainArticle.slug}`}>
               <div className="aspect-[16/10] overflow-hidden">
                 <img
                   src={mainArticle.image}
@@ -114,12 +165,12 @@ export function FeaturedArticles() {
 
           {/* Secondary Articles */}
           <div className="flex flex-col gap-6">
-            {secondaryArticles.map((article) => (
+            {secondaryArticles.map( ( article ) => (
               <Card
                 key={article.id}
                 className="group flex overflow-hidden border-border bg-card hover:shadow-lg transition-shadow"
               >
-                <Link to={`/article/${article.id}`} className="flex w-full">
+                <Link to={`/articles/${article.slug}`} className="flex w-full">
                   <div className="aspect-square w-32 flex-shrink-0 overflow-hidden sm:w-40">
                     <img
                       src={article.image}
@@ -146,7 +197,7 @@ export function FeaturedArticles() {
           </div>
         </div>
 
-        {/* Mobile View All Link */}
+        {/* Mobile View All */}
         <Link
           to="/market-insights"
           className="mt-8 flex sm:hidden items-center justify-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
