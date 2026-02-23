@@ -9,7 +9,6 @@ import { TopDealers } from "@/components/home/TopDealers";
 import { client } from '../lib/graphql';
 import { HOMEPAGE_QUERY } from '../queries/homepage';
 import React, { useEffect, useState } from 'react';
-import { MarketProvider } from "@/contexts/MarketContext";
 
 const Index = () => {
   const [dealers, setDealers] = useState(null);
@@ -52,35 +51,33 @@ const Index = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <MarketProvider>
-        <Header />
-        <MarketTicker />
-        <main className="flex-1">
-          {loading && (
-            <div className="flex items-center justify-center min-h-[200px]">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading...</p>
-              </div>
+      <Header />
+      <MarketTicker />
+      <main className="flex-1">
+        {loading && (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading...</p>
             </div>
-          )}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 m-4 text-red-800">
-              <p className="font-semibold">Error loading content</p>
-              <p className="text-sm mt-2">{error instanceof Error ? error.message : 'Please refresh the page'}</p>
-            </div>
-          )}
-          {!loading && (
-            <>
-              <HeroSection />
-              <MarketOverview />
-              <FeaturedArticles articles={articles} />
-              <CategoryCards />
-              <TopDealers dealers={dealers} />
-            </>
-          )}
-        </main>
-      </MarketProvider>
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 m-4 text-red-800">
+            <p className="font-semibold">Error loading content</p>
+            <p className="text-sm mt-2">{error instanceof Error ? error.message : 'Please refresh the page'}</p>
+          </div>
+        )}
+        {!loading && (
+          <>
+            <HeroSection />
+            <MarketOverview />
+            <FeaturedArticles articles={articles} />
+            <CategoryCards />
+            <TopDealers dealers={dealers} />
+          </>
+        )}
+      </main>
       <Footer />
     </div>
   );

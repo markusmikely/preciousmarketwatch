@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { MarketProvider } from "@/contexts/MarketContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PreciousMetals from "./pages/PreciousMetals";
@@ -36,8 +37,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
+      <MarketProvider>
+        <BrowserRouter>
+          <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/precious-metals" element={<PreciousMetals />} />
           <Route path="/precious-metals/gold" element={<Gold />} />
@@ -62,7 +64,8 @@ const App = () => (
           <Route path="/cookies" element={<Cookies />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
+        </BrowserRouter>
+      </MarketProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
