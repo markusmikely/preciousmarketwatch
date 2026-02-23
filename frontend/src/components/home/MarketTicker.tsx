@@ -14,31 +14,25 @@ const marketDataList = [
 
 export function MarketTicker() {
 
-  // const [marketData, setMarketData] = useState(marketDataList);
-  const { marketData, loading, updateMarketData } = useMarket();
+  const { marketData, loading } = useMarket();
 
-  // useEffect(() => { 
-  //   const interval = setInterval(async() => {
-  //     const marketDataList = await fetchMetalData();
-  //     console.log("marketDataList", marketDataList);
-  //     setMarketData(marketDataList);
-  //   }, 10000);
-
-  //   return () => clearInterval(interval);
-  // }, []);
+  // Guard against undefined/null data
+  const displayData = Array.isArray(marketData) && marketData.length > 0 ? marketData : marketDataList;
 
   return (  
       <div className="bg-navy text-silver-light overflow-hidden border-b border-navy-light">
         <div className="flex animate-ticker">
           {/* Duplicate the content for seamless loop */}
-          {[...marketData, ...marketData].map((item, index) => (
+          {[...displayData, ...displayData].map((item, index) => (
             <div
               key={`${item.symbol}-${index}`}
               className="flex items-center gap-4 px-6 py-2 border-r border-navy-light whitespace-nowrap"
             >
               <span className="font-medium text-silver-light">{item.name}</span>
               <span className="text-xs text-silver/60">{item.symbol}</span>
-              <span className="font-semibold text-silver-light">{item.price}</span>
+              <span className="font-semibold text-silver-light">
+                {typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : item.price}
+              </span>
               <span
                 className={`flex items-center gap-1 text-sm font-medium ${
                   item.isUp ? "text-success" : "text-destructive"
@@ -49,7 +43,10 @@ export function MarketTicker() {
                 ) : (
                   <TrendingDown className="h-3 w-3" />
                 )}
-                {item.change_percent.toFixed(2)}%
+                {typeof item.change_percent === 'number' 
+                  ? `${item.change_percent.toFixed(2)}%`
+                  : item.change_percent || '0%'
+                }
               </span>
             </div>
           ))}
