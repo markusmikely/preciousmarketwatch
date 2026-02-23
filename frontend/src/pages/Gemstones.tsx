@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Diamond, Gem, Sparkles, Star } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
+import { DataFetchStateHandler } from "@/components/shared/DataFetchStateHandler";
 import { Button } from "@/components/ui/button";
+import { useGraphQL } from "@/hooks/useGraphQL";
+import { ARTICLES_BY_CATEGORY } from "@/queries/articles";
 
 const gemCategories = [
   {
@@ -48,73 +51,86 @@ const indexData = [
   { name: "Emerald Index", value: "178.2", change: "+0.89%", isUp: true },
 ];
 
-const articles = [
-  {
-    title: "Lab-Grown vs Natural Diamonds: Complete Guide",
-    excerpt: "Understanding the differences, value propositions, and market dynamics of natural and lab-grown diamonds.",
-    category: "Diamonds",
-    author: "Emma Thompson",
-    date: "Dec 9, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1586882829491-b81178aa622e?w=800&q=80",
-    href: "/articles/lab-vs-natural-diamonds",
-  },
-  {
-    title: "The 4Cs of Diamond Grading Explained",
-    excerpt: "Master the fundamentals of diamond quality assessment: Cut, Clarity, Color, and Carat weight.",
-    category: "Education",
-    author: "Michael Chen",
-    date: "Dec 8, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=800&q=80",
-    href: "/articles/diamond-4cs-guide",
-  },
-  {
-    title: "Colored Gemstone Investment: What You Need to Know",
-    excerpt: "Beyond diamonds - exploring the investment potential of rubies, sapphires, and emeralds.",
-    category: "Investment",
-    author: "Sarah Williams",
-    date: "Dec 7, 2024",
-    readTime: "8 min read",
-    image: "https://images.unsplash.com/photo-1599707367072-cd6ada2bc375?w=800&q=80",
-    href: "/articles/colored-gemstone-investment",
-  },
-  {
-    title: "Gemstone Certification: GIA, AGS, and More",
-    excerpt: "Understanding gemological certifications and why they matter for your purchase.",
-    category: "Guide",
-    author: "David Park",
-    date: "Dec 6, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1551122087-f99a40461414?w=800&q=80",
-    href: "/articles/gemstone-certification",
-  },
-];
+interface WpArticle {
+  id: string;
+  title: string;
+  slug: string;
+  date: string;
+  excerpt: string;
+  featuredImage?: { node: { sourceUrl: string } };
+  author?: { node: { name: string } };
+  categories?: { nodes: { name: string }[] };
+  articleMeta?: { readTime: string };
+}
+
+function transformArticle(article: WpArticle, index: number) {
+  return {
+    id: article.id || `article-${index}`,
+    title: article.title,
+    excerpt: article.excerpt,
+    slug: article.slug,
+    category: article.categories?.nodes[0]?.name || "Gemstones",
+    author: article.author?.node?.name || "Editorial Team",
+    readTime: article.articleMeta?.readTime || "5 min read",
+    date: new Date(article.date).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }),
+    image: article.featuredImage?.node?.sourceUrl || "https://images.unsplash.com/photo-1586882829491-b81178aa622e?w=800&q=80",
+    href: `/articles/${article.slug}`,
+  };
+}
 
 export default function Gemstones() {
+  // Fetch articles about gemstones
+  const { data, loading, error, refetch } = useGraphQL(ARTICLES_BY_CATEGORY, {
+    variables: { categorySlug: "gemstones", first: 4 },
+  });
+
+  const articles = useMemo(() => {
+    if (!data?.posts?.nodes) return [];
+    return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+  }, [data]);
+
   return (
     <PageLayout>
       <PageHero
         title="Gemstones"
-        subtitle="Expert guides on diamonds, rubies, sapphires, and emeralds. From grading to investment, discover everything about precious gemstones."
+        subtitle="Expert guides on diamonds, rubies, sapphires, and emeralds. Learn about grading, valuation, and investment potential of precious gemstones."
         breadcrumbs={[
           { label: "Home", href: "/" },
           { label: "Gemstones" },
         ]}
-        badge="Precious Stones"
+        badge="Gemstone Hub"
       />
 
-      {/* Market Indices */}
-      <section className="py-8 bg-muted/30">
+      {/* Gemstone Indices */}
+      <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="font-display text-2xl font-bold text-foreground">Gemstone Indices</h2>
+              <p className="text-muted-foreground mt-1">Price trends for major precious gemstones</p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {indexData.map((index) => (
-              <div key={index.name} className="bg-card rounded-lg border border-border p-4 text-center">
-                <span className="text-sm text-muted-foreground block mb-1">{index.name}</span>
-                <span className="font-display text-xl font-bold text-foreground">{index.value}</span>
-                <span className={`text-sm ml-2 ${index.isUp ? "text-success" : "text-destructive"}`}>
-                  {index.change}
-                </span>
+              <div
+                key={index.name}
+                className="bg-card rounded-lg border border-border p-6 hover:shadow-md transition-shadow"
+              >
+                <p className="text-sm text-muted-foreground mb-2">{index.name}</p>
+                <div className="flex items-baseline justify-between">
+                  <p className="font-display text-2xl font-bold text-foreground">{index.value}</p>
+                  <span
+                    className={`text-sm font-medium ${
+                      index.isUp ? "text-success" : "text-destructive"
+                    }`}
+                  >
+                    {index.change}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -124,30 +140,31 @@ export default function Gemstones() {
       {/* Gemstone Categories */}
       <section className="py-12">
         <div className="container mx-auto px-4 lg:px-8">
-          <h2 className="font-display text-2xl font-bold text-foreground mb-8">Explore Gemstones</h2>
+          <h2 className="font-display text-2xl font-bold text-foreground mb-8">Explore by Gemstone</h2>
           <div className="grid md:grid-cols-2 gap-6">
-            {gemCategories.map((category) => (
+            {gemCategories.map((gem) => (
               <Link
-                key={category.name}
-                to={category.href}
-                className="group relative h-[280px] rounded-xl overflow-hidden"
+                key={gem.name}
+                to={gem.href}
+                className="group bg-card rounded-xl border border-border overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all duration-300"
               >
-                <img
-                  src={category.image}
-                  alt={category.name}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-navy via-navy/60 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-6">
-                  <div className={`inline-flex p-2 rounded-lg ${category.color} mb-3`}>
-                    <category.icon className="h-5 w-5" />
+                <div className="aspect-[16/10] overflow-hidden">
+                  <img
+                    src={gem.image}
+                    alt={gem.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
+                <div className="p-6">
+                  <div className={`inline-flex p-2 rounded-lg ${gem.color} mb-3`}>
+                    <gem.icon className="h-5 w-5" />
                   </div>
-                  <h3 className="font-display text-2xl font-bold text-silver-light mb-2 group-hover:text-primary transition-colors">
-                    {category.name}
+                  <h3 className="font-display text-xl font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
+                    {gem.name}
                   </h3>
-                  <p className="text-silver text-sm mb-3">{category.description}</p>
+                  <p className="text-sm text-muted-foreground mb-4">{gem.description}</p>
                   <span className="inline-flex items-center text-sm font-medium text-primary">
-                    Explore {category.name}
+                    Learn more
                     <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </span>
                 </div>
@@ -161,7 +178,7 @@ export default function Gemstones() {
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="font-display text-2xl font-bold text-foreground">Gemstone Guides & Analysis</h2>
+            <h2 className="font-display text-2xl font-bold text-foreground">Latest Analysis</h2>
             <Button variant="outline" asChild>
               <Link to="/market-insights">
                 View all articles
@@ -169,26 +186,37 @@ export default function Gemstones() {
               </Link>
             </Button>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {articles.map((article) => (
-              <ArticleCard key={article.title} {...article} />
-            ))}
-          </div>
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles...">
+            {articles.length > 0 ? (
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {articles.map((article: any) => (
+                  <ArticleCard key={article.id} {...article} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No articles found. Check back soon!</p>
+              </div>
+            )}
+          </DataFetchStateHandler>
         </div>
       </section>
 
-      {/* CTA */}
+      {/* CTA Section */}
       <section className="py-16 bg-gradient-hero">
         <div className="container mx-auto px-4 lg:px-8 text-center">
-          <h2 className="font-display text-3xl font-bold text-silver-light mb-4">
-            Find Certified Gemstone Dealers
-          </h2>
+          <h2 className="font-display text-3xl font-bold text-silver-light mb-4">Find Your Perfect Gemstone</h2>
           <p className="text-silver max-w-2xl mx-auto mb-8">
-            Connect with trusted, certified dealers for diamonds, rubies, sapphires, and emeralds.
+            Discover certified gemstones from trusted dealers. Access expert evaluation tools, market data, and investment guidance.
           </p>
-          <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold">
-            Browse Dealers
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold" asChild>
+              <Link to="/top-dealers">Find Dealers</Link>
+            </Button>
+            <Button size="lg" variant="outline" className="border-silver/30 text-silver-light hover:bg-silver/10" asChild>
+              <Link to="/market-insights">Buying Guides</Link>
+            </Button>
+          </div>
         </div>
       </section>
     </PageLayout>

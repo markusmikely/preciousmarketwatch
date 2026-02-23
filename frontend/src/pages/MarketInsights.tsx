@@ -1,112 +1,93 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Search, Filter } from "lucide-react";
+import { Search } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { CategoryFilter } from "@/components/shared/CategoryFilter";
+import { DataFetchStateHandler } from "@/components/shared/DataFetchStateHandler";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useGraphQL } from "@/hooks/useGraphQL";
+import { ARTICLES_QUERY } from "@/queries/articles";
 
 const categories = ["All", "Gold", "Silver", "Platinum", "Diamonds", "Gemstones", "Market Analysis", "Investment"];
 
-const articles = [
+// Fallback articles if GraphQL fails
+const fallbackArticles = [
   {
+    id: "1",
     title: "Gold Reaches New Highs as Inflation Concerns Persist",
     excerpt: "Central bank policies continue to drive investor interest in gold as a hedge against currency devaluation.",
-    category: "Gold",
-    author: "Michael Chen",
-    date: "Dec 9, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
-    href: "/articles/gold-new-highs",
+    slug: "gold-new-highs",
+    categories: { nodes: [{ name: "Gold" }] },
+    author: { node: { name: "Michael Chen" } },
+    date: "2024-12-09",
+    articleMeta: { readTime: "5 min read" },
+    featuredImage: { node: { sourceUrl: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80" } },
     featured: true,
   },
-  {
-    title: "Silver Industrial Demand Surges on Green Energy Push",
-    excerpt: "Solar panel and EV production drive unprecedented demand for silver.",
-    category: "Silver",
-    author: "Sarah Williams",
-    date: "Dec 8, 2024",
-    readTime: "4 min read",
-    image: "https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=800&q=80",
-    href: "/articles/silver-demand",
-  },
-  {
-    title: "Lab-Grown vs Natural Diamonds: Market Impact",
-    excerpt: "How lab-grown diamonds are reshaping the natural diamond market dynamics.",
-    category: "Diamonds",
-    author: "Emma Thompson",
-    date: "Dec 7, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1586882829491-b81178aa622e?w=800&q=80",
-    href: "/articles/lab-vs-natural",
-  },
-  {
-    title: "Platinum Supply Deficit: Investment Opportunity?",
-    excerpt: "Mining disruptions create potential supply squeeze in platinum market.",
-    category: "Platinum",
-    author: "David Park",
-    date: "Dec 6, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
-    href: "/articles/platinum-deficit",
-  },
-  {
-    title: "Colored Gemstone Investment Trends 2024",
-    excerpt: "Which colored stones are gaining investor attention this year.",
-    category: "Gemstones",
-    author: "Victoria Sterling",
-    date: "Dec 5, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1599707367072-cd6ada2bc375?w=800&q=80",
-    href: "/articles/gemstone-trends",
-  },
-  {
-    title: "Central Bank Gold Buying: 2024 Analysis",
-    excerpt: "Record central bank purchases and what they mean for gold prices.",
-    category: "Market Analysis",
-    author: "Michael Chen",
-    date: "Dec 4, 2024",
-    readTime: "8 min read",
-    image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80",
-    href: "/articles/central-bank-gold",
-  },
-  {
-    title: "Building a Precious Metals Portfolio",
-    excerpt: "Strategic allocation guide for diversified precious metals investing.",
-    category: "Investment",
-    author: "Sarah Williams",
-    date: "Dec 3, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
-    href: "/articles/portfolio-guide",
-  },
-  {
-    title: "Kashmir Sapphires: Record Auction Results",
-    excerpt: "Recent auction sales highlight continued demand for rare Kashmir origin stones.",
-    category: "Gemstones",
-    author: "Emma Thompson",
-    date: "Dec 2, 2024",
-    readTime: "4 min read",
-    image: "https://images.unsplash.com/photo-1551122087-f99a40461414?w=800&q=80",
-    href: "/articles/kashmir-auction",
-  },
 ];
+
+interface WpArticle {
+  id: string;
+  title: string;
+  slug: string;
+  date: string;
+  excerpt: string;
+  featuredImage?: { node: { sourceUrl: string } };
+  author?: { node: { name: string } };
+  categories?: { nodes: { name: string }[] };
+  articleMeta?: { readTime: string };
+}
+
+function transformArticle(article: WpArticle, index: number) {
+  return {
+    id: article.id || `article-${index}`,
+    title: article.title,
+    excerpt: article.excerpt,
+    slug: article.slug,
+    category: article.categories?.nodes[0]?.name || "General",
+    author: article.author?.node?.name || "Editorial Team",
+    readTime: article.articleMeta?.readTime || "5 min read",
+    date: new Date(article.date).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }),
+    image: article.featuredImage?.node?.sourceUrl || "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
+    href: `/articles/${article.slug}`,
+    featured: index === 0,
+  };
+}
 
 export default function MarketInsights() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredArticles = articles.filter((article) => {
-    const matchesCategory = activeCategory === "All" || article.category === activeCategory;
-    const matchesSearch = article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      article.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+  // Fetch articles from GraphQL
+  const { data, loading, error, refetch } = useGraphQL(ARTICLES_QUERY, {
+    variables: { first: 50 },
   });
 
-  const featuredArticle = filteredArticles.find((a) => a.featured);
-  const regularArticles = filteredArticles.filter((a) => !a.featured);
+  // Transform and filter articles
+  const allArticles = useMemo(() => {
+    if (!data?.posts?.nodes) return fallbackArticles;
+    return data.posts.nodes.map((article: any, index: number) => transformArticle(article, index));
+  }, [data]);
+
+  const filteredArticles = useMemo(() => {
+    return allArticles.filter((article: any) => {
+      const matchesCategory = activeCategory === "All" || article.category === activeCategory;
+      const matchesSearch =
+        article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        article.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesSearch;
+    });
+  }, [allArticles, activeCategory, searchQuery]);
+
+  const featuredArticle = filteredArticles.find((a: any) => a.featured);
+  const regularArticles = filteredArticles.filter((a: any) => !a.featured);
 
   return (
     <PageLayout>
@@ -147,7 +128,9 @@ export default function MarketInsights() {
         <section className="py-12">
           <div className="container mx-auto px-4 lg:px-8">
             <h2 className="font-display text-xl font-bold text-foreground mb-6">Featured</h2>
-            <ArticleCard {...featuredArticle} featured />
+            <DataFetchStateHandler loading={loading} error={error} onRetry={refetch}>
+              <ArticleCard {...featuredArticle} featured />
+            </DataFetchStateHandler>
           </div>
         </section>
       )}
@@ -161,36 +144,36 @@ export default function MarketInsights() {
               <span className="text-muted-foreground font-normal ml-2">({regularArticles.length})</span>
             </h2>
           </div>
-          {regularArticles.length > 0 ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {regularArticles.map((article) => (
-                <ArticleCard key={article.title} {...article} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No articles found matching your criteria.</p>
-              <Button
-                variant="outline"
-                className="mt-4"
-                onClick={() => {
-                  setActiveCategory("All");
-                  setSearchQuery("");
-                }}
-              >
-                Clear filters
-              </Button>
-            </div>
-          )}
+          <DataFetchStateHandler loading={loading} error={error} onRetry={refetch} loadingMessage="Loading articles...">
+            {regularArticles.length > 0 ? (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {regularArticles.map((article: any) => (
+                  <ArticleCard key={article.id} {...article} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No articles found matching your criteria.</p>
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => {
+                    setActiveCategory("All");
+                    setSearchQuery("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </DataFetchStateHandler>
         </div>
       </section>
 
       {/* Newsletter CTA */}
       <section className="py-16 bg-gradient-hero">
         <div className="container mx-auto px-4 lg:px-8 text-center">
-          <h2 className="font-display text-3xl font-bold text-silver-light mb-4">
-            Never Miss an Update
-          </h2>
+          <h2 className="font-display text-3xl font-bold text-silver-light mb-4">Never Miss an Update</h2>
           <p className="text-silver max-w-2xl mx-auto mb-8">
             Subscribe to our newsletter for weekly market analysis and expert insights delivered to your inbox.
           </p>
