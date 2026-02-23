@@ -1,7 +1,7 @@
 import { gql } from 'graphql-request';
 
 export const DEALERS_QUERY = gql`
-  query GetDealers($first: Int!, $after: String) {
+  query GetDealers($first: Int = 50, $after: String) {
     dealers(first: $first, after: $after, where: { orderby: { field: DATE, order: DESC } }) {
       pageInfo {
         hasNextPage
