@@ -14,22 +14,32 @@ import { MarketProvider } from "@/contexts/MarketContext";
 const Index = () => {
   const [dealers, setDealers] = useState(null);
   const [articles, setArticles] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const res = await client.request(HOMEPAGE_QUERY);
+        console.log('[PMW] GraphQL response:', res);
+        
         if (res?.dealers?.nodes?.length) {
+          console.log(`[PMW] Setting ${res.dealers.nodes.length} dealers`);
           setDealers(res.dealers.nodes);
         }
+        
         if (res?.posts?.nodes?.length) {
+          console.log(`[PMW] Setting ${res.posts.nodes.length} articles`);
           setArticles(res.posts.nodes);
         }
-      } catch (error) {
-        // GraphQL error or WP unavailable — components fall back to static data
-        console.warn('[PMW] GraphQL fetch failed, using static fallback:', error);
+      } catch (err) {
+        console.error('[PMW] GraphQL fetch failed:', err);
+        setError(err);
+      } finally {
+        setLoading(false);
       }
     }
+    
     fetchData();
   }, []);
 
