@@ -47,9 +47,15 @@ export const MarketProvider = ({ children }: { children: React.ReactNode }) => {
         setLoading(true);
         try {
             const marketDataList = await fetchMetalData();
-            setMarketData(marketDataList);
+            if (marketDataList && Array.isArray(marketDataList) && marketDataList.length > 0) {
+                setMarketData(marketDataList);
+            } else {
+                console.warn("[MarketContext] Invalid market data received:", marketDataList);
+                // Keep existing data if new data is invalid
+            }
         } catch (error) {
-            console.error("Error fetching market data:", error);
+            console.error("[MarketContext] Error fetching market data:", error);
+            // Keep existing data on error - do NOT throw
         } finally {
             setLoading(false);
         }

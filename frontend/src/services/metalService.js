@@ -17,7 +17,6 @@ const mockData = {
         "change_percent": 1.74,
         "name": "Gold", 
         "symbol": "XAU",
-        "change": "+0.65%", 
         "isUp": true
     },
     silver: {
@@ -34,7 +33,6 @@ const mockData = {
         "change_percent": 6.7,
         "name": "Silver", 
         "symbol": "XAG",
-        "change": "+0.65%", 
         "isUp": true
     },
     platinum: {
@@ -51,7 +49,6 @@ const mockData = {
         "change_percent": 4.55,
         "name": "Platinum", 
         "symbol": "XPT",
-        "change": "+0.65%", 
         "isUp": true
     },
     palladium: {
@@ -68,7 +65,6 @@ const mockData = {
         "change_percent": 3.2,
         "name": "Palladium", 
         "symbol": "XPD",
-        "change": "+0.65%", 
         "isUp": false
     }
 };
@@ -78,37 +74,64 @@ const metalList = ["gold", "silver", "platinum", "palladium"];
 
 export const fetchMetalData = async () => {
     if (!IS_PRODUCTION) {
+        console.log("[metalService] Using mock data (dev mode)");
         return metalList.map(metal => mockData[metal]);
     }
 
     try {
-        const metalData = await Promise.all(metalList.map(async(metal) => {
-            const response = await fetch(`https://api.metals.dev/v1/metal/spot?api_key=${API_KEY}&metal=${metal}&currency=USD`);
-            const result = await response.json();
+        if (!API_KEY) {
+            console.warn("[metalService] No API key configured, falling back to mock data");
+            return metalList.map(metal => mockData[metal]);
+        }
 
-            // metals.dev /v1/metal/spot returns: { rate: number }
-            // Map to the shape the FE expects
-            return {
-                metal,
-                currency: "USD",
-                unit: "toz",
-                price: result.rate,
-                ask: result.rate,   // Spot endpoint doesn't return ask/bid/high/low
-                bid: result.rate,   // Upgrade to /v1/latest for full OHLC data
-                high: result.rate,
-                low: result.rate,
-                change: 0,
-                change_percent: 0,
-                name: metal.charAt(0).toUpperCase() + metal.slice(1),
-                symbol: mockData[metal]?.symbol ?? metal.toUpperCase(),
-                isUp: true,
-                timestamp: new Date().toISOString(),
-            };
+        const metalData = await Promise.all(metalList.map(async(metal) => {
+            try {
+                const response = await fetch(`https://api.metals.dev/v1/metal/spot?api_key=${API_KEY}&metal=${metal}&currency=USD`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    timeout: 5000
+                });
+                
+                if (!response.ok) {
+                    console.error(`[metalService] API error for ${metal}: ${response.status} ${response.statusText}`);
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.rate) {
+                    console.error(`[metalService] Invalid response for ${metal}:`, result);
+                    throw new Error("No rate in response");
+                }
+
+                // metals.dev /v1/metal/spot returns: { rate: number }
+                // Map to the shape the FE expects
+                return {
+                    metal,
+                    currency: "USD",
+                    unit: "toz",
+                    price: result.rate,
+                    ask: result.rate,   // Spot endpoint doesn't return ask/bid/high/low
+                    bid: result.rate,   // Upgrade to /v1/latest for full OHLC data
+                    high: result.rate,
+                    low: result.rate,
+                    change: 0,
+                    change_percent: 0,
+                    name: metal.charAt(0).toUpperCase() + metal.slice(1),
+                    symbol: mockData[metal]?.symbol ?? metal.toUpperCase(),
+                    isUp: true,
+                    timestamp: new Date().toISOString(),
+                };
+            } catch (metalError) {
+                console.error(`[metalService] Failed to fetch ${metal}:`, metalError);
+                // Fall back to mock data for this metal
+                return mockData[metal];
+            }
         }));
         return metalData;
     
     } catch (error) {
-        console.error("API Fetch Failed, falling back to mock:", error);
+        console.error("[metalService] Unexpected error, falling back to mock data:", error);
         return metalList.map(metal => mockData[metal]);
     }
 };
