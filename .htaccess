@@ -1,5 +1,5 @@
 
-# BEGIN WordPress & Frontend SPA Routing
+# SPA Frontend Routing + WordPress Backend
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
@@ -9,20 +9,19 @@ RewriteBase /
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 
-# Exclude /wp/* paths - let WordPress handle them
+# Don't rewrite WordPress paths
 RewriteCond %{REQUEST_URI} !^/wp/
 RewriteCond %{REQUEST_URI} !^/wp-admin/
 RewriteCond %{REQUEST_URI} !^/wp-content/
 RewriteCond %{REQUEST_URI} !^/wp-includes/
 
-# Exclude known API endpoints
-RewriteCond %{REQUEST_URI} !^/graphql/?$
+# Don't rewrite known files
 RewriteCond %{REQUEST_URI} !^/index\.php$
+RewriteCond %{REQUEST_URI} !^/index\.html$
 
-# Route everything else to frontend index.html (SPA)
-# This allows React Router to handle client-side routing
-RewriteRule ^(.*)$ /index.html [QSA,L]
+# Route all other requests to React app (SPA)
+RewriteRule ^ /index.html [QSA,L]
 
 </IfModule>
 
-# END WordPress & Frontend SPA Routing
+# END SPA Frontend Routing + WordPress Backend
