@@ -1,267 +1,51 @@
 <?php
 /**
  * Plugin Name: PMW Seed Data
- * Description: One-time seed plugin for Precious Market Watch. Creates all dealers,
- *              affiliate products, and homepage settings. DEACTIVATE AND DELETE after running.
- * Version:     1.0.0
+ * Description: Seeds all initial content for Precious Market Watch (articles, dealers, pages, categories).
+ *              This plugin should be run once, then can be deactivated. Run again anytime to refresh.
+ * Version:     2.0.0
  * Author:      Markus Mikely
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 register_activation_hook( __FILE__, 'pmw_seed_all' );
+add_action( 'admin_init', 'pmw_maybe_show_seed_notice' );
 
-function pmw_seed_all() {
-    pmw_seed_dealers();
-    pmw_seed_homepage();
-}
-
-// ─────────────────────────────────────────────────────────────
-// DEALERS
-// ─────────────────────────────────────────────────────────────
-
-function pmw_seed_dealers() {
-
-    $dealers = [
-        [
-            'name'             => 'Money Metals Exchange',
-            'description'      => 'One of the most trusted online dealers for gold, silver, platinum and palladium bullion. Known for competitive pricing, transparent fees and a 30-day affiliate cookie window via AWIN.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~$16 per sale (flat fee)',
-            'network'          => 'AWIN',
-            'metals'           => [ 'Gold', 'Silver', 'Platinum', 'Palladium' ],
-            'gemstones'        => [],
-            'attributes'       => [ 'Banners', 'Text Links', '30-day cookie' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'GoldenCrest Metals',
-            'description'      => 'Premium precious metals dealer offering some of the highest affiliate commissions in the industry — up to 13% on premiums. Managed through Everflow.',
-            'rating'           => 5.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '3–13% on premiums',
-            'network'          => 'Everflow',
-            'metals'           => [ 'Gold', 'Silver', 'Platinum', 'Palladium' ],
-            'gemstones'        => [],
-            'attributes'       => [ 'High commission', 'Everflow network' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => true,
-        ],
-        [
-            'name'             => 'Augusta Precious Metals',
-            'description'      => 'Specialist in gold and silver IRAs. Offers one of the most lucrative affiliate structures in the space — $200 per qualified lead plus up to 10% commission on sales.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '8–10% + $200 per qualified lead',
-            'network'          => 'Direct',
-            'metals'           => [ 'Gold', 'Silver' ],
-            'gemstones'        => [],
-            'attributes'       => [ 'IRA specialist', '$200 lead bonus', 'High AOV' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => true,
-        ],
-        [
-            'name'             => 'Hatton Garden Metals',
-            'description'      => 'UK-based precious metals dealer based in London\'s famous jewellery quarter. Free to join affiliate scheme, ideal for UK-focused audiences.',
-            'rating'           => 3.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => 'Varies',
-            'network'          => 'Direct',
-            'metals'           => [ 'Gold', 'Silver' ],
-            'gemstones'        => [],
-            'attributes'       => [ 'UK-based', 'Free to join' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'GoldRepublic',
-            'description'      => 'European precious metals platform offering up to 25% commission and an industry-leading 60-day cookie window. Strong choice for international audiences.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => 'Up to 25%',
-            'network'          => 'Direct',
-            'metals'           => [ 'Gold', 'Silver', 'Platinum' ],
-            'gemstones'        => [],
-            'attributes'       => [ '25% commission', '60-day cookie', 'European' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'BGASC',
-            'description'      => 'Buy Gold and Silver Coins — a reputable US bullion dealer with a solid range of coins and bars across all four precious metals. Managed via ShareASale.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => 'Up to $25 per sale',
-            'network'          => 'ShareASale',
-            'metals'           => [ 'Gold', 'Silver', 'Platinum', 'Palladium' ],
-            'gemstones'        => [],
-            'attributes'       => [ 'ShareASale', 'Flat fee per sale' ],
-            'category'         => 'Bullion Dealer',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'Allurez',
-            'description'      => 'Fine jewellery retailer specialising in diamonds, gemstones and designer pieces. Weekly promotional materials and banner ads available via ShareASale.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~8%',
-            'network'          => 'ShareASale',
-            'metals'           => [],
-            'gemstones'        => [ 'Diamond', 'Gemstones' ],
-            'attributes'       => [ 'Weekly promotions', 'Banner ads', 'ShareASale' ],
-            'category'         => 'Jeweler',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'Blue Nile',
-            'description'      => 'The world\'s largest online diamond retailer. Exceptional brand recognition, high average order values and a trusted name for engagement rings and fine jewellery.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~5%',
-            'network'          => 'Impact',
-            'metals'           => [],
-            'gemstones'        => [ 'Diamond', 'Gemstones' ],
-            'attributes'       => [ 'Largest online jeweler', 'High AOV', 'Impact network' ],
-            'category'         => 'Jeweler',
-            'featured'         => true,
-        ],
-        [
-            'name'             => 'Gemvara',
-            'description'      => 'Custom jewellery platform letting customers design their own pieces from a wide range of gemstones and precious metals. Managed through CJ Affiliate / Impact.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '2–6%',
-            'network'          => 'CJ / Impact',
-            'metals'           => [],
-            'gemstones'        => [ 'Gemstones' ],
-            'attributes'       => [ 'Custom jewelry', 'CJ Affiliate' ],
-            'category'         => 'Jeweler',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'Clean Origin',
-            'description'      => 'Ethical lab-grown diamond specialist with a 90-day cookie window. Growing demand for sustainable diamonds makes this a strong long-term affiliate choice.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~5%',
-            'network'          => 'ShareASale',
-            'metals'           => [],
-            'gemstones'        => [ 'Diamond' ],
-            'attributes'       => [ 'Lab-grown', 'Ethical', '90-day cookie', 'ShareASale' ],
-            'category'         => 'Jeweler',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'Angara',
-            'description'      => 'Specialist in coloured gemstone jewellery — sapphires, rubies, emeralds and diamonds. 10% commission via LinkShare/Rakuten with strong visual product assets.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '10%',
-            'network'          => 'Rakuten / LinkShare',
-            'metals'           => [],
-            'gemstones'        => [ 'Sapphire', 'Ruby', 'Emerald', 'Diamond' ],
-            'attributes'       => [ '10% commission', 'Rakuten network', 'Coloured gems' ],
-            'category'         => 'Jeweler',
-            'featured'         => false,
-        ],
-        [
-            'name'             => 'James Allen',
-            'description'      => 'Premium online diamond and gemstone retailer famous for 360° diamond viewing technology. High average order values make even a 5% commission highly rewarding.',
-            'rating'           => 4.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~5%',
-            'network'          => 'Post Affiliate Pro',
-            'metals'           => [],
-            'gemstones'        => [ 'Diamond', 'Gemstones' ],
-            'attributes'       => [ '360° imagery', 'High AOV', 'Post Affiliate Pro' ],
-            'category'         => 'Jeweler',
-            'featured'         => true,
-        ],
-        [
-            'name'             => 'Ritani',
-            'description'      => 'Hybrid online/in-store diamond jeweller offering a unique try-before-you-buy experience. Lower commission rate but strong brand for US audiences via Rakuten.',
-            'rating'           => 3.0,
-            'review_link'      => '',
-            'affiliate_link'   => '',
-            'commission'       => '~1%',
-            'network'          => 'Rakuten',
-            'metals'           => [],
-            'gemstones'        => [ 'Diamond', 'Gemstones' ],
-            'attributes'       => [ 'In-store option', 'Rakuten network' ],
-            'category'         => 'Jeweler',
-            'featured'         => false,
-        ],
-    ];
-
-    foreach ( $dealers as $dealer ) {
-
-        // Skip if already exists
-        $existing = get_posts( [
-            'post_type'  => 'dealer',
-            'title'      => $dealer['name'],
-            'post_status' => 'any',
-            'numberposts' => 1,
-        ] );
-        if ( ! empty( $existing ) ) continue;
-
-        $post_id = wp_insert_post( [
-            'post_title'   => $dealer['name'],
-            'post_content' => $dealer['description'],
-            'post_type'    => 'dealer',
-            'post_status'  => 'publish',
-        ] );
-
-        if ( is_wp_error( $post_id ) ) continue;
-
-        // ACF fields
-        update_field( 'short_description',  $dealer['description'],    $post_id );
-        update_field( 'rating',             $dealer['rating'],         $post_id );
-        update_field( 'review_link',        $dealer['review_link'],    $post_id );
-        update_field( 'affiliate_link',     $dealer['affiliate_link'], $post_id );
-        update_field( 'featured',           $dealer['featured'],       $post_id );
-
-        // Store commission + network as post meta for later use
-        update_post_meta( $post_id, 'pmw_commission',      $dealer['commission'] );
-        update_post_meta( $post_id, 'pmw_network',         $dealer['network'] );
-        update_post_meta( $post_id, 'pmw_signed_up',       false );
-
-        // Taxonomy: dealer category
-        if ( ! empty( $dealer['category'] ) ) {
-            wp_set_object_terms( $post_id, $dealer['category'], 'pmw-dealer-category' );
-        }
-
-        // Taxonomy: metal types
-        if ( ! empty( $dealer['metals'] ) ) {
-            wp_set_object_terms( $post_id, $dealer['metals'], 'pmw-metal-type' );
-        }
-
-        // Taxonomy: gemstone types
-        if ( ! empty( $dealer['gemstones'] ) ) {
-            wp_set_object_terms( $post_id, $dealer['gemstones'], 'pmw-gemstone-type' );
-        }
+/**
+ * Show admin notice after activation
+ */
+function pmw_maybe_show_seed_notice() {
+    if ( get_option( 'pmw_seed_just_activated' ) ) {
+        delete_option( 'pmw_seed_just_activated' );
+        add_action( 'admin_notices', function() {
+            echo '<div class="notice notice-success is-dismissible"><p>';
+            echo '<strong>PMW Seed Data:</strong> Content has been seeded. Articles, dealers, and pages are now available in the CMS. ';
+            echo 'You can deactivate this plugin.';
+            echo '</p></div>';
+        });
     }
 }
 
+/**
+ * Main seed function - runs on plugin activation
+ */
+function pmw_seed_all() {
+    pmw_seed_homepage();
+    pmw_seed_categories();
+    pmw_seed_articles();
+    pmw_seed_dealers();
+    pmw_seed_category_pages();
+    
+    // Mark that we just seeded
+    update_option( 'pmw_seed_just_activated', true );
+}
+
 // ─────────────────────────────────────────────────────────────
-// HOMEPAGE SETTINGS
+// HOMEPAGE
 // ─────────────────────────────────────────────────────────────
 
 function pmw_seed_homepage() {
-
     // Find or create the homepage page
     $homepage = get_posts( [
         'post_type'   => 'page',
@@ -275,7 +59,7 @@ function pmw_seed_homepage() {
             'post_title'   => 'Home',
             'post_type'    => 'page',
             'post_status'  => 'publish',
-            'post_content' => '',
+            'post_content' => 'Welcome to Precious Market Watch - Your trusted source for precious metals and gemstone information.',
         ] );
     } else {
         $page_id = $homepage[0]->ID;
@@ -285,14 +69,301 @@ function pmw_seed_homepage() {
     update_option( 'show_on_front', 'page' );
     update_option( 'page_on_front', $page_id );
 
-    // Seed ACF homepage hero fields
-    update_field( 'hero', [
-        'title'            => 'Trusted Insights for Precious Metals & Gemstones',
-        'subtitle'         => 'Your authoritative source for gold, silver, platinum, diamonds, and fine gemstones. Expert analysis, market data, and investment guidance from industry specialists.',
-        'background_image' => null,
-    ], $page_id );
+    // Seed ACF homepage hero fields if ACF exists
+    if ( function_exists( 'update_field' ) ) {
+        update_field( 'hero', [
+            'title'            => 'Trusted Insights for Precious Metals & Gemstones',
+            'subtitle'         => 'Your authoritative source for gold, silver, platinum, diamonds, and fine gemstones. Expert analysis, market data, and investment guidance.',
+            'background_image' => null,
+        ], $page_id );
 
-    update_field( 'newsletter', [
-        'email' => '',
-    ], $page_id );
+        update_field( 'newsletter', [
+            'email' => '',
+        ], $page_id );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CATEGORIES
+// ─────────────────────────────────────────────────────────────
+
+function pmw_seed_categories() {
+    $categories = [
+        'precious-metals' => 'Precious Metals',
+        'gemstones'       => 'Gemstones',
+        'gold'            => 'Gold',
+        'silver'          => 'Silver',
+        'platinum'        => 'Platinum',
+        'palladium'       => 'Palladium',
+        'diamonds'        => 'Diamonds',
+        'rubies'          => 'Rubies',
+        'sapphires'       => 'Sapphires',
+        'emeralds'        => 'Emeralds',
+        'market-analysis' => 'Market Analysis',
+        'investment'      => 'Investment',
+    ];
+
+    foreach ( $categories as $slug => $name ) {
+        $term = term_exists( $name, 'category' );
+        if ( ! $term ) {
+            wp_insert_term( $name, 'category', [ 'slug' => $slug ] );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// SAMPLE ARTICLES
+// ─────────────────────────────────────────────────────────────
+
+function pmw_seed_articles() {
+    $articles = [
+        // Precious Metals Articles
+        [
+            'title'       => 'Gold Reaches New Highs as Inflation Concerns Persist',
+            'excerpt'     => 'Central bank policies continue to drive investor interest in gold as a hedge against currency devaluation and economic uncertainty.',
+            'content'     => '<p>Gold prices have surged to record levels as persistent inflation and geopolitical uncertainty drive investors toward safe-haven assets. Gold is now trading above $2,600 per ounce, marking a significant milestone for investors.</p><p>Central banks around the world have been accumulating gold at record rates. China, Russia, and several emerging market central banks have been particularly active buyers, seeking to diversify their reserves away from the US dollar.</p><p>With inflation remaining elevated in many developed economies, investors are turning to gold as a traditional store of value. Gold\'s historical performance during inflationary periods supports its role as an effective hedge.</p>',
+            'categories'  => [ 'precious-metals', 'gold', 'market-analysis' ],
+            'author'      => 'Editor',
+            'featured'    => true,
+        ],
+        [
+            'title'       => 'Silver Industrial Demand Surges on Green Energy Push',
+            'excerpt'     => 'Solar panel production and electric vehicle manufacturing drive unprecedented demand for silver in industrial applications.',
+            'content'     => '<p>Silver demand in the industrial sector is reaching unprecedented levels as the green energy transition accelerates. Solar panel manufacturers and EV producers are consuming silver at record rates.</p><p>Unlike gold, which is primarily used for jewelry and investment, silver has significant industrial applications. Solar cells use silver as a conductor, and electric vehicles require silver components in battery technology.</p><p>This dual demand—investment interest plus industrial consumption—makes silver a compelling investment opportunity in 2024 and beyond.</p>',
+            'categories'  => [ 'precious-metals', 'silver', 'market-analysis' ],
+            'author'      => 'Editor',
+            'featured'    => false,
+        ],
+        [
+            'title'       => 'Platinum Supply Deficit: Investment Opportunity?',
+            'excerpt'     => 'Mining disruptions in South Africa create supply deficit, potentially supporting platinum prices through 2025.',
+            'content'     => '<p>Mining disruptions in South Africa, which produces about 75% of the world\'s platinum, have created a significant supply deficit. This supply squeeze is expected to continue through 2025.</p><p>Platinum is less well-known than gold and silver but has significant industrial applications in catalytic converters, electronics, and chemical processing.</p><p>The combination of supply constraints and industrial demand recovery post-pandemic suggests platinum could see significant appreciation.</p>',
+            'categories'  => [ 'precious-metals', 'platinum', 'investment' ],
+            'author'      => 'Editor',
+            'featured'    => false,
+        ],
+        // Gemstones Articles
+        [
+            'title'       => 'Lab-Grown vs Natural Diamonds: Market Impact',
+            'excerpt'     => 'How lab-grown diamonds are reshaping the natural diamond market dynamics and investor valuations.',
+            'content'     => '<p>The diamond market has undergone a significant transformation with the rise of lab-grown diamonds. Lab-grown diamonds are chemically, physically, and optically identical to natural diamonds but cost 70-80% less.</p><p>For investment purposes, natural diamonds have historically held value better than lab-grown alternatives. The resale market for lab-grown diamonds is still developing, and their rapid price decline has made them less suitable as investment vehicles.</p><p>Natural diamonds, particularly rare colors and exceptional quality stones, continue to appreciate over time and maintain strong auction results.</p>',
+            'categories'  => [ 'gemstones', 'diamonds', 'market-analysis' ],
+            'author'      => 'Editor',
+            'featured'    => true,
+        ],
+        [
+            'title'       => 'Kashmir Sapphires: Record Auction Results',
+            'excerpt'     => 'Recent auction sales highlight continued demand for rare Kashmir origin stones.',
+            'content'     => '<p>Kashmir sapphires continue to command premium prices at major auction houses. Their unique characteristics—vivid blue color combined with a silky texture—make them among the most sought-after gemstones.</p><p>A 15-carat Kashmir sapphire recently sold for over $1 million per carat at auction, demonstrating the continued strength of the fine gemstone market.</p><p>Investment-grade Kashmir sapphires remain scarce, as mining in the region has been limited for decades.</p>',
+            'categories'  => [ 'gemstones', 'sapphires', 'investment' ],
+            'author'      => 'Editor',
+            'featured'    => false,
+        ],
+        [
+            'title'       => 'Colored Gemstone Investment Trends 2024',
+            'excerpt'     => 'Which colored stones are gaining investor attention this year and why.',
+            'content'     => '<p>While diamonds dominate media coverage, colored gemstones—particularly rubies, sapphires, and emeralds—have emerged as compelling alternative investments.</p><p>Fine-quality colored gemstones have outperformed traditional investments over the past decade, with some stones appreciating 10-15% annually.</p><p>The key to gemstone investment is quality: color, clarity, and provenance. Investment-grade stones from known origins command significant premiums.</p>',
+            'categories'  => [ 'gemstones', 'investment', 'market-analysis' ],
+            'author'      => 'Editor',
+            'featured'    => false,
+        ],
+    ];
+
+    foreach ( $articles as $article ) {
+        // Check if article already exists
+        $existing = get_posts( [
+            'post_type'   => 'post',
+            'title'       => $article['title'],
+            'post_status' => 'publish',
+            'numberposts' => 1,
+        ] );
+
+        if ( ! empty( $existing ) ) {
+            continue;
+        }
+
+        // Create the post
+        $post_id = wp_insert_post( [
+            'post_title'   => $article['title'],
+            'post_content' => $article['content'],
+            'post_excerpt' => $article['excerpt'],
+            'post_type'    => 'post',
+            'post_status'  => 'publish',
+            'post_author'  => get_current_user_id() ?: 1,
+        ] );
+
+        if ( is_wp_error( $post_id ) ) {
+            continue;
+        }
+
+        // Set categories
+        wp_set_post_categories( $post_id, get_term_ids_by_slugs( $article['categories'] ) );
+
+        // Add ACF fields if available
+        if ( function_exists( 'update_field' ) ) {
+            update_field( 'read_time', '5 min read', $post_id );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// DEALERS
+// ─────────────────────────────────────────────────────────────
+
+function pmw_seed_dealers() {
+    $dealers = [
+        [
+            'name'           => 'APMEX',
+            'description'    => 'One of the largest online precious metals dealers in the US, offering an extensive selection of gold, silver, platinum, and palladium products.',
+            'short_desc'     => 'Leading online precious metals dealer with competitive pricing and fast shipping.',
+            'rating'         => 4.8,
+            'featured'       => true,
+            'metals'         => [ 'Gold', 'Silver', 'Platinum', 'Palladium' ],
+            'gemstones'      => [],
+        ],
+        [
+            'name'           => 'JM Bullion',
+            'description'    => 'Trusted dealer offering competitive prices on precious metals with fast, secure shipping and excellent customer service.',
+            'short_desc'     => 'Competitive pricing on bullion with low premiums and reliable service.',
+            'rating'         => 4.7,
+            'featured'       => true,
+            'metals'         => [ 'Gold', 'Silver', 'Platinum' ],
+            'gemstones'      => [],
+        ],
+        [
+            'name'           => 'Blue Nile',
+            'description'    => 'Leading online diamond and fine jewelry retailer with exceptional selection and competitive pricing.',
+            'short_desc'     => 'Premium diamond retailer with GIA certification and 360-degree imaging.',
+            'rating'         => 4.5,
+            'featured'       => true,
+            'metals'         => [],
+            'gemstones'      => [ 'Diamonds', 'Gemstones' ],
+        ],
+        [
+            'name'           => 'James Allen',
+            'description'    => 'Premium diamond retailer famous for 360° viewing technology and high average order values.',
+            'short_desc'     => 'Innovative diamond marketplace with advanced viewing technology.',
+            'rating'         => 4.6,
+            'featured'       => false,
+            'metals'         => [],
+            'gemstones'      => [ 'Diamonds' ],
+        ],
+        [
+            'name'           => 'SD Bullion',
+            'description'    => 'Known for industry-low premiums and transparent pricing on gold and silver bullion products.',
+            'short_desc'     => 'Lowest premiums on bullion with free shipping on large orders.',
+            'rating'         => 4.4,
+            'featured'       => false,
+            'metals'         => [ 'Gold', 'Silver' ],
+            'gemstones'      => [],
+        ],
+        [
+            'name'           => 'Augusta Precious Metals',
+            'description'    => 'Specialist in gold and silver IRAs with comprehensive investment guidance.',
+            'short_desc'     => 'Gold and silver IRA specialist with expert guidance.',
+            'rating'         => 4.7,
+            'featured'       => false,
+            'metals'         => [ 'Gold', 'Silver' ],
+            'gemstones'      => [],
+        ],
+    ];
+
+    foreach ( $dealers as $dealer ) {
+        // Check if dealer already exists
+        $existing = get_posts( [
+            'post_type'   => 'dealer',
+            'title'       => $dealer['name'],
+            'post_status' => 'publish',
+            'numberposts' => 1,
+        ] );
+
+        if ( ! empty( $existing ) ) {
+            continue;
+        }
+
+        // Create dealer post
+        $post_id = wp_insert_post( [
+            'post_title'   => $dealer['name'],
+            'post_content' => $dealer['description'],
+            'post_excerpt' => $dealer['short_desc'],
+            'post_type'    => 'dealer',
+            'post_status'  => 'publish',
+        ] );
+
+        if ( is_wp_error( $post_id ) ) {
+            continue;
+        }
+
+        // Add ACF fields if available
+        if ( function_exists( 'update_field' ) ) {
+            update_field( 'short_description', $dealer['short_desc'], $post_id );
+            update_field( 'rating', $dealer['rating'], $post_id );
+            update_field( 'featured', $dealer['featured'], $post_id );
+            update_field( 'review_link', '', $post_id );
+            update_field( 'affiliate_link', '#', $post_id );
+        }
+
+        // Set metal types
+        if ( ! empty( $dealer['metals'] ) ) {
+            wp_set_object_terms( $post_id, $dealer['metals'], 'pmw-metal-type' );
+        }
+
+        // Set gemstone types
+        if ( ! empty( $dealer['gemstones'] ) ) {
+            wp_set_object_terms( $post_id, $dealer['gemstones'], 'pmw-gemstone-type' );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CATEGORY PAGES
+// ─────────────────────────────────────────────────────────────
+
+function pmw_seed_category_pages() {
+    $pages = [
+        [
+            'title' => 'Precious Metals',
+            'slug'  => 'precious-metals',
+            'content' => 'Comprehensive guide to precious metals investment.',
+        ],
+        [
+            'title' => 'Gemstones',
+            'slug'  => 'gemstones',
+            'content' => 'Expert insights on gemstone investment and valuation.',
+        ],
+    ];
+
+    foreach ( $pages as $page ) {
+        $existing = get_posts( [
+            'post_type'   => 'page',
+            'title'       => $page['title'],
+            'post_status' => 'publish',
+            'numberposts' => 1,
+        ] );
+
+        if ( empty( $existing ) ) {
+            wp_insert_post( [
+                'post_title'   => $page['title'],
+                'post_name'    => $page['slug'],
+                'post_content' => $page['content'],
+                'post_type'    => 'page',
+                'post_status'  => 'publish',
+            ] );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// HELPER FUNCTION: Get term IDs by slugs
+// ─────────────────────────────────────────────────────────────
+
+function get_term_ids_by_slugs( $slugs ) {
+    $term_ids = [];
+    foreach ( $slugs as $slug ) {
+        $term = get_term_by( 'slug', $slug, 'category' );
+        if ( $term ) {
+            $term_ids[] = $term->term_id;
+        }
+    }
+    return $term_ids;
 }
