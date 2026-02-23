@@ -2,12 +2,16 @@
   RewriteEngine On
   RewriteBase /
 
-  # Pass all /wp/ requests through to WordPress untouched
-  RewriteRule ^wp/ - [L]
+  # Explicitly pass WordPress entire /wp/ tree untouched
+  # (includes /wp/wp-admin/, /wp/wp-content/, all .js/.css files)
+  RewriteRule ^wp(/.*)?$ - [L]
 
-  # SPA fallback — serve index.html for all non-file, non-directory routes
+  # Don't rewrite actual files or directories that exist
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # SPA fallback — serve index.html for all other routes
   # This allows React Router to handle client-side navigation
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . /index.html [L]
+  RewriteRule ^ /index.html [L]
 </IfModule>
