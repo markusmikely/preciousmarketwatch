@@ -109,8 +109,8 @@ function pmw_register_taxonomies() {
         'graphql_plural_name' => 'topics',
     ] );
 
-    // ── Metal Type (for posts + market insights) ─
-    register_taxonomy( 'pmw-metal-type', [ 'post', 'market-insight' ], [
+    // ── Metal Type (for all content types) ─
+    register_taxonomy( 'pmw-metal-type', [ 'post', 'market-insight', 'dealer', 'affiliate-product' ], [
         'labels' => [
             'name'          => 'Metal Types',
             'singular_name' => 'Metal Type',
@@ -125,8 +125,8 @@ function pmw_register_taxonomies() {
         'graphql_plural_name' => 'metalTypes',
     ] );
 
-    // ── Gemstone Type ────────────────────────
-    register_taxonomy( 'pmw-gemstone-type', [ 'post', 'market-insight' ], [
+    // ── Gemstone Type (for all content types) ─
+    register_taxonomy( 'pmw-gemstone-type', [ 'post', 'market-insight', 'dealer', 'affiliate-product' ], [
         'labels' => [
             'name'          => 'Gemstone Types',
             'singular_name' => 'Gemstone Type',
