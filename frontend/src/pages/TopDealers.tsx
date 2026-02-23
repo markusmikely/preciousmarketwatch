@@ -68,10 +68,16 @@ export default function TopDealers() {
     variables: { first: 50 },
   });
 
-  // Transform and filter dealers
+  // Transform and filter dealers — ALWAYS have fallback data
   const allDealers = useMemo(() => {
-    if (!data?.dealers?.nodes) return fallbackDealers;
-    return data.dealers.nodes.map((dealer: any) => transformDealer(dealer));
+    try {
+      if (data?.dealers?.nodes && Array.isArray(data.dealers.nodes) && data.dealers.nodes.length > 0) {
+        return data.dealers.nodes.map((dealer: any) => transformDealer(dealer));
+      }
+    } catch (e) {
+      console.warn("[TopDealers] Error transforming dealers, using fallback:", e);
+    }
+    return fallbackDealers;
   }, [data]);
 
   const filteredDealers = useMemo(() => {

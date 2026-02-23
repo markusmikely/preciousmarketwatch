@@ -1,4 +1,5 @@
 import { useParams, Link } from "react-router-dom";
+import { useMemo } from "react";
 import { Clock, User, Calendar, Share2, Bookmark, ArrowLeft, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { ArticleCard } from "@/components/shared/ArticleCard";
@@ -131,23 +132,42 @@ export default function Article() {
     }
   );
 
-  const article = articleData?.postBy || fallbackArticle;
-  const relatedArticlesList = relatedData?.posts?.nodes?.map((post: any, index: number) => ({
-    id: post.id,
-    title: post.title,
-    excerpt: post.excerpt,
-    slug: post.slug,
-    category: post.categories?.nodes[0]?.name || "General",
-    author: post.author?.node?.name || "Editorial Team",
-    readTime: post.articleMeta?.readTime || "5 min read",
-    date: new Date(post.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-    image: post.featuredImage?.node?.sourceUrl || "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
-    href: `/articles/${post.slug}`,
-  })) || relatedArticles;
+  // Safely handle missing article with fallback
+  const article = useMemo(() => {
+    try {
+      if (articleData?.postBy) return articleData.postBy;
+    } catch (e) {
+      console.warn("[Article] Error parsing article data:", e);
+    }
+    return fallbackArticle;
+  }, [articleData]);
+
+  // Safely map related articles with fallback
+  const relatedArticlesList = useMemo(() => {
+    try {
+      if (relatedData?.posts?.nodes && Array.isArray(relatedData.posts.nodes) && relatedData.posts.nodes.length > 0) {
+        return relatedData.posts.nodes.map((post: any) => ({
+          id: post.id,
+          title: post.title,
+          excerpt: post.excerpt,
+          slug: post.slug,
+          category: post.categories?.nodes[0]?.name || "General",
+          author: post.author?.node?.name || "Editorial Team",
+          readTime: post.articleMeta?.readTime || "5 min read",
+          date: new Date(post.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+          image: post.featuredImage?.node?.sourceUrl || "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
+          href: `/articles/${post.slug}`,
+        }));
+      }
+    } catch (e) {
+      console.warn("[Article] Error mapping related articles:", e);
+    }
+    return relatedArticles;
+  }, [relatedData]);
 
   return (
     <PageLayout>
-      <DataFetchStateHandler loading={articleLoading} error={articleError} onRetry={refetchArticle}>
+      <DataFetchStateHandler loading={articleLoading} error={articleError} onRetry={refetchArticle} hideError={true}>
         {/* Article Header */}
         <header className="bg-gradient-hero py-12 lg:py-16">
           <div className="container mx-auto px-4 lg:px-8">

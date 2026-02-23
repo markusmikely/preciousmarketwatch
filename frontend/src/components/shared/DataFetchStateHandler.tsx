@@ -7,11 +7,13 @@ interface DataFetchStateHandlerProps {
   children: React.ReactNode;
   onRetry?: () => void;
   loadingMessage?: string;
+  hideError?: boolean; // If true, show children even on error (graceful degradation)
 }
 
 /**
  * Reusable component for handling loading and error states
  * Shows loading spinner or error message, otherwise renders children
+ * Supports graceful degradation (show children even on error)
  */
 export function DataFetchStateHandler({
   loading,
@@ -19,12 +21,18 @@ export function DataFetchStateHandler({
   children,
   onRetry,
   loadingMessage = "Loading content...",
+  hideError = false,
 }: DataFetchStateHandlerProps) {
+  // If hideError is true and there's an error, still render children (graceful degradation)
+  if (hideError && error) {
+    return <>{children}</>;
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground">{loadingMessage}</p>
+        <p className="text-muted-foreground text-sm">{loadingMessage}</p>
       </div>
     );
   }
