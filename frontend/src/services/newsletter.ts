@@ -24,12 +24,26 @@ export async function subscribeNewsletter(
     body: JSON.stringify({ email: email.trim(), ...(tags?.length ? { tags } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return {
-      success: false,
-      message: data?.message || "Something went wrong. Please try again.",
-      error_code: data?.error_code,
-    };
+
+  if (res.ok) {
+    return { success: true, message: data?.message || "Subscribed!" };
   }
-  return { success: true, message: data?.message || "Subscribed!" };
+
+  // User-friendly messages; do not expose technical detail
+  let message: string;
+  if (res.status === 403) {
+    message = "Unable to subscribe. Please try again later.";
+  } else if (res.status >= 500) {
+    message = "Something went wrong. Please try again later.";
+  } else if (res.status === 400 && data?.message) {
+    message = data.message;
+  } else {
+    message = "Something went wrong. Please try again.";
+  }
+
+  return {
+    success: false,
+    message,
+    error_code: data?.error_code,
+  };
 }

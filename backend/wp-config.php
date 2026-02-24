@@ -31,6 +31,8 @@ if (!defined('PMW_MAILCHIMP_API_KEY')) {
 if (!defined('PMW_MAILCHIMP_LIST_ID')) {
     define('PMW_MAILCHIMP_LIST_ID', $_ENV['PMW_MAILCHIMP_LIST_ID'] ?? $_ENV['MAILCHIMP_AUDIENCE_ID'] ?? '');
 }
+// Uncomment next line to log Mailchimp key/list and raw API response (wp-content/debug.log); remove after 403 resolved
+// define('PMW_MAILCHIMP_DEBUG', true);
 
 
 

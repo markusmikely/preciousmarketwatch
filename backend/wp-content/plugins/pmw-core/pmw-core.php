@@ -706,13 +706,17 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
         return new WP_REST_Response( [ 'success' => false, 'message' => 'Newsletter is not configured.' ], 503 );
     }
 
-    // Mailchimp key format: xxxxx-us19 → datacenter "us19"
-    $dc = 'us1';
-    if ( preg_match( '/-([a-z0-9]+)$/i', $api_key, $m ) ) {
-        $dc = strtolower( $m[1] );
+    // Debug: confirm constants at runtime (set PMW_MAILCHIMP_DEBUG in wp-config to enable; remove after 403 resolved)
+    if ( defined( 'PMW_MAILCHIMP_DEBUG' ) && PMW_MAILCHIMP_DEBUG && function_exists( 'error_log' ) ) {
+        error_log( '[PMW Newsletter] MC KEY: ' . ( defined( 'PMW_MAILCHIMP_API_KEY' ) ? 'SET (' . strlen( $api_key ) . ' chars)' : 'NOT SET' ) );
+        error_log( '[PMW Newsletter] MC LIST: ' . ( defined( 'PMW_MAILCHIMP_LIST_ID' ) ? $list_id : 'NOT SET' ) );
     }
 
-    $url = sprintf( 'https://%s.api.mailchimp.com/3.0/lists/%s/members', $dc, $list_id );
+    // Data centre from API key suffix (e.g. xxxxx-us16 → us16)
+    $parts = explode( '-', $api_key );
+    $dc    = ( count( $parts ) >= 2 && ! empty( $parts[1] ) ) ? strtolower( $parts[1] ) : 'us1';
+
+    $url  = sprintf( 'https://%s.api.mailchimp.com/3.0/lists/%s/members', $dc, $list_id );
     $body = [
         'email_address' => $email,
         'status'        => 'subscribed',
@@ -723,11 +727,9 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
         }, $tags );
     }
 
-    // Mailchimp API key auth: use Basic with "anystring" as user and API key as password
-    $auth_basic = base64_encode( 'anystring:' . $api_key );
     $resp = wp_remote_post( $url, [
         'headers' => [
-            'Authorization' => 'Basic ' . $auth_basic,
+            'Authorization' => 'Basic ' . base64_encode( 'anystring:' . $api_key ),
             'Content-Type'  => 'application/json',
         ],
         'body'    => wp_json_encode( $body ),
@@ -742,25 +744,30 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
     $raw  = wp_remote_retrieve_body( $resp );
     $data = json_decode( $raw, true );
 
-    // Log raw Mailchimp response for diagnosis (remove or reduce in production if desired)
     if ( function_exists( 'error_log' ) ) {
-        error_log( '[PMW Newsletter] Mailchimp response code=' . $code . ' body=' . $raw );
+        if ( defined( 'PMW_MAILCHIMP_DEBUG' ) && PMW_MAILCHIMP_DEBUG ) {
+            error_log( '[PMW Newsletter] MC RESPONSE: ' . $raw );
+        } elseif ( $code !== 200 ) {
+            error_log( '[PMW Newsletter] Mailchimp response code=' . $code . ' body=' . $raw );
+        }
     }
 
-    if ( $code === 200 ) {
+    if ( $code === 200 || $code === 201 ) {
         return new WP_REST_Response( [ 'success' => true, 'message' => 'Subscribed! Check your email to confirm.' ], 200 );
     }
 
+    // 400: validation or duplicate (214 = Member Exists)
     if ( $code === 400 && is_array( $data ) ) {
-        $msg = isset( $data['title'] ) ? $data['title'] : 'Invalid request';
-        if ( isset( $data['detail'] ) && strpos( (string) $data['detail'], 'already' ) !== false ) {
+        $msg     = isset( $data['title'] ) ? $data['title'] : 'Invalid request';
+        $detail  = isset( $data['detail'] ) ? (string) $data['detail'] : '';
+        $status  = isset( $data['status'] ) ? (int) $data['status'] : 0;
+        if ( $status === 214 || stripos( $detail, 'already' ) !== false || stripos( $detail, 'exists' ) !== false ) {
             $msg = 'This email is already subscribed.';
         }
-        $err_code = isset( $data['status'] ) ? (int) $data['status'] : 400;
-        return new WP_REST_Response( [ 'success' => false, 'message' => $msg, 'error_code' => $err_code ], 400 );
+        return new WP_REST_Response( [ 'success' => false, 'message' => $msg, 'error_code' => $status ? $status : 400 ], 400 );
     }
 
-    // Return raw error code for diagnosis (401 bad key, 400 bad list, etc.)
+    // 403, 401, 5xx etc.: do not expose technical detail to frontend
     $err_code = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : $code;
     return new WP_REST_Response( [
         'success'    => false,
