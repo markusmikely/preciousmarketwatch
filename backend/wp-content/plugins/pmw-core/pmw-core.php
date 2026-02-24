@@ -618,6 +618,7 @@ function pmw_register_acf_fields() {
 
 add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
+add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
 
@@ -774,6 +775,45 @@ function pmw_rest_get_prices_history( WP_REST_Request $request ) {
     $response = new WP_REST_Response( $payload, 200 );
     // CACHE-04: Historical data rarely changes
     $response->header( 'Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400' );
+    return $response;
+}
+
+// ── Latest price per metal (for metal page heroes) ──────────────────────
+function pmw_register_prices_latest_route() {
+    register_rest_route( 'pmw/v1', '/prices/latest', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_prices_latest',
+        'permission_callback' => '__return_true',
+    ] );
+}
+
+function pmw_rest_get_prices_latest( WP_REST_Request $request ) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'metal_prices';
+    $metals = [ 'gold', 'silver', 'platinum', 'palladium' ];
+    $result = [];
+
+    foreach ( $metals as $metal ) {
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT date, price_usd, price_gbp FROM $table WHERE metal = %s ORDER BY date DESC LIMIT 1",
+                $metal
+            ),
+            ARRAY_A
+        );
+        if ( $row ) {
+            $result[ $metal ] = [
+                'date'      => $row['date'],
+                'price_usd' => isset( $row['price_usd'] ) ? (float) $row['price_usd'] : null,
+                'price_gbp' => isset( $row['price_gbp'] ) && $row['price_gbp'] > 0 ? (float) $row['price_gbp'] : null,
+            ];
+        } else {
+            $result[ $metal ] = null;
+        }
+    }
+
+    $response = new WP_REST_Response( $result, 200 );
+    $response->header( 'Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=3600' );
     return $response;
 }
 

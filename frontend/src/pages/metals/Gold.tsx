@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, TrendingUp, BarChart3, Shield, Award, Coins } from "lucide-react";
+import { ArrowRight, BarChart3, Shield, Award, Coins } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
@@ -7,6 +7,10 @@ import { DealerCard } from "@/components/shared/DealerCard";
 import { Button } from "@/components/ui/button";
 import { PriceChart } from "@/components/shared/PriceChart";
 import { useMetalPageData } from "@/components/metals/useMetalPageData";
+import { MetalHeroPrice } from "@/components/metals/MetalHeroPrice";
+import { useLatestMetalPrices } from "@/hooks/useLatestMetalPrices";
+import { useState } from "react";
+import type { Currency } from "@/hooks/useLatestMetalPrices";
 
 const FALLBACK_ARTICLES = [
   { title: "Gold ETFs vs Physical Gold", excerpt: "Comprehensive comparison of gold investment vehicles.", category: "Investment Guide", author: "Staff", date: "Dec 9, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80", href: "/market-insights" },
@@ -27,7 +31,9 @@ const investmentOptions = [
 ];
 
 export default function Gold() {
+  const [currency, setCurrency] = useState<Currency>("usd");
   const { articles: graphqlArticles, dealers: graphqlDealers, loading } = useMetalPageData("gold");
+  const { latest, loading: priceLoading } = useLatestMetalPrices();
   const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
   const dealers = graphqlDealers.length > 0 ? graphqlDealers : FALLBACK_DEALERS;
 
@@ -43,25 +49,20 @@ export default function Gold() {
         ]}
         badge="Safe Haven Asset"
       >
-        <div className="flex items-center gap-6 mt-6">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-display font-bold text-silver-light">$2,634.20</span>
-            <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20 text-success text-sm font-medium">
-              <TrendingUp className="h-4 w-4" />
-              +0.48%
-            </span>
-          </div>
-          <div className="text-silver text-sm">
-            <span className="block">24h High: $2,641.80</span>
-            <span className="block">24h Low: $2,618.30</span>
-          </div>
-        </div>
+        <MetalHeroPrice
+          metal="gold"
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          latest={latest?.gold ?? null}
+          loading={priceLoading}
+          secondaryLine={<span className="block">Per troy ounce</span>}
+        />
       </PageHero>
 
       {/* Price Chart */}
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <PriceChart metal="gold" />
+          <PriceChart metal="gold" currency={currency} onCurrencyChange={setCurrency} />
         </div>
       </section>
 

@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, TrendingUp, Zap, Factory, Coins, Sun } from "lucide-react";
+import { ArrowRight, Zap, Factory, Coins, Sun } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { PriceChart } from "@/components/shared/PriceChart";
 import { Button } from "@/components/ui/button";
 import { useMetalPageData } from "@/components/metals/useMetalPageData";
+import { MetalHeroPrice } from "@/components/metals/MetalHeroPrice";
+import { useLatestMetalPrices } from "@/hooks/useLatestMetalPrices";
+import { useState } from "react";
+import type { Currency } from "@/hooks/useLatestMetalPrices";
 
 const FALLBACK_ARTICLES = [
   { title: "Silver's Role in the Green Energy Revolution", excerpt: "How solar panel demand and EV production reshape the silver market.", category: "Market Analysis", author: "Staff", date: "Dec 9, 2024", readTime: "6 min read", image: "https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=800&q=80", href: "/market-insights" },
@@ -21,7 +25,9 @@ const demandSectors = [
 ];
 
 export default function Silver() {
+  const [currency, setCurrency] = useState<Currency>("usd");
   const { articles: graphqlArticles } = useMetalPageData("silver");
+  const { latest, loading: priceLoading } = useLatestMetalPrices();
   const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
 
   return (
@@ -36,25 +42,20 @@ export default function Silver() {
         ]}
         badge="Industrial & Investment"
       >
-        <div className="flex items-center gap-6 mt-6">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-display font-bold text-silver-light">$31.24</span>
-            <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20 text-success text-sm font-medium">
-              <TrendingUp className="h-4 w-4" />
-              +1.13%
-            </span>
-          </div>
-          <div className="text-silver text-sm">
-            <span className="block">Gold/Silver Ratio: 84.3</span>
-            <span className="block">Industrial demand: Rising</span>
-          </div>
-        </div>
+        <MetalHeroPrice
+          metal="silver"
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          latest={latest?.silver ?? null}
+          loading={priceLoading}
+          secondaryLine={<span className="block">Per troy ounce</span>}
+        />
       </PageHero>
 
       {/* Price Chart */}
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <PriceChart metal="silver" />
+          <PriceChart metal="silver" currency={currency} onCurrencyChange={setCurrency} />
         </div>
       </section>
 

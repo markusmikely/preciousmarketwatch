@@ -32,6 +32,9 @@ interface PriceChartProps {
   color?: string;
   gradientId?: string;
   title?: string;
+  /** When set, chart currency is controlled by parent (e.g. metal page currency toggle). */
+  currency?: Currency;
+  onCurrencyChange?: (c: Currency) => void;
 }
 
 const RANGES: Range[] = ["1M", "3M", "6M", "1Y", "5Y", "all"];
@@ -54,9 +57,14 @@ export function PriceChart({
   color = METAL_COLORS[metal],
   gradientId = `priceChartGradient-${metal}`,
   title,
+  currency: controlledCurrency,
+  onCurrencyChange,
 }: PriceChartProps) {
+  const [internalCurrency, setInternalCurrency] = useState<Currency>("usd");
+  const currency = controlledCurrency ?? internalCurrency;
+  const setCurrency = onCurrencyChange ?? setInternalCurrency;
+
   const [range, setRange] = useState<Range>("1Y");
-  const [currency, setCurrency] = useState<Currency>("usd");
   const [data, setData] = useState<DataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

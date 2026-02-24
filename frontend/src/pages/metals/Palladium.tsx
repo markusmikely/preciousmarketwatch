@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, TrendingUp, Car, Cpu, Factory, Zap } from "lucide-react";
+import { ArrowRight, Car, Cpu, Factory, Zap } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { PriceChart } from "@/components/shared/PriceChart";
 import { Button } from "@/components/ui/button";
 import { useMetalPageData } from "@/components/metals/useMetalPageData";
+import { MetalHeroPrice } from "@/components/metals/MetalHeroPrice";
+import { useLatestMetalPrices } from "@/hooks/useLatestMetalPrices";
+import { useState } from "react";
+import type { Currency } from "@/hooks/useLatestMetalPrices";
 
 const FALLBACK_ARTICLES = [
   { title: "Palladium Supply Crisis: Russia's Market Impact", excerpt: "How geopolitical factors affect palladium supply and pricing.", category: "Market Analysis", author: "Staff", date: "Dec 9, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80", href: "/market-insights" },
@@ -21,7 +25,9 @@ const useCases = [
 ];
 
 export default function Palladium() {
+  const [currency, setCurrency] = useState<Currency>("usd");
   const { articles: graphqlArticles } = useMetalPageData("palladium");
+  const { latest, loading: priceLoading } = useLatestMetalPrices();
   const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
 
   return (
@@ -36,25 +42,20 @@ export default function Palladium() {
         ]}
         badge="Automotive Essential"
       >
-        <div className="flex items-center gap-6 mt-6">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-display font-bold text-silver-light">$1,024.80</span>
-            <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20 text-success text-sm font-medium">
-              <TrendingUp className="h-4 w-4" />
-              +0.65%
-            </span>
-          </div>
-          <div className="text-silver text-sm">
-            <span className="block">Primary source: Russia, S. Africa</span>
-            <span className="block">Automotive demand: Strong</span>
-          </div>
-        </div>
+        <MetalHeroPrice
+          metal="palladium"
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          latest={latest?.palladium ?? null}
+          loading={priceLoading}
+          secondaryLine={<span className="block">Per troy ounce</span>}
+        />
       </PageHero>
 
       {/* Price Chart */}
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <PriceChart metal="palladium" />
+          <PriceChart metal="palladium" currency={currency} onCurrencyChange={setCurrency} />
         </div>
       </section>
 
