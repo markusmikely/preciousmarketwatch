@@ -680,7 +680,7 @@ function pmw_register_subscribe_route() {
                 'type'              => 'string',
                 'sanitize_callback' => 'sanitize_email',
                 'validate_callback'  => function ( $value ) {
-                    return is_email( $value ) ? true : new WP_Error( 'invalid_email', 'Invalid email address', [ 'status' => 400 ] );
+                    return is_email( $value ) ? true : new WP_Error( 'invalid_email', 'Please enter a valid email address.', [ 'status' => 400 ] );
                 },
             ],
             'tags' => [
@@ -716,16 +716,16 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
     $parts = explode( '-', $api_key );
     $dc    = ( count( $parts ) >= 2 && ! empty( $parts[1] ) ) ? strtolower( $parts[1] ) : 'us1';
 
+    if ( defined( 'PMW_MAILCHIMP_DEBUG' ) && PMW_MAILCHIMP_DEBUG && function_exists( 'error_log' ) ) {
+        error_log( '[PMW Newsletter] DC: ' . $dc );
+    }
+
     $url  = sprintf( 'https://%s.api.mailchimp.com/3.0/lists/%s/members', $dc, $list_id );
     $body = [
         'email_address' => $email,
         'status'        => 'subscribed',
     ];
-    if ( ! empty( $tags ) ) {
-        $body['tags'] = array_map( function ( $name ) {
-            return [ 'name' => $name, 'status' => 'active' ];
-        }, $tags );
-    }
+    // Tags are not sent in initial POST (can cause failures); applied via separate call after success (Fix 4)
 
     $resp = wp_remote_post( $url, [
         'headers' => [
@@ -753,6 +753,28 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
     }
 
     if ( $code === 200 || $code === 201 ) {
+        // Apply tags via separate call (Fix 4); tag failures are non-fatal
+        if ( ! empty( $tags ) ) {
+            $subscriber_hash = md5( strtolower( trim( $email ) ) );
+            $tags_url        = sprintf(
+                'https://%s.api.mailchimp.com/3.0/lists/%s/members/%s/tags',
+                $dc,
+                $list_id,
+                $subscriber_hash
+            );
+            wp_remote_post( $tags_url, [
+                'headers' => [
+                    'Authorization' => 'Basic ' . base64_encode( 'anystring:' . $api_key ),
+                    'Content-Type'  => 'application/json',
+                ],
+                'body'    => wp_json_encode( [
+                    'tags' => array_map( function ( $name ) {
+                        return [ 'name' => $name, 'status' => 'active' ];
+                    }, $tags ),
+                ] ),
+                'timeout' => 10,
+            ] );
+        }
         return new WP_REST_Response( [ 'success' => true, 'message' => 'Subscribed! Check your email to confirm.' ], 200 );
     }
 
