@@ -297,7 +297,7 @@ function pmw_metals_seed_admin_scripts() {
 }
 
 /**
- * AJAX: validate Metals.dev API key (lightweight /v1/latest call).
+ * AJAX: validate Metals.dev API key (lightweight /v1/latest call) .
  */
 function pmw_metals_seed_ajax_validate_key() {
 	if ( ! current_user_can( 'manage_options' ) ) {
