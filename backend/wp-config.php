@@ -23,16 +23,11 @@ define('PMW_PLATINUM_API_URL',   $_ENV['PMW_PLATINUM_API_URL']   ?? '');
 define('PMW_PALLADIUM_API_URL',  $_ENV['PMW_PALLADIUM_API_URL']  ?? '');
 define('PMW_CRON_SECRET',        $_ENV['PMW_CRON_SECRET']        ?? '');
 
-//define('WP_CONTENT_DIR', dirname(__FILE__) . '/wp-content');
-//define('WP_CONTENT_URL', 'https://www.preciousmarketwatch.com/wp/wp-content');
+
 
 if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {
     $_SERVER['HTTPS'] = 'on';
 }
-
-//define('WP_HOME',    $_ENV['WP_HOME']    ?? '');
-//define('WP_SITEURL', $_ENV['WP_SITEURL'] ?? '');
-
 
 // The actual folder where WP is installed (for Admin assets)
 define('WP_SITEURL', 'https://www.preciousmarketwatch.com/wp');
@@ -47,13 +42,5 @@ $table_prefix = 'wp_';
 if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
-// Enable Debugging
-define( 'WP_DEBUG', true );
 
-// Log errors to /wp-content/debug.log
-define( 'WP_DEBUG_LOG', true );
-
-// Do not show errors directly on the screen (keeps the site looking "clean" while you fix it)
-define( 'WP_DEBUG_DISPLAY', false );
-@ini_set( 'display_errors', 0 );
 require_once ABSPATH . 'wp-settings.php';

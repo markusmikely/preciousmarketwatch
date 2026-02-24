@@ -33,6 +33,9 @@ jobs:
           VITE_IS_PRODUCTION: 'true'
           VITE_METALS_DEV_API_KEY: ${{ secrets.VITE_METALS_DEV_API_KEY }}
           VITE_WORDPRESS_API_URL: ${{ secrets.VITE_WORDPRESS_API_URL }}
+          # Analytics (baked into build; optional — leave unset to disable)
+          VITE_GA4_MEASUREMENT_ID: ${{ secrets.VITE_GA4_MEASUREMENT_ID }}
+          VITE_CLARITY_PROJECT_ID: ${{ secrets.VITE_CLARITY_PROJECT_ID }}
         run: npm run build
 
       - name: Deploy to IONOS via SFTP
