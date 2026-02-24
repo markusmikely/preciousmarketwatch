@@ -1,11 +1,10 @@
 /**
  * Fetch latest price per metal from WordPress backend (metal_prices table).
- * GET /wp-json/pmw/v1/prices/latest
+ * GET .../wp-json/pmw/v1/prices/latest
  */
-const API_BASE =
-  (import.meta.env.VITE_WORDPRESS_API_URL || "http://localhost:8888/wp")
-    .replace(/\/graphql\/?$/, "")
-    .replace(/\/$/, "") + "/wp-json";
+import { getWordPressRestBaseUrl } from "@/lib/wordPressRestUrl";
+
+const API_BASE = getWordPressRestBaseUrl();
 
 export interface LatestPrice {
   date: string;

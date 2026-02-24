@@ -10,6 +10,27 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// ── CORS for REST API (Fix D: allow React frontend to call pmw/v1 from browser) ──
+add_action( 'rest_api_init', function() {
+    remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
+    add_filter( 'rest_pre_serve_request', function( $value ) {
+        $origin  = function_exists( 'get_http_origin' ) ? get_http_origin() : '';
+        $allowed = [
+            'https://preciousmarketwatch.com',
+            'https://www.preciousmarketwatch.com',
+            'http://localhost:3000',
+            'http://localhost:5173',
+        ];
+        if ( $origin && in_array( $origin, $allowed, true ) ) {
+            header( 'Access-Control-Allow-Origin: ' . $origin );
+        }
+        header( 'Access-Control-Allow-Methods: POST, GET, OPTIONS' );
+        header( 'Access-Control-Allow-Credentials: true' );
+        header( 'Access-Control-Allow-Headers: Authorization, Content-Type' );
+        return $value;
+    } );
+}, 15 );
+
 // ─────────────────────────────────────────────
 // 1. CUSTOM POST TYPES
 // ─────────────────────────────────────────────

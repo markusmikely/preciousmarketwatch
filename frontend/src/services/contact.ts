@@ -1,10 +1,9 @@
 /**
- * Contact form submit — POST /wp-json/pmw/v1/contact/submit
+ * Contact form submit — POST https://preciousmarketwatch.com/wp/wp-json/pmw/v1/contact/submit
  */
-const API_BASE =
-  (import.meta.env.VITE_WORDPRESS_API_URL || "http://localhost:8888/wp")
-    .replace(/\/graphql\/?$/, "")
-    .replace(/\/$/, "") + "/wp-json";
+import { getWordPressRestBaseUrl } from "@/lib/wordPressRestUrl";
+
+const API_BASE = getWordPressRestBaseUrl();
 
 export interface ContactSubmitPayload {
   name: string;

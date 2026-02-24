@@ -12,11 +12,9 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getWordPressRestBaseUrl } from "@/lib/wordPressRestUrl";
 
-const API_BASE =
-  (import.meta.env.VITE_WORDPRESS_API_URL || "http://localhost:8888/wp")
-    .replace(/\/graphql\/?$/, "")
-    .replace(/\/$/, "") + "/wp-json";
+const API_BASE = getWordPressRestBaseUrl();
 
 type Metal = "gold" | "silver" | "platinum" | "palladium";
 type Range = "1M" | "3M" | "6M" | "1Y" | "5Y" | "all";

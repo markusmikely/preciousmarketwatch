@@ -1,11 +1,10 @@
 /**
  * Newsletter subscribe — single shared endpoint for menu, footer, and article sign-up.
- * POST /wp-json/pmw/v1/subscribe
+ * POST https://preciousmarketwatch.com/wp/wp-json/pmw/v1/subscribe
  */
-const API_BASE =
-  (import.meta.env.VITE_WORDPRESS_API_URL || "http://localhost:8888/wp")
-    .replace(/\/graphql\/?$/, "")
-    .replace(/\/$/, "") + "/wp-json";
+import { getWordPressRestBaseUrl } from "@/lib/wordPressRestUrl";
+
+const API_BASE = getWordPressRestBaseUrl();
 
 export interface SubscribeResult {
   success: boolean;
