@@ -33,10 +33,10 @@
 - **ANALYTICS-04** — Privacy, Cookie, Affiliate disclosure pages present and linked
 - **ANALYTICS-05** — Performance baseline process in `docs/PERFORMANCE.md`
 
-### Section 5 — Homepage
-- **HOME-01** — Coverage stats from GraphQL
-- **HOME-02** — Mailchimp newsletter (needs API route; Vite has no `/api`, could use WordPress REST)
-- **HOME-03** — AI dealer reviews
+### Section 5 — Homepage ✅
+- **HOME-01** — Coverage stats from GraphQL: `CoverageStats` on homepage with counts from `COVERAGE_STATS_QUERY` (posts, dealers); metals fixed at 4
+- **HOME-02** — Mailchimp newsletter: WordPress REST `POST /pmw/v1/subscribe` in pmw-core; set `PMW_MAILCHIMP_API_KEY` and `PMW_MAILCHIMP_LIST_ID` in wp-config
+- **HOME-03** — AI dealer reviews: `AIDealerReviews` section on homepage (independent/AI-verified copy, dealer highlights, link to Top Dealers & Editorial Standards)
 
 ### Section 6–10
 - Metal hero from GraphQL, dealer filters, contact form, affiliate setup, pre-launch checklist, etc.

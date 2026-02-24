@@ -1,31 +1,50 @@
 import { TrendingUp, Users, BookOpen, Award } from "lucide-react";
 
-export function CoverageStats() {
+/** HOME-01: Stats can be driven by GraphQL counts; fallback to defaults when loading or no data */
+export interface CoverageStatsProps {
+  /** Number of metals (default 4) */
+  metalsCount?: number;
+  /** Number of articles/posts from GraphQL */
+  articlesCount?: number;
+  /** Number of dealers from GraphQL */
+  dealersCount?: number;
+}
+
+const METALS_LABEL = "Precious Metals";
+const METALS_DESC = "Gold, Silver, Platinum, Palladium";
+
+function formatCount(value: number | undefined, fallback: string, minShow?: number): string {
+  if (value === undefined || value === null) return fallback;
+  if (minShow !== undefined && value >= minShow) return `${minShow}+`;
+  return String(value);
+}
+
+export function CoverageStats({ metalsCount = 4, articlesCount, dealersCount }: CoverageStatsProps) {
   const stats = [
     {
       icon: TrendingUp,
-      value: "4",
-      label: "Precious Metals",
-      description: "Gold, Silver, Platinum, Palladium"
+      value: String(metalsCount),
+      label: METALS_LABEL,
+      description: METALS_DESC,
     },
     {
       icon: BookOpen,
-      value: "6+",
+      value: formatCount(articlesCount, "—", 6),
       label: "Articles & Guides",
-      description: "Expert investment analysis"
+      description: "Expert investment analysis",
     },
     {
       icon: Users,
-      value: "15+",
+      value: formatCount(dealersCount, "—", 15),
       label: "Trusted Dealers",
-      description: "Verified precious metals & gemstone retailers"
+      description: "Verified precious metals & gemstone retailers",
     },
     {
       icon: Award,
       value: "100%",
       label: "Independent Reviews",
-      description: "Transparent, AI-verified dealer ratings"
-    }
+      description: "Transparent, AI-verified dealer ratings",
+    },
   ];
 
   return (

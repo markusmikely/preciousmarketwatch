@@ -618,7 +618,79 @@ function pmw_register_acf_fields() {
 
 add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
+add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
+
+// ── HOME-02: Mailchimp newsletter subscribe (WordPress REST; frontend has no /api) ──
+function pmw_register_subscribe_route() {
+    register_rest_route( 'pmw/v1', '/subscribe', [
+        'methods'             => 'POST',
+        'callback'            => 'pmw_rest_post_subscribe',
+        'permission_callback' => '__return_true',
+        'args'                => [
+            'email' => [
+                'required'          => true,
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_email',
+                'validate_callback'  => function ( $value ) {
+                    return is_email( $value ) ? true : new WP_Error( 'invalid_email', 'Invalid email address', [ 'status' => 400 ] );
+                },
+            ],
+        ],
+    ] );
+}
+
+function pmw_rest_post_subscribe( WP_REST_Request $request ) {
+    $email = $request->get_param( 'email' );
+    $api_key = defined( 'PMW_MAILCHIMP_API_KEY' ) ? PMW_MAILCHIMP_API_KEY : '';
+    $list_id = defined( 'PMW_MAILCHIMP_LIST_ID' ) ? PMW_MAILCHIMP_LIST_ID : '';
+
+    if ( empty( $api_key ) || empty( $list_id ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Newsletter is not configured.' ], 503 );
+    }
+
+    // Mailchimp key format: xxxxx-us19 → datacenter "us19"
+    $dc = 'us1';
+    if ( preg_match( '/-([a-z0-9]+)$/i', $api_key, $m ) ) {
+        $dc = strtolower( $m[1] );
+    }
+
+    $url = sprintf( 'https://%s.api.mailchimp.com/3.0/lists/%s/members', $dc, $list_id );
+    $body = [
+        'email_address' => $email,
+        'status'        => 'subscribed',
+    ];
+
+    $resp = wp_remote_post( $url, [
+        'headers' => [
+            'Authorization' => 'Bearer ' . $api_key,
+            'Content-Type'  => 'application/json',
+        ],
+        'body'    => wp_json_encode( $body ),
+        'timeout' => 15,
+    ] );
+
+    if ( is_wp_error( $resp ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Subscription failed. Please try again later.' ], 502 );
+    }
+
+    $code = wp_remote_retrieve_response_code( $resp );
+    $data = json_decode( wp_remote_retrieve_body( $resp ), true );
+
+    if ( $code === 200 ) {
+        return new WP_REST_Response( [ 'success' => true, 'message' => 'Subscribed! Check your email to confirm.' ], 200 );
+    }
+
+    if ( $code === 400 && isset( $data['title'] ) ) {
+        $msg = $data['title'];
+        if ( isset( $data['detail'] ) && strpos( $data['detail'], 'already' ) !== false ) {
+            $msg = 'This email is already subscribed.';
+        }
+        return new WP_REST_Response( [ 'success' => false, 'message' => $msg ], 400 );
+    }
+
+    return new WP_REST_Response( [ 'success' => false, 'message' => 'Subscription failed. Please try again.' ], 502 );
+}
 
 // ── METAL-04: Price History API ──────────────────────
 function pmw_register_prices_history_route() {

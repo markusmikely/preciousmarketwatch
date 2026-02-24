@@ -80,7 +80,9 @@ export const fetchMetalData = async () => {
 
     try {
         if (!API_KEY) {
-            console.warn("[metalService] No API key configured, falling back to mock data");
+            if (import.meta.env.DEV) {
+                console.debug("[metalService] No VITE_METALS_DEV_API_KEY set, using mock data");
+            }
             return metalList.map(metal => mockData[metal]);
         }
 

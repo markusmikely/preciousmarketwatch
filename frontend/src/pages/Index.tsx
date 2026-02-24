@@ -6,46 +6,52 @@ import { FeaturedArticles } from "@/components/home/FeaturedArticles";
 import { CategoryCards } from "@/components/home/CategoryCards";
 import { MarketOverview } from "@/components/home/MarketOverview";
 import { TopDealers } from "@/components/home/TopDealers";
+import { CoverageStats } from "@/components/home/CoverageStats";
+import { AIDealerReviews } from "@/components/home/AIDealerReviews";
 import { client } from '../lib/graphql';
-import { HOMEPAGE_QUERY } from '../queries/homepage';
+import { HOMEPAGE_QUERY, COVERAGE_STATS_QUERY } from '../queries/homepage';
 import React, { useEffect, useState } from 'react';
+
+const METALS_COUNT = 4;
 
 const Index = () => {
   const [dealers, setDealers] = useState(null);
   const [articles, setArticles] = useState(null);
+  const [coverageStats, setCoverageStats] = useState<{ articlesCount: number; dealersCount: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await client.request(HOMEPAGE_QUERY);
-        console.log('[PMW] GraphQL response:', res);
-        
+        const [homeRes, statsRes] = await Promise.all([
+          client.request(HOMEPAGE_QUERY),
+          client.request(COVERAGE_STATS_QUERY).catch(() => null),
+        ]);
+        const res = homeRes as { dealers?: { nodes?: unknown[] }; posts?: { nodes?: unknown[] } };
+
         if (res?.dealers?.nodes?.length) {
-          console.log(`[PMW] Setting ${res.dealers.nodes.length} dealers`);
           setDealers(res.dealers.nodes);
-        } else {
-          console.warn('[PMW] No dealers in response');
         }
-        
         if (res?.posts?.nodes?.length) {
-          console.log(`[PMW] Setting ${res.posts.nodes.length} articles`);
           setArticles(res.posts.nodes);
-        } else {
-          console.warn('[PMW] No articles in response');
         }
-        
+        if (statsRes && typeof statsRes === 'object') {
+          const s = statsRes as { posts?: { nodes?: unknown[] }; dealers?: { nodes?: unknown[] } };
+          setCoverageStats({
+            articlesCount: s.posts?.nodes?.length ?? 0,
+            dealersCount: s.dealers?.nodes?.length ?? 0,
+          });
+        }
         setError(null);
       } catch (err) {
         console.error('[PMW] GraphQL fetch failed:', err);
         setError(err);
-        // Don't leave loading state hanging on error
       } finally {
         setLoading(false);
       }
     }
-    
+
     fetchData();
   }, []);
 
@@ -72,9 +78,15 @@ const Index = () => {
           <>
             <HeroSection />
             <MarketOverview />
+            <CoverageStats
+              metalsCount={METALS_COUNT}
+              articlesCount={coverageStats?.articlesCount}
+              dealersCount={coverageStats?.dealersCount}
+            />
             <FeaturedArticles articles={articles} />
             <CategoryCards />
             <TopDealers dealers={dealers} />
+            <AIDealerReviews dealers={dealers} />
           </>
         )}
       </main>

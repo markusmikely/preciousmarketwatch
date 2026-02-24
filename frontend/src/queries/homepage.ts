@@ -1,5 +1,17 @@
 import { gql } from 'graphql-request';
 
+/** HOME-01: Counts for coverage stats (posts and dealers; metals is always 4) */
+export const COVERAGE_STATS_QUERY = gql`
+  query CoverageStats {
+    posts(first: 500) {
+      nodes { id }
+    }
+    dealers(first: 500) {
+      nodes { id }
+    }
+  }
+`;
+
 export const HOMEPAGE_QUERY = gql`
   query HomepageData {
     homepage: page(id: "/", idType: URI) {
