@@ -1,0 +1,8 @@
+# CACHE-03: CDN caching for static build (Cloudflare Pages / Netlify)
+# HTML: short cache so new deploys are picked up quickly
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Hashed assets: long cache + immutable
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

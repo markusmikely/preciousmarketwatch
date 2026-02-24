@@ -18,12 +18,12 @@
 
 ## Remaining (from v3.0 task list)
 
-### Section 3 — Caching
-- **CACHE-01** — Cloudflare (manual setup)
-- **CACHE-02** — Cloudflare cache rules (manual)
-- **CACHE-03** — ISR: N/A for Vite SPA; consider CDN caching of static build
-- **CACHE-04** — API Cache-Control: already set on `/pmw/v1/prices/history`, `/pmw/v1/gems`
-- **CACHE-05** — WordPress transients / WPGraphQL Smart Cache
+### Section 3 — Caching ✅
+- **CACHE-01** — Cloudflare (manual setup) — see `docs/CACHING.md`
+- **CACHE-02** — Cloudflare cache rules (manual) — see `docs/CACHING.md`
+- **CACHE-03** — `frontend/public/_headers` for CDN (HTML + `/assets/*` immutable)
+- **CACHE-04** — API Cache-Control with `s-maxage` and `stale-while-revalidate` on prices/history and gems
+- **CACHE-05** — Gems transients + invalidation on save; prices/history transients + invalidation on cron; see `docs/CACHING.md` for WPGraphQL Smart Cache
 
 ### Section 4 — Cookie consent & analytics
 - **CONSENT-01 to 05** — Implement in React (not WP plugins)

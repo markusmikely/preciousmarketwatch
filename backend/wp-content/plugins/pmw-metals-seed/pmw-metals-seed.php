@@ -490,6 +490,10 @@ function pmw_metals_seed_cron_price_update( $request ) {
 
 	pmw_metals_seed_update_market_data_acf( $data, $usd_gbp );
 
+	if ( function_exists( 'pmw_invalidate_prices_history_cache' ) ) {
+		pmw_invalidate_prices_history_cache();
+	}
+
 	return new WP_REST_Response( [
 		'success' => true,
 		'date'    => $today,

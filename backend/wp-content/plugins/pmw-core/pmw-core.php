@@ -651,6 +651,15 @@ function pmw_rest_get_prices_history( WP_REST_Request $request ) {
     $range    = $request->get_param( 'range' );
     $currency = $request->get_param( 'currency' );
 
+    // CACHE-05: Transient cache per (metal, range, currency), 1 hour
+    $cache_key = 'pmw_prices_history_' . $metal . '_' . $range . '_' . $currency;
+    $cached    = get_transient( $cache_key );
+    if ( $cached !== false && is_array( $cached ) ) {
+        $response = new WP_REST_Response( $cached, 200 );
+        $response->header( 'Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400' );
+        return $response;
+    }
+
     global $wpdb;
     $table = $wpdb->prefix . 'metal_prices';
 
@@ -682,13 +691,17 @@ function pmw_rest_get_prices_history( WP_REST_Request $request ) {
         $data[] = [ 'date' => $row['date'], 'price' => round( $p, 4 ) ];
     }
 
-    $response = new WP_REST_Response( [
+    $payload = [
         'metal'    => $metal,
         'currency' => $currency,
         'range'    => $range,
         'data'     => $data,
-    ], 200 );
-    $response->header( 'Cache-Control', 'public, max-age=3600' );
+    ];
+    set_transient( $cache_key, $payload, HOUR_IN_SECONDS );
+
+    $response = new WP_REST_Response( $payload, 200 );
+    // CACHE-04: Historical data rarely changes
+    $response->header( 'Cache-Control', 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400' );
     return $response;
 }
 
@@ -854,10 +867,31 @@ function pmw_gems_response( array $gems, bool $stale ) {
         'gems'  => $gems,
         'stale' => $stale,
     ], 200 );
-    $response->header( 'Cache-Control', 'public, max-age=86400, s-maxage=86400' );
+    // CACHE-04: Gem data changes quarterly
+    $response->header( 'Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800' );
     return $response;
 }
 
+// ── CACHE-05: Invalidate gems transient when a gem_index post is saved ──
+add_action( 'save_post_gem_index', 'pmw_invalidate_gems_cache' );
+function pmw_invalidate_gems_cache() {
+    delete_transient( 'pmw_gems_index' );
+    delete_transient( 'pmw_gems_index_stale' );
+}
+
+// Invalidate price history transients (call from cron/seed when metal_prices is updated)
+function pmw_invalidate_prices_history_cache() {
+    $metals   = [ 'gold', 'silver', 'platinum', 'palladium' ];
+    $ranges   = [ '1M', '3M', '6M', '1Y', '5Y', 'all' ];
+    $currencies = [ 'usd', 'gbp' ];
+    foreach ( $metals as $m ) {
+        foreach ( $ranges as $r ) {
+            foreach ( $currencies as $c ) {
+                delete_transient( 'pmw_prices_history_' . $m . '_' . $r . '_' . $c );
+            }
+        }
+    }
+}
 
 // ─────────────────────────────────────────────
 // 6. DASHBOARD WIDGET — GEM INDEX OVERDUE REVIEW (GEM-05)
