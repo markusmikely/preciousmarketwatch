@@ -1,3 +1,4 @@
+# ANALYTICS-03: Allow crawlers; sitemap for GSC (WordPress at /wp/ serves sitemap)
 User-agent: Googlebot
 Allow: /
 
@@ -12,3 +13,6 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Sitemap (WordPress: /wp/sitemap.xml or /wp/wp-sitemap.xml)
+Sitemap: https://preciousmarketwatch.com/wp/wp-sitemap.xml

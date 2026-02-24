@@ -48,10 +48,11 @@ frontend/
 Create .env.local file:
 
 ```env
-VITE_API_URL=http://localhost:4000/graphql
-VITE_WORDPRESS_URL=http://localhost:8080
-VITE_GOOGLE_ANALYTICS_ID=UA-XXXXX
+VITE_WORDPRESS_API_URL=https://preciousmarketwatch.com/wp/graphql
+VITE_GA4_MEASUREMENT_ID=          # Optional: GA4 Measurement ID (G-XXXXX), gated by cookie consent
+VITE_CLARITY_PROJECT_ID=         # Optional: Microsoft Clarity project ID, gated by cookie consent
 ```
+See `.env.example` for all variables. Analytics (GA4, Clarity) load only after the user accepts analytics cookies (Consent Mode v2).
 
 ## 📚 Key Components
 

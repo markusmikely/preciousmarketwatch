@@ -1,6 +1,9 @@
 import { LegalPageLayout } from "@/components/shared/LegalPageLayout";
+import { Button } from "@/components/ui/button";
+import { useConsent } from "@/contexts/ConsentContext";
 
 export default function Cookies() {
+  const { reopenBanner } = useConsent();
   return (
     <LegalPageLayout
       title="Cookie Policy"
@@ -70,8 +73,12 @@ export default function Cookies() {
       </p>
       <ul>
         <li>
-          <strong>Google Analytics:</strong> Website analytics and traffic
+          <strong>Google Analytics (GA4):</strong> Website analytics and traffic
           analysis
+        </li>
+        <li>
+          <strong>Microsoft Clarity:</strong> Session recordings and heatmaps to
+          improve user experience
         </li>
         <li>
           <strong>Social media platforms:</strong> Share buttons and embedded
@@ -87,7 +94,16 @@ export default function Cookies() {
 
       <h2>Managing Cookies</h2>
       <p>
-        You have several options for managing cookies:
+        You can update your cookie preferences at any time using the button below. 
+        This will reopen the cookie consent banner so you can accept or reject categories.
+      </p>
+      <p className="mt-2">
+        <Button variant="outline" size="sm" onClick={reopenBanner}>
+          Change cookie preferences
+        </Button>
+      </p>
+      <p className="mt-4">
+        You also have these options for managing cookies:
       </p>
 
       <h3>Browser Settings</h3>

@@ -25,13 +25,13 @@
 - **CACHE-04** — API Cache-Control with `s-maxage` and `stale-while-revalidate` on prices/history and gems
 - **CACHE-05** — Gems transients + invalidation on save; prices/history transients + invalidation on cron; see `docs/CACHING.md` for WPGraphQL Smart Cache
 
-### Section 4 — Cookie consent & analytics
-- **CONSENT-01 to 05** — Implement in React (not WP plugins)
-- **ANALYTICS-01** — GA4 gated by consent
-- **ANALYTICS-02** — Microsoft Clarity gated by consent
-- **ANALYTICS-03** — GSC, sitemap, robots.txt
-- **ANALYTICS-04** — Privacy, Cookie, Affiliate disclosure pages
-- **ANALYTICS-05** — Performance baseline
+### Section 4 — Cookie consent & analytics ✅
+- **CONSENT-01 to 05** — React consent context + banner (Accept all / Reject / Custom); stored in localStorage; "Change preferences" on Cookie Policy
+- **ANALYTICS-01** — GA4 with Consent Mode v2 (default denied); loads when user accepts analytics; `VITE_GA4_MEASUREMENT_ID`
+- **ANALYTICS-02** — Microsoft Clarity loads when analytics accepted; `VITE_CLARITY_PROJECT_ID`
+- **ANALYTICS-03** — `robots.txt` with Sitemap; GSC setup described in `docs/ANALYTICS.md`
+- **ANALYTICS-04** — Privacy, Cookie, Affiliate disclosure pages present and linked
+- **ANALYTICS-05** — Performance baseline process in `docs/PERFORMANCE.md`
 
 ### Section 5 — Homepage
 - **HOME-01** — Coverage stats from GraphQL
