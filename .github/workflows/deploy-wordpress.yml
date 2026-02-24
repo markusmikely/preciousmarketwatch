@@ -58,6 +58,12 @@ jobs:
           SFTP_USER: ${{ secrets.IONOS_FTP_USER }}
           SFTP_PASS: ${{ secrets.IONOS_FTP_PASS }}
           SFTP_HOST: ${{ secrets.IONOS_FTP_HOST }}
+          METALS_DEV_API_KEY: ${{ secrets.METALS_DEV_API_KEY }}
+          PMW_METALS_DEV_API_KEY: ${{ secrets.PMW_METALS_DEV_API_KEY }}
+          PMW_SILVER_API_URL: ${{ secrets.PMW_SILVER_API_URL }}
+          PMW_PLATINUM_API_URL: ${{ secrets.PMW_PLATINUM_API_URL }}
+          PMW_PALLADIUM_API_URL: ${{ secrets.PMW_PALLADIUM_API_URL }}
+          PMW_CRON_SECRET: ${{ secrets.PMW_CRON_SECRET }}
           REMOTE_BASE: public/preciousmarketwatch/wp/wp-content
         run: |
           # Upload each changed directory individually — much faster than full sync
