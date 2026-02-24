@@ -415,6 +415,17 @@ function pmw_metals_seed_admin_page() {
  * METAL-03 — Daily price update cron endpoint.
  * POST /wp-json/pmw/v1/cron/price-update
  * Auth: Authorization: Bearer {PMW_CRON_SECRET}
+ *
+ * Sources:
+ *   Gold:      PMW_FREEGOLDAPI_URL  (FreeGoldAPI — free, no key)
+ *   Silver:    PMW_SILVER_API_URL   (MetalPriceAPI, base=XAU, currencies=XAG[,GBP])
+ *   Platinum:  PMW_PLATINUM_API_URL (MetalPriceAPI, base=XAU, currencies=XPT[,GBP])
+ *   Palladium: PMW_PALLADIUM_API_URL(MetalPriceAPI, base=XAU, currencies=XPD[,GBP])
+ *
+ * MetalPriceAPI response (base=XAU): rates["XAG"] = oz silver per oz gold.
+ *   price_usd = gold_usd_price / rates["XAG"]  (i.e. silver spot in USD)
+ *   If rates["GBP"] is present: price_gbp = gold_gbp_price / rates["XAG"]
+ *     where gold_gbp_price = rates["GBP"]  (GBP per oz gold, since base=XAU).
  */
 function pmw_metals_seed_register_rest_routes() {
 	register_rest_route( 'pmw/v1', '/cron/price-update', [
@@ -437,86 +448,258 @@ function pmw_metals_seed_cron_permission( $request ) {
 	return true;
 }
 
-function pmw_metals_seed_cron_price_update( $request ) {
-	$key = defined( 'PMW_METALS_DEV_API_KEY' ) ? PMW_METALS_DEV_API_KEY : '';
-	if ( empty( $key ) ) {
-		return new WP_REST_Response( [ 'success' => false, 'error' => 'PMW_METALS_DEV_API_KEY not set' ], 500 );
-	}
-
-	$url = add_query_arg( [ 'api_key' => $key, 'currency' => 'USD', 'unit' => 'toz' ], 'https://api.metals.dev/v1/latest' );
+/**
+ * Fetch today's gold spot price in USD from FreeGoldAPI.
+ * Returns float on success, or WP_Error on failure.
+ */
+function pmw_metals_seed_fetch_gold_usd() {
+	$url  = defined( 'PMW_FREEGOLDAPI_URL' ) ? PMW_FREEGOLDAPI_URL : 'https://freegoldapi.com/data/latest.json';
 	$resp = wp_remote_get( $url, [ 'timeout' => 15 ] );
+
 	if ( is_wp_error( $resp ) ) {
-		return new WP_REST_Response( [ 'success' => false, 'error' => $resp->get_error_message() ], 502 );
+		return $resp;
 	}
 	if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
-		return new WP_REST_Response( [ 'success' => false, 'error' => 'Metals.dev HTTP ' . wp_remote_retrieve_response_code( $resp ) ], 502 );
+		return new WP_Error( 'freegoldapi_http', 'FreeGoldAPI HTTP ' . wp_remote_retrieve_response_code( $resp ) );
 	}
 
 	$data = json_decode( wp_remote_retrieve_body( $resp ), true );
-	if ( empty( $data['metals'] ) ) {
-		return new WP_REST_Response( [ 'success' => false, 'error' => 'Invalid Metals.dev response' ], 502 );
+	if ( ! is_array( $data ) ) {
+		return new WP_Error( 'freegoldapi_parse', 'FreeGoldAPI: invalid JSON' );
 	}
 
-	$usd_gbp = 0.79;
-	$fx_resp = wp_remote_get( 'https://api.exchangerate-api.com/v4/latest/USD', [ 'timeout' => 10 ] );
-	if ( ! is_wp_error( $fx_resp ) && wp_remote_retrieve_response_code( $fx_resp ) === 200 ) {
-		$fx = json_decode( wp_remote_retrieve_body( $fx_resp ), true );
-		if ( ! empty( $fx['rates']['GBP'] ) ) {
-			$usd_gbp = 1 / (float) $fx['rates']['GBP'];
+	// The API returns an array of records sorted newest-first (or we find the latest).
+	$latest_price = null;
+	$latest_date  = null;
+	foreach ( $data as $row ) {
+		if ( isset( $row['price'] ) && is_numeric( $row['price'] ) && ! empty( $row['date'] ) ) {
+			if ( $latest_date === null || $row['date'] > $latest_date ) {
+				$latest_date  = $row['date'];
+				$latest_price = (float) $row['price'];
+			}
 		}
 	}
 
-	$today = gmdate( 'Y-m-d' );
-	$metals_map = [ 'gold' => 'gold', 'silver' => 'silver', 'platinum' => 'platinum', 'palladium' => 'palladium' ];
-	$results = [];
-	global $wpdb;
-	$table = $wpdb->prefix . 'metal_prices';
-
-	foreach ( $metals_map as $slug => $metal ) {
-		$price_usd = isset( $data['metals'][ $metal ] ) ? (float) $data['metals'][ $metal ] : null;
-		if ( $price_usd === null || $price_usd <= 0 ) continue;
-
-		$price_gbp = round( $price_usd * $usd_gbp, 4 );
-		$wpdb->replace( $table, [
-			'metal'       => $metal,
-			'date'        => $today,
-			'price_usd'   => $price_usd,
-			'price_gbp'   => $price_gbp,
-			'source'      => 'metalsdev',
-			'granularity' => 'daily',
-		], [ '%s', '%s', '%f', '%f', '%s', '%s' ] );
-		$results[ $metal ] = [ 'usd' => $price_usd, 'gbp' => $price_gbp ];
+	if ( $latest_price === null || $latest_price <= 0 ) {
+		return new WP_Error( 'freegoldapi_no_price', 'FreeGoldAPI: no valid price found' );
 	}
 
-	pmw_metals_seed_update_market_data_acf( $data, $usd_gbp );
+	return $latest_price;
+}
+
+/**
+ * Fetch a non-gold metal price via MetalPriceAPI.
+ *
+ * URL format (from env): base=XAU, currencies=XAG|XPT|XPD[,GBP]
+ * Appends GBP to the currencies param if not already present so we get
+ * GBP conversion in a single request.
+ *
+ * Returns array [ 'price_usd' => float, 'price_gbp' => float ] or WP_Error.
+ *
+ * @param string $api_url  The full URL from PMW_SILVER_API_URL etc.
+ * @param string $symbol   One of: XAG, XPT, XPD
+ * @param float  $gold_usd Current gold spot price in USD (used for conversion).
+ */
+function pmw_metals_seed_fetch_metalpriceapi( $api_url, $symbol, $gold_usd ) {
+	$api_url = trim( $api_url );
+
+	// Ensure GBP is included in the currencies param so we can derive GBP price.
+	$parsed = wp_parse_url( $api_url );
+	$query  = [];
+	if ( ! empty( $parsed['query'] ) ) {
+		parse_str( $parsed['query'], $query );
+	}
+	$currencies = isset( $query['currencies'] ) ? explode( ',', $query['currencies'] ) : [ $symbol ];
+	if ( ! in_array( 'GBP', $currencies, true ) ) {
+		$currencies[] = 'GBP';
+	}
+	$query['currencies'] = implode( ',', $currencies );
+
+	// Rebuild URL with updated currencies param.
+	$scheme   = $parsed['scheme'] ?? 'https';
+	$host     = $parsed['host']   ?? '';
+	$path     = $parsed['path']   ?? '';
+	$base_url = $scheme . '://' . $host . $path;
+	$url      = add_query_arg( $query, $base_url );
+
+	$resp = wp_remote_get( $url, [ 'timeout' => 15 ] );
+	if ( is_wp_error( $resp ) ) {
+		return $resp;
+	}
+	if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
+		return new WP_Error( 'metalpriceapi_http', 'MetalPriceAPI HTTP ' . wp_remote_retrieve_response_code( $resp ) . ' for ' . $symbol );
+	}
+
+	$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+
+	// Expect: { "success": true, "base": "XAU", "rates": { "XAG": 88.5, "GBP": 2750.0, ... } }
+	if ( empty( $data['success'] ) || empty( $data['rates'] ) ) {
+		$msg = $data['error']['info'] ?? ( $data['message'] ?? 'Invalid MetalPriceAPI response for ' . $symbol );
+		return new WP_Error( 'metalpriceapi_parse', $msg );
+	}
+
+	// rates[symbol] = how many units of symbol equal 1 XAU (1 oz gold).
+	// e.g. rates["XAG"] = 88.5 means 1 oz gold = 88.5 oz silver.
+	// Therefore: silver_usd = gold_usd / 88.5
+	$ratio = isset( $data['rates'][ $symbol ] ) ? (float) $data['rates'][ $symbol ] : 0;
+	if ( $ratio <= 0 ) {
+		return new WP_Error( 'metalpriceapi_ratio', 'MetalPriceAPI: zero or missing ratio for ' . $symbol );
+	}
+
+	$price_usd = $gold_usd / $ratio;
+
+	// rates["GBP"] = GBP per 1 oz gold (since base=XAU).
+	// Therefore: metal_gbp = rates["GBP"] / ratio
+	$price_gbp = null;
+	if ( ! empty( $data['rates']['GBP'] ) && (float) $data['rates']['GBP'] > 0 ) {
+		$gold_gbp  = (float) $data['rates']['GBP'];
+		$price_gbp = round( $gold_gbp / $ratio, 4 );
+	} else {
+		// Fallback: apply approximate USD→GBP rate of 0.79.
+		$price_gbp = round( $price_usd * 0.79, 4 );
+	}
+
+	return [
+		'price_usd' => round( $price_usd, 4 ),
+		'price_gbp' => $price_gbp,
+	];
+}
+
+function pmw_metals_seed_cron_price_update( $request ) {
+	global $wpdb;
+	$table   = $wpdb->prefix . 'metal_prices';
+	$today   = gmdate( 'Y-m-d' );
+	$results = [];
+	$errors  = [];
+
+	// -------------------------------------------------------------------------
+	// 1. Gold — FreeGoldAPI (free, no key required)
+	// -------------------------------------------------------------------------
+	$gold_usd = pmw_metals_seed_fetch_gold_usd();
+	if ( is_wp_error( $gold_usd ) ) {
+		$errors['gold'] = $gold_usd->get_error_message();
+	} else {
+		// Derive GBP via a lightweight FX call (fallback to 0.79 if unavailable).
+		$usd_to_gbp = 0.79;
+		$fx_resp    = wp_remote_get( 'https://api.exchangerate-api.com/v4/latest/USD', [ 'timeout' => 10 ] );
+		if ( ! is_wp_error( $fx_resp ) && wp_remote_retrieve_response_code( $fx_resp ) === 200 ) {
+			$fx = json_decode( wp_remote_retrieve_body( $fx_resp ), true );
+			if ( ! empty( $fx['rates']['GBP'] ) ) {
+				$usd_to_gbp = (float) $fx['rates']['GBP'];
+			}
+		}
+
+		$gold_gbp = round( $gold_usd * $usd_to_gbp, 4 );
+		$wpdb->replace( $table, [
+			'metal'       => 'gold',
+			'date'        => $today,
+			'price_usd'   => $gold_usd,
+			'price_gbp'   => $gold_gbp,
+			'source'      => 'freegoldapi',
+			'granularity' => 'daily',
+		], [ '%s', '%s', '%f', '%f', '%s', '%s' ] );
+		$results['gold'] = [ 'usd' => $gold_usd, 'gbp' => $gold_gbp ];
+	}
+
+	// -------------------------------------------------------------------------
+	// 2. Silver, Platinum, Palladium — MetalPriceAPI (free tier, base=XAU)
+	//    Requires gold_usd to be available for the cross-rate conversion.
+	// -------------------------------------------------------------------------
+	$non_gold = [
+		'silver'    => [ 'env' => 'PMW_SILVER_API_URL',    'symbol' => 'XAG' ],
+		'platinum'  => [ 'env' => 'PMW_PLATINUM_API_URL',  'symbol' => 'XPT' ],
+		'palladium' => [ 'env' => 'PMW_PALLADIUM_API_URL', 'symbol' => 'XPD' ],
+	];
+
+	if ( ! is_wp_error( $gold_usd ) ) {
+		foreach ( $non_gold as $metal => $cfg ) {
+			$api_url = defined( $cfg['env'] ) ? constant( $cfg['env'] ) : '';
+			$api_url = trim( $api_url );
+
+			if ( empty( $api_url ) ) {
+				$errors[ $metal ] = $cfg['env'] . ' not configured';
+				continue;
+			}
+
+			$fetched = pmw_metals_seed_fetch_metalpriceapi( $api_url, $cfg['symbol'], $gold_usd );
+			if ( is_wp_error( $fetched ) ) {
+				$errors[ $metal ] = $fetched->get_error_message();
+				continue;
+			}
+
+			$wpdb->replace( $table, [
+				'metal'       => $metal,
+				'date'        => $today,
+				'price_usd'   => $fetched['price_usd'],
+				'price_gbp'   => $fetched['price_gbp'],
+				'source'      => 'metalpriceapi',
+				'granularity' => 'daily',
+			], [ '%s', '%s', '%f', '%f', '%s', '%s' ] );
+			$results[ $metal ] = [ 'usd' => $fetched['price_usd'], 'gbp' => $fetched['price_gbp'] ];
+		}
+	} else {
+		// Gold fetch failed — cannot derive non-gold prices, record errors.
+		foreach ( array_keys( $non_gold ) as $metal ) {
+			$errors[ $metal ] = 'Skipped: gold price unavailable (required for cross-rate conversion)';
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// 3. Update ACF market_data fields & bust caches (unchanged).
+	// -------------------------------------------------------------------------
+	if ( ! empty( $results ) ) {
+		pmw_metals_seed_update_market_data_acf_v2( $results );
+	}
 
 	if ( function_exists( 'pmw_invalidate_prices_history_cache' ) ) {
 		pmw_invalidate_prices_history_cache();
 	}
 
+	$success = empty( $errors );
+	$status  = $success ? 200 : ( empty( $results ) ? 502 : 207 ); // 207 = partial success
+
 	return new WP_REST_Response( [
-		'success' => true,
-		'date'    => $today,
-		'metals'  => $results,
-		'logged_at' => gmdate( 'c' ),
-	], 200 );
+		'success'    => $success,
+		'date'       => $today,
+		'metals'     => $results,
+		'errors'     => $errors,
+		'logged_at'  => gmdate( 'c' ),
+	], $status );
 }
 
+/**
+ * Updated ACF helper — works from the normalised $results array returned by the
+ * new cron handler: [ 'gold' => ['usd'=>…,'gbp'=>…], 'silver' => […], … ]
+ */
+function pmw_metals_seed_update_market_data_acf_v2( $results ) {
+	if ( ! function_exists( 'update_field' ) ) return;
+
+	foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) {
+		if ( empty( $results[ $m ] ) ) continue;
+		update_field( $m . '_price_usd', $results[ $m ]['usd'],        'market_data' );
+		update_field( $m . '_price_gbp', $results[ $m ]['gbp'],        'market_data' );
+		// change_24h is no longer available from these free APIs — set to 0 / leave unchanged.
+		update_field( $m . '_change_24h', 0,                           'market_data' );
+	}
+	update_field( 'last_updated', gmdate( 'c' ), 'market_data' );
+}
+
+/**
+ * Legacy ACF helper kept for backwards compatibility (used by original seed run).
+ */
 function pmw_metals_seed_update_market_data_acf( $metals_data, $usd_gbp ) {
 	if ( ! function_exists( 'update_field' ) ) return;
 
-	$metals_map = [ 'gold' => 'gold', 'silver' => 'silver', 'platinum' => 'platinum', 'palladium' => 'palladium' ];
 	$opts = [ 'gold', 'silver', 'platinum', 'palladium' ];
 	foreach ( $opts as $m ) {
-		$usd = isset( $metals_data['metals'][ $m ] ) ? (float) $metals_data['metals'][ $m ] : 0;
-		$gbp = $usd * $usd_gbp;
-		$change = 0;
-		if ( ! empty( $metals_data['metals'][ $m . '_change_percent' ] ) ) {
-			$change = (float) $metals_data['metals'][ $m . '_change_percent' ];
-		}
-		update_field( $m . '_price_usd', $usd, 'market_data' );
-		update_field( $m . '_price_gbp', round( $gbp, 4 ), 'market_data' );
-		update_field( $m . '_change_24h', $change, 'market_data' );
+		$usd    = isset( $metals_data['metals'][ $m ] ) ? (float) $metals_data['metals'][ $m ] : 0;
+		$gbp    = $usd * $usd_gbp;
+		$change = ! empty( $metals_data['metals'][ $m . '_change_percent' ] )
+				  ? (float) $metals_data['metals'][ $m . '_change_percent' ]
+				  : 0;
+		update_field( $m . '_price_usd', $usd,                  'market_data' );
+		update_field( $m . '_price_gbp', round( $gbp, 4 ),      'market_data' );
+		update_field( $m . '_change_24h', $change,              'market_data' );
 	}
 	update_field( 'last_updated', gmdate( 'c' ), 'market_data' );
 }
