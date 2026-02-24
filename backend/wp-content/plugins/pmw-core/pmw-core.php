@@ -724,4 +724,64 @@ function pmw_gems_response( array $gems, bool $stale ) {
 }
 
 
+// ─────────────────────────────────────────────
+// 6. DASHBOARD WIDGET — GEM INDEX OVERDUE REVIEW (GEM-05)
+// ─────────────────────────────────────────────
+
+add_action( 'wp_dashboard_setup', 'pmw_register_gem_index_dashboard_widget' );
+
+function pmw_register_gem_index_dashboard_widget() {
+    if ( ! current_user_can( 'edit_posts' ) ) {
+        return;
+    }
+    wp_add_dashboard_widget(
+        'pmw_gem_index_overdue',
+        'Gem Index — Overdue for Review',
+        'pmw_render_gem_index_overdue_widget'
+    );
+}
+
+function pmw_render_gem_index_overdue_widget() {
+    if ( ! post_type_exists( 'gem_index' ) ) {
+        echo '<p>Gem Index post type is not registered.</p>';
+        return;
+    }
+
+    $posts = get_posts( [
+        'post_type'   => 'gem_index',
+        'post_status' => 'publish',
+        'numberposts' => 100,
+        'orderby'     => 'title',
+        'order'       => 'ASC',
+    ] );
+
+    $cutoff = gmdate( 'Y-m-d', strtotime( '-90 days' ) );
+    $overdue = [];
+
+    foreach ( $posts as $post ) {
+        $last_reviewed = function_exists( 'get_field' ) ? get_field( 'last_reviewed', $post->ID ) : null;
+        if ( empty( $last_reviewed ) || $last_reviewed < $cutoff ) {
+            $overdue[] = $post;
+        }
+    }
+
+    if ( empty( $overdue ) ) {
+        echo '<p>All gem index entries have been reviewed within the last 90 days.</p>';
+        return;
+    }
+
+    echo '<ul style="list-style: none; margin: 0; padding: 0;">';
+    foreach ( $overdue as $post ) {
+        $last = function_exists( 'get_field' ) ? get_field( 'last_reviewed', $post->ID ) : '';
+        $label = $last ? esc_html( $last ) : 'Never reviewed';
+        $edit_url = get_edit_post_link( $post->ID, 'raw' );
+        echo '<li style="margin-bottom: 8px; padding: 8px 12px; background: #fef3c7; border-left: 4px solid #d97706; border-radius: 2px;">';
+        echo '<a href="' . esc_url( $edit_url ) . '" style="font-weight: 600; text-decoration: none;">' . esc_html( get_the_title( $post ) ) . '</a>';
+        echo ' <span style="color: #92400e; font-size: 12px;">— Last reviewed: ' . esc_html( $label ) . '</span>';
+        echo '</li>';
+    }
+    echo '</ul>';
+}
+
+
 
