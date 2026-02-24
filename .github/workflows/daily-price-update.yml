@@ -1,0 +1,23 @@
+name: Daily Price Update
+
+on:
+  schedule:
+    # 06:00 UTC daily
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger price update
+        env:
+          PMW_CRON_SECRET: ${{ secrets.PMW_CRON_SECRET }}
+          PMW_SITE_URL: ${{ secrets.PMW_SITE_URL }}
+        run: |
+          SITE="${{ secrets.PMW_SITE_URL }}"
+          SITE="${SITE%/}"
+          curl -sSf -X POST \
+            -H "Authorization: Bearer ${{ secrets.PMW_CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            "${SITE}/wp-json/pmw/v1/cron/price-update"

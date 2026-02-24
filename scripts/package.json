@@ -7,7 +7,8 @@
     "load-silver": "tsx loadSilverHistory.ts",
     "load-platinum": "tsx loadPlatinumHistory.ts",
     "load-palladium": "tsx loadPalladiumHistory.ts",
-    "load-all-metals": "npm run load-gold && npm run load-silver && npm run load-platinum && npm run load-palladium"
+    "load-all-metals": "npm run load-gold && npm run load-silver && npm run load-platinum && npm run load-palladium",
+    "daily-price-update": "tsx dailyPriceUpdate.ts"
   },
   "dependencies": {
     "mysql2": "^3.11.0"

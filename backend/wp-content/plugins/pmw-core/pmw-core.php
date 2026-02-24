@@ -617,6 +617,141 @@ function pmw_register_acf_fields() {
 // ─────────────────────────────────────────────
 
 add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
+add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
+add_action( 'acf/init', 'pmw_register_market_data_options_page' );
+
+// ── METAL-04: Price History API ──────────────────────
+function pmw_register_prices_history_route() {
+    register_rest_route( 'pmw/v1', '/prices/history', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_prices_history',
+        'permission_callback' => '__return_true',
+        'args'                => [
+            'metal'    => [
+                'required'          => true,
+                'enum'              => [ 'gold', 'silver', 'platinum', 'palladium' ],
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'range'    => [
+                'default'           => '1Y',
+                'enum'              => [ '1M', '3M', '6M', '1Y', '5Y', 'all' ],
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'currency' => [
+                'default'           => 'usd',
+                'enum'              => [ 'usd', 'gbp' ],
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+        ],
+    ] );
+}
+
+function pmw_rest_get_prices_history( WP_REST_Request $request ) {
+    $metal    = $request->get_param( 'metal' );
+    $range    = $request->get_param( 'range' );
+    $currency = $request->get_param( 'currency' );
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'metal_prices';
+
+    $cutoff_map = [
+        '1M'  => gmdate( 'Y-m-d', strtotime( '-1 month' ) ),
+        '3M'  => gmdate( 'Y-m-d', strtotime( '-3 months' ) ),
+        '6M'  => gmdate( 'Y-m-d', strtotime( '-6 months' ) ),
+        '1Y'  => gmdate( 'Y-m-d', strtotime( '-1 year' ) ),
+        '5Y'  => gmdate( 'Y-m-d', strtotime( '-5 years' ) ),
+        'all' => '1990-01-01',
+    ];
+    $cutoff = $cutoff_map[ $range ] ?? $cutoff_map['1Y'];
+
+    $sql = $wpdb->prepare(
+        "SELECT date, price_usd, price_gbp FROM $table WHERE metal = %s AND date >= %s ORDER BY date ASC",
+        $metal,
+        $cutoff
+    );
+    $rows = $wpdb->get_results( $sql, ARRAY_A );
+    $usd_to_gbp = 0.79;
+
+    $data = [];
+    foreach ( $rows as $row ) {
+        $usd = isset( $row['price_usd'] ) && $row['price_usd'] > 0 ? (float) $row['price_usd'] : null;
+        if ( $usd === null ) continue;
+        $p = $currency === 'gbp'
+            ? ( ( isset( $row['price_gbp'] ) && $row['price_gbp'] > 0 ) ? (float) $row['price_gbp'] : $usd * $usd_to_gbp )
+            : $usd;
+        $data[] = [ 'date' => $row['date'], 'price' => round( $p, 4 ) ];
+    }
+
+    $response = new WP_REST_Response( [
+        'metal'    => $metal,
+        'currency' => $currency,
+        'range'    => $range,
+        'data'     => $data,
+    ], 200 );
+    $response->header( 'Cache-Control', 'public, max-age=3600' );
+    return $response;
+}
+
+// ── METAL-05: Market Data ACF Options Page ───────────
+function pmw_register_market_data_options_page() {
+    if ( ! function_exists( 'acf_add_options_page' ) ) return;
+
+    acf_add_options_page( [
+        'page_title' => 'Market Data',
+        'menu_title' => 'Market Data',
+        'menu_slug'  => 'market_data',
+        'capability' => 'edit_posts',
+        'redirect'   => false,
+        'post_id'    => 'market_data',
+    ] );
+
+    if ( ! function_exists( 'acf_add_local_field_group' ) ) return;
+
+    $metals = [ 'gold', 'silver', 'platinum', 'palladium' ];
+    $fields = [];
+    foreach ( $metals as $m ) {
+        $fields[] = [
+            'key'   => 'field_market_' . $m . '_usd',
+            'label' => ucfirst( $m ) . ' Price (USD)',
+            'name'  => $m . '_price_usd',
+            'type'  => 'number',
+            'step'  => 0.0001,
+            'readonly' => 1,
+        ];
+        $fields[] = [
+            'key'   => 'field_market_' . $m . '_gbp',
+            'label' => ucfirst( $m ) . ' Price (GBP)',
+            'name'  => $m . '_price_gbp',
+            'type'  => 'number',
+            'step'  => 0.0001,
+            'readonly' => 1,
+        ];
+        $fields[] = [
+            'key'   => 'field_market_' . $m . '_change',
+            'label' => ucfirst( $m ) . ' 24h Change (%)',
+            'name'  => $m . '_change_24h',
+            'type'  => 'number',
+            'step'  => 0.01,
+            'readonly' => 1,
+        ];
+    }
+    $fields[] = [
+        'key'   => 'field_market_last_updated',
+        'label' => 'Last Updated',
+        'name'  => 'last_updated',
+        'type'  => 'text',
+        'readonly' => 1,
+    ];
+
+    acf_add_local_field_group( [
+        'key'    => 'group_market_data',
+        'title'  => 'Market Data',
+        'fields' => $fields,
+        'location' => [
+            [ [ 'param' => 'options_page', 'operator' => '==', 'value' => 'market_data' ] ],
+        ],
+    ] );
+}
 
 function pmw_register_gems_rest_route() {
     register_rest_route( 'pmw/v1', '/gems', [

@@ -15,11 +15,13 @@ define('DB_USER',     $_ENV['DB_USER']     ?? '');
 define('DB_PASSWORD', $_ENV['DB_PASSWORD'] ?? '');
 define('DB_HOST',     $_ENV['DB_HOST']     ?? 'localhost');
 
-// Metal price APIs (pmw-metals-seed plugin). Gold uses FreeGoldAPI; set others in .env if available.
-define('PMW_FREEGOLDAPI_URL',   $_ENV['PMW_FREEGOLDAPI_URL']   ?? 'https://freegoldapi.com/data/latest.json');
-define('PMW_SILVER_API_URL',    $_ENV['PMW_SILVER_API_URL']    ?? '');
-define('PMW_PLATINUM_API_URL',  $_ENV['PMW_PLATINUM_API_URL']  ?? '');
-define('PMW_PALLADIUM_API_URL', $_ENV['PMW_PALLADIUM_API_URL'] ?? '');
+// Metal price APIs (pmw-metals-seed plugin).
+define('PMW_FREEGOLDAPI_URL',    $_ENV['PMW_FREEGOLDAPI_URL']    ?? 'https://freegoldapi.com/data/latest.json');
+define('PMW_METALS_DEV_API_KEY', $_ENV['PMW_METALS_DEV_API_KEY'] ?? $_ENV['METALS_DEV_API_KEY'] ?? '');
+define('PMW_SILVER_API_URL',     $_ENV['PMW_SILVER_API_URL']     ?? '');
+define('PMW_PLATINUM_API_URL',   $_ENV['PMW_PLATINUM_API_URL']   ?? '');
+define('PMW_PALLADIUM_API_URL',  $_ENV['PMW_PALLADIUM_API_URL']  ?? '');
+define('PMW_CRON_SECRET',        $_ENV['PMW_CRON_SECRET']        ?? '');
 
 //define('WP_CONTENT_DIR', dirname(__FILE__) . '/wp-content');
 //define('WP_CONTENT_URL', 'https://www.preciousmarketwatch.com/wp/wp-content');

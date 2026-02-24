@@ -3,23 +3,7 @@ import { ArrowRight, TrendingDown, Car, Zap, Factory, FlaskConical } from "lucid
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
-import { Button } from "@/components/ui/button";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-
-const priceHistory = [
-  { date: "Jan", price: 920 },
-  { date: "Feb", price: 885 },
-  { date: "Mar", price: 910 },
-  { date: "Apr", price: 945 },
-  { date: "May", price: 1020 },
-  { date: "Jun", price: 985 },
-  { date: "Jul", price: 960 },
-  { date: "Aug", price: 940 },
-  { date: "Sep", price: 980 },
-  { date: "Oct", price: 1010 },
-  { date: "Nov", price: 965 },
-  { date: "Dec", price: 978 },
-];
+import { PriceChart } from "@/components/shared/PriceChart";
 
 const articles = [
   {
@@ -92,38 +76,7 @@ export default function Platinum() {
       {/* Price Chart */}
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <div className="bg-card rounded-xl border border-border p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-display text-xl font-bold text-foreground">Platinum Price History</h2>
-                <p className="text-muted-foreground text-sm">USD per troy ounce - 2024 YTD</p>
-              </div>
-            </div>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={priceHistory}>
-                  <defs>
-                    <linearGradient id="platinumGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(220, 15%, 50%)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(220, 15%, 50%)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 87%)" />
-                  <XAxis dataKey="date" stroke="hsl(220, 10%, 46%)" fontSize={12} />
-                  <YAxis stroke="hsl(220, 10%, 46%)" fontSize={12} domain={['dataMin - 50', 'dataMax + 50']} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(0, 0%, 100%)',
-                      border: '1px solid hsl(220, 13%, 87%)',
-                      borderRadius: '8px',
-                    }}
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'Platinum Price']}
-                  />
-                  <Area type="monotone" dataKey="price" stroke="hsl(220, 15%, 50%)" fill="url(#platinumGradient)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          <PriceChart metal="platinum" />
         </div>
       </section>
 

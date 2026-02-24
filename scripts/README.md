@@ -1,8 +1,16 @@
 # PMW Migration Scripts
 
-**Note:** Metal price history loading is now handled by the **PMW Metals Seed** WordPress plugin. Install and activate it from the WordPress admin; it creates the `metal_prices` table and loads gold from FreeGoldAPI. No Node.js or GitHub Actions required.
+**Note:** Metal price history loading is handled by the **PMW Metals Seed** WordPress plugin. Activate it to create the table and load all four metals (gold: FreeGoldAPI; silver/platinum/palladium: Metals.dev).
 
-The scripts below remain available for local/CI use if needed.
+## Daily Price Update
+
+Triggers the WordPress cron endpoint to upsert today's prices:
+
+```bash
+PMW_CRON_SECRET=xxx PMW_SITE_URL=https://www.preciousmarketwatch.com/wp npm run daily-price-update
+```
+
+Or run via GitHub Actions (schedule: 06:00 UTC). Required secrets: `PMW_CRON_SECRET`, `PMW_SITE_URL`.
 
 ## Prerequisites
 

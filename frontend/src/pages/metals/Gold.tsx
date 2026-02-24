@@ -1,26 +1,11 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, TrendingUp, TrendingDown, BarChart3, Shield, Award, Coins } from "lucide-react";
+import { ArrowRight, TrendingUp, BarChart3, Shield, Award, Coins } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { DealerCard } from "@/components/shared/DealerCard";
 import { Button } from "@/components/ui/button";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
-
-const priceHistory = [
-  { date: "Jan", price: 2050 },
-  { date: "Feb", price: 2020 },
-  { date: "Mar", price: 2180 },
-  { date: "Apr", price: 2320 },
-  { date: "May", price: 2380 },
-  { date: "Jun", price: 2340 },
-  { date: "Jul", price: 2420 },
-  { date: "Aug", price: 2510 },
-  { date: "Sep", price: 2580 },
-  { date: "Oct", price: 2650 },
-  { date: "Nov", price: 2620 },
-  { date: "Dec", price: 2634 },
-];
+import { PriceChart } from "@/components/shared/PriceChart";
 
 const articles = [
   {
@@ -118,44 +103,7 @@ export default function Gold() {
       {/* Price Chart */}
       <section className="py-12 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
-          <div className="bg-card rounded-xl border border-border p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="font-display text-xl font-bold text-foreground">Gold Price History</h2>
-                <p className="text-muted-foreground text-sm">USD per troy ounce - 2024 YTD</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm">1M</Button>
-                <Button variant="outline" size="sm">3M</Button>
-                <Button variant="outline" size="sm">6M</Button>
-                <Button size="sm" className="bg-primary text-primary-foreground">1Y</Button>
-              </div>
-            </div>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={priceHistory}>
-                  <defs>
-                    <linearGradient id="goldGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(43, 74%, 49%)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="hsl(43, 74%, 49%)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 87%)" />
-                  <XAxis dataKey="date" stroke="hsl(220, 10%, 46%)" fontSize={12} />
-                  <YAxis stroke="hsl(220, 10%, 46%)" fontSize={12} domain={['dataMin - 100', 'dataMax + 50']} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(0, 0%, 100%)',
-                      border: '1px solid hsl(220, 13%, 87%)',
-                      borderRadius: '8px',
-                    }}
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'Gold Price']}
-                  />
-                  <Area type="monotone" dataKey="price" stroke="hsl(43, 74%, 49%)" fill="url(#goldGradient)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          <PriceChart metal="gold" />
         </div>
       </section>
 
