@@ -38,6 +38,7 @@ function pmw_seed_all() {
     pmw_seed_categories();
     pmw_seed_articles();
     pmw_seed_dealers();
+    pmw_seed_gem_index();
     pmw_seed_category_pages();
     
     // Mark that we just seeded
@@ -314,6 +315,244 @@ function pmw_seed_dealers() {
         // Set gemstone types
         if ( ! empty( $dealer['gemstones'] ) ) {
             wp_set_object_terms( $post_id, $dealer['gemstones'], 'pmw-gemstone-type' );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// GEM INDEX
+// ─────────────────────────────────────────────────────────────
+
+function pmw_seed_gem_index() {
+    if ( ! post_type_exists( 'gem_index' ) ) {
+        return;
+    }
+
+    $today      = gmdate( 'Y-m-d' );
+    $data_source = 'PMW Editorial Research — Initial Seed';
+
+    $gems = [
+        [
+            'title'               => 'Ruby',
+            'gem_type'            => 'Ruby',
+            'gem_category'        => 'precious',
+            'price_low_usd'       => 800,
+            'price_high_usd'      => 15000,
+            'price_low_gbp'       => 632,
+            'price_high_gbp'      => 11850,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–3ct',
+            'producing_countries' => 'Myanmar, Thailand, Mozambique, Madagascar',
+            'market_trend'        => 'rising',
+            'trend_percentage'    => 3.5,
+            'reviewer_notes'      => 'Pigeon-blood Burmese commands premium. Treated stones at lower end.',
+        ],
+        [
+            'title'               => 'Blue Sapphire',
+            'gem_type'            => 'Blue Sapphire',
+            'gem_category'        => 'precious',
+            'price_low_usd'       => 500,
+            'price_high_usd'      => 8000,
+            'price_low_gbp'       => 395,
+            'price_high_gbp'      => 6320,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–5ct',
+            'producing_countries' => 'Sri Lanka, Madagascar, Kashmir',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Kashmir and Ceylon premium. Madagascar commercial-grade abundant.',
+        ],
+        [
+            'title'               => 'Emerald',
+            'gem_type'            => 'Emerald',
+            'gem_category'        => 'precious',
+            'price_low_usd'       => 500,
+            'price_high_usd'      => 6000,
+            'price_low_gbp'       => 395,
+            'price_high_gbp'      => 4740,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–3ct',
+            'producing_countries' => 'Colombia, Zambia, Brazil, Afghanistan',
+            'market_trend'        => 'rising',
+            'trend_percentage'    => 2.8,
+            'reviewer_notes'      => 'Colombian origin premium. Oiled stones standard; no-oil commands top prices.',
+        ],
+        [
+            'title'               => 'Diamond',
+            'gem_type'            => 'Diamond',
+            'gem_category'        => 'precious',
+            'price_low_usd'       => 2500,
+            'price_high_usd'      => 20000,
+            'price_low_gbp'       => 1975,
+            'price_high_gbp'      => 15800,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–3ct',
+            'producing_countries' => 'Botswana, Russia, Canada, Australia',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Natural mined only. Lab-grown excluded from index. G color VS2 reference.',
+        ],
+        [
+            'title'               => 'Alexandrite',
+            'gem_type'            => 'Alexandrite',
+            'gem_category'        => 'precious',
+            'price_low_usd'       => 8000,
+            'price_high_usd'      => 50000,
+            'price_low_gbp'       => 6320,
+            'price_high_gbp'      => 39500,
+            'quality_grade'       => 'extra_fine',
+            'carat_range'         => '0.5–2ct',
+            'producing_countries' => 'Russia, Brazil, Sri Lanka',
+            'market_trend'        => 'rising',
+            'trend_percentage'    => 5.0,
+            'reviewer_notes'      => 'Natural only. Lab-grown excluded. Russian origin premium.',
+        ],
+        [
+            'title'               => 'Tanzanite',
+            'gem_type'            => 'Tanzanite',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 300,
+            'price_high_usd'      => 1200,
+            'price_low_gbp'       => 237,
+            'price_high_gbp'      => 948,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–5ct',
+            'producing_countries' => 'Tanzania',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Single-source stone. AAA grade at high end.',
+        ],
+        [
+            'title'               => 'Amethyst',
+            'gem_type'            => 'Amethyst',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 15,
+            'price_high_usd'      => 100,
+            'price_low_gbp'       => 12,
+            'price_high_gbp'      => 79,
+            'quality_grade'       => 'good',
+            'carat_range'         => '5–15ct',
+            'producing_countries' => 'Brazil, Uruguay, Zambia',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Siberian deep purple premium. Commercial grades abundant.',
+        ],
+        [
+            'title'               => 'Aquamarine',
+            'gem_type'            => 'Aquamarine',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 150,
+            'price_high_usd'      => 800,
+            'price_low_gbp'       => 119,
+            'price_high_gbp'      => 632,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–10ct',
+            'producing_countries' => 'Brazil, Pakistan, Mozambique',
+            'market_trend'        => 'rising',
+            'trend_percentage'    => 2.0,
+            'reviewer_notes'      => 'Santa Maria color premium. Large clean stones available.',
+        ],
+        [
+            'title'               => 'Opal',
+            'gem_type'            => 'Opal',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 75,
+            'price_high_usd'      => 600,
+            'price_low_gbp'       => 59,
+            'price_high_gbp'      => 474,
+            'quality_grade'       => 'good',
+            'carat_range'         => '1–5ct',
+            'producing_countries' => 'Australia, Ethiopia, Mexico',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Black opal top tier. Ethiopian hydrophane excluded for stability.',
+        ],
+        [
+            'title'               => 'Pearl',
+            'gem_type'            => 'Pearl',
+            'gem_category'        => 'organic',
+            'price_low_usd'       => 80,
+            'price_high_usd'      => 1500,
+            'price_low_gbp'       => 63,
+            'price_high_gbp'      => 1185,
+            'quality_grade'       => 'good',
+            'carat_range'         => '3–10mm',
+            'producing_countries' => 'Japan, China, French Polynesia, Australia',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Per-carat equivalent. South Sea and Tahitian at high end.',
+        ],
+        [
+            'title'               => 'Garnet',
+            'gem_type'            => 'Garnet',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 50,
+            'price_high_usd'      => 400,
+            'price_low_gbp'       => 40,
+            'price_high_gbp'      => 316,
+            'quality_grade'       => 'good',
+            'carat_range'         => '1–5ct',
+            'producing_countries' => 'Mozambique, Madagascar, India',
+            'market_trend'        => 'stable',
+            'trend_percentage'    => 0,
+            'reviewer_notes'      => 'Rhodolite, tsavorite, demantoid premium. Almandine commercial.',
+        ],
+        [
+            'title'               => 'Tourmaline',
+            'gem_type'            => 'Tourmaline',
+            'gem_category'        => 'semi-precious',
+            'price_low_usd'       => 100,
+            'price_high_usd'      => 1500,
+            'price_low_gbp'       => 79,
+            'price_high_gbp'      => 1185,
+            'quality_grade'       => 'fine',
+            'carat_range'         => '1–5ct',
+            'producing_countries' => 'Brazil, Mozambique, Nigeria',
+            'market_trend'        => 'rising',
+            'trend_percentage'    => 3.0,
+            'reviewer_notes'      => 'Paraíba commands premium. Watermelon and bi-color popular.',
+        ],
+    ];
+
+    foreach ( $gems as $gem ) {
+        $existing = get_posts( [
+            'post_type'   => 'gem_index',
+            'title'       => $gem['title'],
+            'post_status' => 'any',
+            'numberposts' => 1,
+        ] );
+
+        if ( ! empty( $existing ) ) {
+            continue;
+        }
+
+        $post_id = wp_insert_post( [
+            'post_title'   => $gem['title'],
+            'post_content' => '',
+            'post_type'    => 'gem_index',
+            'post_status'  => 'publish',
+            'post_author'  => get_current_user_id() ?: 1,
+        ] );
+
+        if ( is_wp_error( $post_id ) ) {
+            continue;
+        }
+
+        if ( function_exists( 'update_field' ) ) {
+            update_field( 'gem_type', $gem['gem_type'], $post_id );
+            update_field( 'gem_category', $gem['gem_category'], $post_id );
+            update_field( 'price_low_usd', $gem['price_low_usd'], $post_id );
+            update_field( 'price_high_usd', $gem['price_high_usd'], $post_id );
+            update_field( 'price_low_gbp', $gem['price_low_gbp'], $post_id );
+            update_field( 'price_high_gbp', $gem['price_high_gbp'], $post_id );
+            update_field( 'quality_grade', $gem['quality_grade'], $post_id );
+            update_field( 'carat_range', $gem['carat_range'], $post_id );
+            update_field( 'producing_countries', $gem['producing_countries'], $post_id );
+            update_field( 'market_trend', $gem['market_trend'], $post_id );
+            update_field( 'trend_percentage', $gem['trend_percentage'], $post_id );
+            update_field( 'last_reviewed', $today, $post_id );
+            update_field( 'reviewer_notes', $gem['reviewer_notes'], $post_id );
+            update_field( 'data_source', $data_source, $post_id );
         }
     }
 }
