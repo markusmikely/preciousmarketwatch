@@ -13,7 +13,22 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 require_once( __DIR__ . '/dealer-reviews.php' );
 
 register_activation_hook( __FILE__, 'pmw_seed_all' );
+add_action( 'init', 'pmw_maybe_run_deferred_gem_seed', 999 );
 add_action( 'admin_init', 'pmw_maybe_show_seed_notice' );
+
+/**
+ * Run gem index seed on next init if CPT wasn't ready during activation (load order).
+ */
+function pmw_maybe_run_deferred_gem_seed() {
+    if ( ! get_option( 'pmw_seed_deferred_gem_index' ) ) {
+        return;
+    }
+    if ( ! post_type_exists( 'gem_index' ) ) {
+        return;
+    }
+    delete_option( 'pmw_seed_deferred_gem_index' );
+    pmw_seed_gem_index();
+}
 
 /**
  * Show admin notice after activation
@@ -25,6 +40,14 @@ function pmw_maybe_show_seed_notice() {
             echo '<div class="notice notice-success is-dismissible"><p>';
             echo '<strong>PMW Seed Data:</strong> Content has been seeded. Articles, dealers, and pages are now available in the CMS. ';
             echo 'You can deactivate this plugin.';
+            echo '</p></div>';
+        });
+    }
+
+    if ( get_option( 'pmw_seed_deferred_gem_index' ) && ! post_type_exists( 'gem_index' ) ) {
+        add_action( 'admin_notices', function() {
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo '<strong>PMW Seed:</strong> Gem Index could not be seeded. Activate <strong>PMW Core</strong> first, then deactivate and reactivate PMW Seed, or visit any page to trigger the deferred seed.';
             echo '</p></div>';
         });
     }
@@ -325,6 +348,7 @@ function pmw_seed_dealers() {
 
 function pmw_seed_gem_index() {
     if ( ! post_type_exists( 'gem_index' ) ) {
+        update_option( 'pmw_seed_deferred_gem_index', true );
         return;
     }
 
