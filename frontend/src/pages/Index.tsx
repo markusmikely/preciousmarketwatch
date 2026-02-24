@@ -71,7 +71,6 @@ const Index = () => {
         {!loading && (
           <>
             <HeroSection />
-            <CoverageStats />
             <MarketOverview />
             <FeaturedArticles articles={articles} />
             <CategoryCards />
