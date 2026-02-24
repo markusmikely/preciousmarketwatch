@@ -128,6 +128,8 @@ export function MarketOverview() {
                             <div className={`flex items-center justify-end gap-1 font-medium ${
                               metal.isUp ? 'text-success' : 'text-destructive'
                             }`}>
+
+                              
                               {metal.isUp ? (
                                 <TrendingUp className="h-4 w-4" />
                               ) : (
