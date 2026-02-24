@@ -54,15 +54,12 @@ function pmw_metals_seed_run( $source = 'free' ) {
 		$results['platinum']  = pmw_metals_seed_load_metals_dev( 'platinum' );
 		$results['palladium'] = pmw_metals_seed_load_metals_dev( 'palladium' );
 	} else {
-		$results['silver']   = defined( 'PMW_SILVER_API_URL' ) && PMW_SILVER_API_URL
-			? pmw_metals_seed_load_from_url( 'silver', PMW_SILVER_API_URL )
-			: [ 'error' => 'PMW_SILVER_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
-		$results['platinum'] = defined( 'PMW_PLATINUM_API_URL' ) && PMW_PLATINUM_API_URL
-			? pmw_metals_seed_load_from_url( 'platinum', PMW_PLATINUM_API_URL )
-			: [ 'error' => 'PMW_PLATINUM_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
-		$results['palladium'] = defined( 'PMW_PALLADIUM_API_URL' ) && PMW_PALLADIUM_API_URL
-			? pmw_metals_seed_load_from_url( 'palladium', PMW_PALLADIUM_API_URL )
-			: [ 'error' => 'PMW_PALLADIUM_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
+		$silver_url   = pmw_metals_seed_get_metalpriceapi_url( 'silver' );
+		$platinum_url = pmw_metals_seed_get_metalpriceapi_url( 'platinum' );
+		$palladium_url= pmw_metals_seed_get_metalpriceapi_url( 'palladium' );
+		$results['silver']   = $silver_url   ? pmw_metals_seed_load_from_url( 'silver',   $silver_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_SILVER_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
+		$results['platinum'] = $platinum_url ? pmw_metals_seed_load_from_url( 'platinum', $platinum_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_PLATINUM_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
+		$results['palladium']= $palladium_url? pmw_metals_seed_load_from_url( 'palladium',$palladium_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_PALLADIUM_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
 	}
 
 	$source_label = $source === 'metalsdev' ? 'Metals.dev' : 'Free APIs (FreeGoldAPI + MetalPriceAPI)';
@@ -70,6 +67,32 @@ function pmw_metals_seed_run( $source = 'free' ) {
 	update_option( 'pmw_metals_seed_last_run', $results );
 	update_option( 'pmw_metals_seed_just_ran', true );
 	return $results;
+}
+
+/**
+ * Return MetalPriceAPI URL for a metal. Prefers PMW_METALPRICEAPI_KEY (builds URL in code);
+ * falls back to full URL constant only if it does not contain the masked placeholder.
+ * Returns empty string if no valid source.
+ */
+function pmw_metals_seed_get_metalpriceapi_url( $metal ) {
+	$symbols = [ 'silver' => 'XAG', 'platinum' => 'XPT', 'palladium' => 'XPD' ];
+	$symbol = $symbols[ $metal ] ?? '';
+	if ( $symbol === '' ) {
+		return '';
+	}
+	$key = defined( 'PMW_METALPRICEAPI_KEY' ) ? trim( (string) PMW_METALPRICEAPI_KEY ) : '';
+	if ( $key !== '' && strpos( $key, '•' ) === false && strpos( $key, "\xE2\x80\xA2" ) === false ) {
+		return 'https://api.metalpriceapi.com/v1/latest?api_key=' . $key . '&base=XAU&currencies=' . $symbol;
+	}
+	$const = [ 'silver' => 'PMW_SILVER_API_URL', 'platinum' => 'PMW_PLATINUM_API_URL', 'palladium' => 'PMW_PALLADIUM_API_URL' ][ $metal ];
+	$url = defined( $const ) ? trim( (string) constant( $const ) ) : '';
+	if ( $url === '' ) {
+		return '';
+	}
+	if ( strpos( $url, '••••••••' ) !== false || strpos( $url, "\xE2\x80\xA2" ) !== false ) {
+		return '';
+	}
+	return $url;
 }
 
 /**
@@ -333,6 +356,10 @@ function pmw_metals_seed_env_url_status( $const_name, $default_url = '' ) {
 	if ( $url === '' ) {
 		return [ 'set' => false, 'display' => '' ];
 	}
+	// Non-URL constant (e.g. API key): show masked if it looks like a key
+	if ( strpos( $url, '://' ) === false ) {
+		return [ 'set' => true, 'display' => '••••••••' ];
+	}
 	$parsed = wp_parse_url( $url );
 	$query  = [];
 	if ( ! empty( $parsed['query'] ) ) {
@@ -359,16 +386,20 @@ function pmw_metals_seed_admin_page() {
 	$free_apis_ready = true;
 	$env_status = [
 		'PMW_FREEGOLDAPI_URL'   => pmw_metals_seed_env_url_status( 'PMW_FREEGOLDAPI_URL', 'https://freegoldapi.com/data/latest.json' ),
+		'PMW_METALPRICEAPI_KEY' => pmw_metals_seed_env_url_status( 'PMW_METALPRICEAPI_KEY' ),
 		'PMW_SILVER_API_URL'   => pmw_metals_seed_env_url_status( 'PMW_SILVER_API_URL' ),
 		'PMW_PLATINUM_API_URL' => pmw_metals_seed_env_url_status( 'PMW_PLATINUM_API_URL' ),
 		'PMW_PALLADIUM_API_URL'=> pmw_metals_seed_env_url_status( 'PMW_PALLADIUM_API_URL' ),
 	];
-	foreach ( [ 'PMW_FREEGOLDAPI_URL', 'PMW_SILVER_API_URL', 'PMW_PLATINUM_API_URL', 'PMW_PALLADIUM_API_URL' ] as $k ) {
-		if ( ! $env_status[ $k ]['set'] ) {
-			$free_apis_ready = false;
-			break;
-		}
+	// Free APIs ready if gold URL is set and we have a valid source for silver/pt/pd (key or unmasked URLs)
+	if ( ! $env_status['PMW_FREEGOLDAPI_URL']['set'] ) {
+		$free_apis_ready = false;
+	} elseif ( pmw_metals_seed_get_metalpriceapi_url( 'silver' ) === '' || pmw_metals_seed_get_metalpriceapi_url( 'platinum' ) === '' || pmw_metals_seed_get_metalpriceapi_url( 'palladium' ) === '' ) {
+		$free_apis_ready = false;
 	}
+	// For display: if key is set, show it (masked); for URL constants show "✓ set" or "✗ not set"
+	$metalprice_key_set = defined( 'PMW_METALPRICEAPI_KEY' ) && trim( (string) PMW_METALPRICEAPI_KEY ) !== '' && strpos( (string) PMW_METALPRICEAPI_KEY, '•' ) === false && strpos( (string) PMW_METALPRICEAPI_KEY, "\xE2\x80\xA2" ) === false;
+	$env_status['PMW_METALPRICEAPI_KEY'] = $metalprice_key_set ? [ 'set' => true, 'display' => '••••••••' ] : pmw_metals_seed_env_url_status( 'PMW_METALPRICEAPI_KEY' );
 	$metals_dev_key_set = defined( 'PMW_METALS_DEV_API_KEY' ) && trim( (string) PMW_METALS_DEV_API_KEY ) !== '';
 	$counts = [];
 	$latest = [];
@@ -545,7 +576,7 @@ function pmw_metals_seed_admin_page() {
 		<?php endif; ?>
 
 		<h2>Configuration</h2>
-		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code>, <code>PMW_SILVER_API_URL</code>, <code>PMW_PLATINUM_API_URL</code>, <code>PMW_PALLADIUM_API_URL</code> for free APIs. <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries).</p>
+		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code>; for Silver/Platinum/Palladium either set <code>PMW_METALPRICEAPI_KEY</code> (recommended — one secret, URLs built in code) or the full <code>PMW_SILVER_API_URL</code>, <code>PMW_PLATINUM_API_URL</code>, <code>PMW_PALLADIUM_API_URL</code>. <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries).</p>
 
 		<?php if ( $metals_dev_key_set ) : ?>
 		<script>
@@ -805,22 +836,21 @@ function pmw_metals_seed_cron_price_update( $request ) {
 	}
 
 	// -------------------------------------------------------------------------
-	// 2. Silver, Platinum, Palladium — MetalPriceAPI (free tier, base=XAU)
+	// 2. Silver, Platinum, Palladium — MetalPriceAPI (uses PMW_METALPRICEAPI_KEY or full URL constants)
 	//    Requires gold_usd to be available for the cross-rate conversion.
 	// -------------------------------------------------------------------------
 	$non_gold = [
-		'silver'    => [ 'env' => 'PMW_SILVER_API_URL',    'symbol' => 'XAG' ],
-		'platinum'  => [ 'env' => 'PMW_PLATINUM_API_URL',  'symbol' => 'XPT' ],
-		'palladium' => [ 'env' => 'PMW_PALLADIUM_API_URL', 'symbol' => 'XPD' ],
+		'silver'    => [ 'symbol' => 'XAG' ],
+		'platinum'  => [ 'symbol' => 'XPT' ],
+		'palladium' => [ 'symbol' => 'XPD' ],
 	];
 
 	if ( ! is_wp_error( $gold_usd ) ) {
 		foreach ( $non_gold as $metal => $cfg ) {
-			$api_url = defined( $cfg['env'] ) ? constant( $cfg['env'] ) : '';
-			$api_url = trim( $api_url );
+			$api_url = pmw_metals_seed_get_metalpriceapi_url( $metal );
 
-			if ( empty( $api_url ) ) {
-				$errors[ $metal ] = $cfg['env'] . ' not configured';
+			if ( $api_url === '' ) {
+				$errors[ $metal ] = 'Set PMW_METALPRICEAPI_KEY or ' . [ 'silver' => 'PMW_SILVER_API_URL', 'platinum' => 'PMW_PLATINUM_API_URL', 'palladium' => 'PMW_PALLADIUM_API_URL' ][ $metal ] . ' in .env';
 				continue;
 			}
 

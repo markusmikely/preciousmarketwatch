@@ -18,6 +18,7 @@ define('DB_HOST',     $_ENV['DB_HOST']     ?? 'localhost');
 // Metal price APIs (pmw-metals-seed plugin).
 define('PMW_FREEGOLDAPI_URL',    $_ENV['PMW_FREEGOLDAPI_URL']    ?? 'https://freegoldapi.com/data/latest.json');
 define('PMW_METALS_DEV_API_KEY', $_ENV['PMW_METALS_DEV_API_KEY'] ?? $_ENV['METALS_DEV_API_KEY'] ?? '');
+define('PMW_METALPRICEAPI_KEY',  $_ENV['PMW_METALPRICEAPI_KEY']  ?? '');
 define('PMW_SILVER_API_URL',     $_ENV['PMW_SILVER_API_URL']     ?? '');
 define('PMW_PLATINUM_API_URL',   $_ENV['PMW_PLATINUM_API_URL']   ?? '');
 define('PMW_PALLADIUM_API_URL',  $_ENV['PMW_PALLADIUM_API_URL']  ?? '');
