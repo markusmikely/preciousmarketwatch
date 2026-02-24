@@ -173,8 +173,13 @@ function pmw_metals_seed_load_gold() {
 }
 
 function pmw_metals_seed_load_from_url( $metal, $url ) {
-	if ( empty( $url ) ) {
+	$url = is_string( $url ) ? trim( $url ) : '';
+	if ( $url === '' ) {
 		return [ 'skipped' => true, 'message' => 'No API URL configured', 'inserted' => 0, 'skipped' => 0 ];
+	}
+	// Do not use a URL that contains the masked placeholder (admin display only)
+	if ( strpos( $url, '••••••••' ) !== false || strpos( $url, "\xE2\x80\xA2" ) !== false ) {
+		return [ 'error' => 'API URL contains masked key. Set the real api_key in .env (not the •••••••• placeholder).', 'inserted' => 0, 'skipped' => 0 ];
 	}
 
 	$resp = wp_remote_get( $url, [ 'timeout' => 30 ] );
@@ -321,8 +326,9 @@ function pmw_metals_seed_ajax_validate_key() {
 
 function pmw_metals_seed_env_url_status( $const_name, $default_url = '' ) {
 	$url = defined( $const_name ) ? constant( $const_name ) : '';
+	$url = is_string( $url ) ? trim( $url ) : '';
 	if ( $url === '' && $default_url !== '' ) {
-		$url = $default_url;
+		$url = trim( $default_url );
 	}
 	if ( $url === '' ) {
 		return [ 'set' => false, 'display' => '' ];
@@ -332,6 +338,7 @@ function pmw_metals_seed_env_url_status( $const_name, $default_url = '' ) {
 	if ( ! empty( $parsed['query'] ) ) {
 		parse_str( $parsed['query'], $query );
 	}
+	// Mask only for display; the real URL (with real api_key) is never stored or used from here
 	if ( isset( $query['api_key'] ) ) {
 		$query['api_key'] = '••••••••';
 	}
@@ -426,13 +433,14 @@ function pmw_metals_seed_admin_page() {
 					<span id="pmw-free-badge"></span>
 				</p>
 				<p class="description" style="margin-left: 1.5em;">Uses your configured environment variables. No API key required.</p>
-				<ul class="description" style="margin-left: 1.5em; list-style: none;">
+			 <ul class="description" style="margin-left: 1.5em; list-style: none;">
 					<?php foreach ( $env_status as $name => $s ) : ?>
 						<li><?php echo esc_html( $name ); ?> <?php echo $s['set'] ? '✓ set' : '<span style="color:red">✗ not set</span>'; ?>
 							<?php if ( $s['set'] && $s['display'] ) : ?> <code style="font-size: 11px;"><?php echo esc_html( $s['display'] ); ?></code><?php endif; ?>
 						</li>
 					<?php endforeach; ?>
 				</ul>
+				<p class="description" style="margin-left: 1.5em; color: #646970;">Display shows masked key (••••••••); API requests use the real value from your .env file.</p>
 				<?php if ( ! $free_apis_ready ) : ?>
 					<p class="description" style="margin-left: 1.5em; color: #d63638;">Configure missing URLs in .env to enable.</p>
 				<?php endif; ?>
@@ -694,6 +702,9 @@ function pmw_metals_seed_fetch_gold_usd() {
  */
 function pmw_metals_seed_fetch_metalpriceapi( $api_url, $symbol, $gold_usd ) {
 	$api_url = trim( $api_url );
+	if ( strpos( $api_url, '••••••••' ) !== false || strpos( $api_url, "\xE2\x80\xA2" ) !== false ) {
+		return new WP_Error( 'metalpriceapi_masked_key', 'API URL contains masked key. Set the real api_key in .env (not the •••••••• placeholder).' );
+	}
 
 	// Ensure GBP is included in the currencies param so we can derive GBP price.
 	$parsed = wp_parse_url( $api_url );
