@@ -723,10 +723,11 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
         }, $tags );
     }
 
-    $auth = 'Bearer ' . $api_key;
+    // Mailchimp API key auth: use Basic with "anystring" as user and API key as password
+    $auth_basic = base64_encode( 'anystring:' . $api_key );
     $resp = wp_remote_post( $url, [
         'headers' => [
-            'Authorization' => $auth,
+            'Authorization' => 'Basic ' . $auth_basic,
             'Content-Type'  => 'application/json',
         ],
         'body'    => wp_json_encode( $body ),
