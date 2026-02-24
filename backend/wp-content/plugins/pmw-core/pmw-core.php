@@ -612,4 +612,116 @@ function pmw_register_acf_fields() {
 }
 
 
+// ─────────────────────────────────────────────
+// 5. GEM INDEX REST API (GEM-03)
+// ─────────────────────────────────────────────
+
+add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
+
+function pmw_register_gems_rest_route() {
+    register_rest_route( 'pmw/v1', '/gems', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_gems',
+        'permission_callback' => '__return_true',
+    ] );
+}
+
+function pmw_rest_get_gems() {
+    $cache_key   = 'pmw_gems_index';
+    $cache_ttl   = DAY_IN_SECONDS; // 24 hours
+    $stale_key   = 'pmw_gems_index_stale';
+    $stale_ttl   = 7 * DAY_IN_SECONDS;
+
+    $fresh = get_transient( $cache_key );
+    if ( $fresh !== false ) {
+        return pmw_gems_response( $fresh, false );
+    }
+
+    $posts = get_posts( [
+        'post_type'      => 'gem_index',
+        'post_status'    => 'publish',
+        'posts_per_page' => 100,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ] );
+
+    $gems = [];
+    foreach ( $posts as $post ) {
+        $data = pmw_build_gem_price( $post );
+        if ( $data && (float) ( $data['priceLowUsd'] ?? 0 ) > 0 ) {
+            $gems[] = $data;
+        }
+    }
+
+    if ( ! empty( $gems ) ) {
+        set_transient( $cache_key, $gems, $cache_ttl );
+        set_transient( $stale_key, $gems, $stale_ttl );
+        return pmw_gems_response( $gems, false );
+    }
+
+    $stale = get_transient( $stale_key );
+    if ( $stale !== false ) {
+        return pmw_gems_response( $stale, true );
+    }
+
+    return pmw_gems_response( [], false );
+}
+
+function pmw_build_gem_price( WP_Post $post ) {
+    if ( ! function_exists( 'get_field' ) ) {
+        return null;
+    }
+
+    $cat_map = [
+        'precious'      => 'Precious',
+        'semi-precious' => 'Semi-Precious',
+        'organic'       => 'Organic',
+    ];
+    $trend_map = [
+        'rising'   => 'Rising',
+        'stable'   => 'Stable',
+        'declining' => 'Declining',
+    ];
+    $grade_map = [
+        'commercial' => 'Commercial',
+        'good'       => 'Good',
+        'fine'       => 'Fine',
+        'extra_fine' => 'Extra Fine',
+    ];
+
+    $price_low_usd  = (float) get_field( 'price_low_usd', $post->ID );
+    $price_high_usd = (float) get_field( 'price_high_usd', $post->ID );
+    $price_low_gbp  = (float) get_field( 'price_low_gbp', $post->ID );
+    $price_high_gbp = (float) get_field( 'price_high_gbp', $post->ID );
+
+    $gem_cat = get_field( 'gem_category', $post->ID );
+    $market  = get_field( 'market_trend', $post->ID );
+
+    return [
+        'id'             => (string) $post->ID,
+        'name'           => get_the_title( $post ),
+        'category'       => $cat_map[ $gem_cat ] ?? 'Semi-Precious',
+        'priceLowUsd'    => $price_low_usd,
+        'priceHighUsd'   => $price_high_usd,
+        'priceLowGbp'    => $price_low_gbp,
+        'priceHighGbp'   => $price_high_gbp,
+        'qualityGrade'   => $grade_map[ get_field( 'quality_grade', $post->ID ) ] ?? '',
+        'caratRange'     => (string) ( get_field( 'carat_range', $post->ID ) ?: '' ),
+        'trend'          => $trend_map[ $market ] ?? 'Stable',
+        'trendPercentage' => (float) ( get_field( 'trend_percentage', $post->ID ) ?: 0 ),
+        'lastReviewed'   => (string) ( get_field( 'last_reviewed', $post->ID ) ?: '' ),
+        'dataSource'     => (string) ( get_field( 'data_source', $post->ID ) ?: '' ),
+    ];
+}
+
+function pmw_gems_response( array $gems, bool $stale ) {
+    $response = new WP_REST_Response( [
+        'gems'  => $gems,
+        'stale' => $stale,
+    ], 200 );
+    $response->header( 'Cache-Control', 'public, max-age=86400, s-maxage=86400' );
+    return $response;
+}
+
+
 
