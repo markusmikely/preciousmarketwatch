@@ -1,0 +1,20 @@
+{
+  "name": "pmw-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "load-gold": "tsx loadGoldHistory.ts",
+    "load-silver": "tsx loadSilverHistory.ts",
+    "load-platinum": "tsx loadPlatinumHistory.ts",
+    "load-palladium": "tsx loadPalladiumHistory.ts",
+    "load-all-metals": "npm run load-gold && npm run load-silver && npm run load-platinum && npm run load-palladium"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  }
+}

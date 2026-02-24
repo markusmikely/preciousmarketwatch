@@ -1,0 +1,35 @@
+name: Load Metal Price History
+
+on:
+  workflow_dispatch:
+
+jobs:
+  load-metals:
+    name: Load Gold, Silver, Platinum, Palladium
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Load metal histories
+        working-directory: scripts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          FREEGOLDAPI_URL: ${{ secrets.FREEGOLDAPI_URL }}
+          SILVER_API_URL: ${{ secrets.SILVER_API_URL }}
+          PLATINUM_API_URL: ${{ secrets.PLATINUM_API_URL }}
+          PALLADIUM_API_URL: ${{ secrets.PALLADIUM_API_URL }}
+        run: npm run load-all-metals
