@@ -12,6 +12,7 @@ register_activation_hook( __FILE__, 'pmw_metals_seed_on_activate' );
 add_action( 'admin_menu', 'pmw_metals_seed_admin_menu' );
 add_action( 'admin_init', 'pmw_metals_seed_handle_action' );
 add_action( 'rest_api_init', 'pmw_metals_seed_register_rest_routes' );
+add_action( 'wp_ajax_pmw_metals_seed_validate_key', 'pmw_metals_seed_ajax_validate_key' );
 
 function pmw_metals_seed_on_activate() {
 	pmw_metals_seed_create_table();
@@ -40,30 +41,35 @@ function pmw_metals_seed_create_table() {
 	dbDelta( $sql );
 }
 
-function pmw_metals_seed_run() {
-	$results = [
-		'gold'      => pmw_metals_seed_load_gold(),
-		'silver'    => pmw_metals_seed_load_metals_dev( 'silver' ),
-		'platinum'  => pmw_metals_seed_load_metals_dev( 'platinum' ),
-		'palladium' => pmw_metals_seed_load_metals_dev( 'palladium' ),
-	];
+/**
+ * Run full historical seed. $source: 'free' = FreeGoldAPI + URL APIs; 'metalsdev' = Metals.dev timeseries for silver/pt/pd.
+ */
+function pmw_metals_seed_run( $source = 'free' ) {
+	$results = [ 'gold' => [ 'inserted' => 0, 'skipped' => 0 ], 'silver' => [ 'inserted' => 0, 'skipped' => 0 ], 'platinum' => [ 'inserted' => 0, 'skipped' => 0 ], 'palladium' => [ 'inserted' => 0, 'skipped' => 0 ] ];
 
-	// Fallback: optional URL-based loaders when Metals.dev key not set
-	$metals_dev_key = defined( 'PMW_METALS_DEV_API_KEY' ) ? PMW_METALS_DEV_API_KEY : '';
-	if ( empty( $metals_dev_key ) ) {
-		if ( defined( 'PMW_SILVER_API_URL' ) && PMW_SILVER_API_URL ) {
-			$results['silver'] = pmw_metals_seed_load_from_url( 'silver', PMW_SILVER_API_URL );
-		}
-		if ( defined( 'PMW_PLATINUM_API_URL' ) && PMW_PLATINUM_API_URL ) {
-			$results['platinum'] = pmw_metals_seed_load_from_url( 'platinum', PMW_PLATINUM_API_URL );
-		}
-		if ( defined( 'PMW_PALLADIUM_API_URL' ) && PMW_PALLADIUM_API_URL ) {
-			$results['palladium'] = pmw_metals_seed_load_from_url( 'palladium', PMW_PALLADIUM_API_URL );
-		}
+	$results['gold'] = pmw_metals_seed_load_gold();
+
+	if ( $source === 'metalsdev' ) {
+		$results['silver']   = pmw_metals_seed_load_metals_dev( 'silver' );
+		$results['platinum']  = pmw_metals_seed_load_metals_dev( 'platinum' );
+		$results['palladium'] = pmw_metals_seed_load_metals_dev( 'palladium' );
+	} else {
+		$results['silver']   = defined( 'PMW_SILVER_API_URL' ) && PMW_SILVER_API_URL
+			? pmw_metals_seed_load_from_url( 'silver', PMW_SILVER_API_URL )
+			: [ 'error' => 'PMW_SILVER_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
+		$results['platinum'] = defined( 'PMW_PLATINUM_API_URL' ) && PMW_PLATINUM_API_URL
+			? pmw_metals_seed_load_from_url( 'platinum', PMW_PLATINUM_API_URL )
+			: [ 'error' => 'PMW_PLATINUM_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
+		$results['palladium'] = defined( 'PMW_PALLADIUM_API_URL' ) && PMW_PALLADIUM_API_URL
+			? pmw_metals_seed_load_from_url( 'palladium', PMW_PALLADIUM_API_URL )
+			: [ 'error' => 'PMW_PALLADIUM_API_URL not set', 'inserted' => 0, 'skipped' => 0 ];
 	}
 
+	$source_label = $source === 'metalsdev' ? 'Metals.dev' : 'Free APIs (FreeGoldAPI + MetalPriceAPI)';
+	$results['_source'] = $source_label;
 	update_option( 'pmw_metals_seed_last_run', $results );
 	update_option( 'pmw_metals_seed_just_ran', true );
+	return $results;
 }
 
 /**
@@ -282,6 +288,58 @@ function pmw_metals_seed_admin_scripts() {
 		'4.4.1',
 		true
 	);
+	wp_enqueue_script( 'jquery' );
+}
+
+/**
+ * AJAX: validate Metals.dev API key (lightweight /v1/latest call).
+ */
+function pmw_metals_seed_ajax_validate_key() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json( [ 'valid' => false, 'error' => 'Unauthorized' ] );
+	}
+	$key = defined( 'PMW_METALS_DEV_API_KEY' ) ? PMW_METALS_DEV_API_KEY : '';
+	if ( empty( $key ) ) {
+		wp_send_json( [ 'valid' => false, 'error' => 'API key not set' ] );
+	}
+	$url  = add_query_arg( [ 'api_key' => $key, 'currency' => 'USD', 'unit' => 'toz' ], 'https://api.metals.dev/v1/latest' );
+	$resp = wp_remote_get( $url, [ 'timeout' => 10 ] );
+	if ( is_wp_error( $resp ) ) {
+		wp_send_json( [ 'valid' => false, 'error' => $resp->get_error_message() ] );
+	}
+	$code = wp_remote_retrieve_response_code( $resp );
+	if ( $code !== 200 ) {
+		wp_send_json( [ 'valid' => false, 'error' => 'HTTP ' . $code ] );
+	}
+	$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+	if ( empty( $data['metals'] ) || ! is_array( $data['metals'] ) ) {
+		$msg = isset( $data['error_message'] ) ? $data['error_message'] : 'Invalid response';
+		wp_send_json( [ 'valid' => false, 'error' => $msg ] );
+	}
+	wp_send_json( [ 'valid' => true ] );
+}
+
+function pmw_metals_seed_env_url_status( $const_name, $default_url = '' ) {
+	$url = defined( $const_name ) ? constant( $const_name ) : '';
+	if ( $url === '' && $default_url !== '' ) {
+		$url = $default_url;
+	}
+	if ( $url === '' ) {
+		return [ 'set' => false, 'display' => '' ];
+	}
+	$parsed = wp_parse_url( $url );
+	$query  = [];
+	if ( ! empty( $parsed['query'] ) ) {
+		parse_str( $parsed['query'], $query );
+	}
+	if ( isset( $query['api_key'] ) ) {
+		$query['api_key'] = '••••••••';
+	}
+	$display = ( $parsed['scheme'] ?? '' ) . '://' . ( $parsed['host'] ?? '' ) . ( $parsed['path'] ?? '' );
+	if ( ! empty( $query ) ) {
+		$display .= '?' . http_build_query( $query );
+	}
+	return [ 'set' => true, 'display' => $display ];
 }
 
 function pmw_metals_seed_admin_page() {
@@ -289,7 +347,22 @@ function pmw_metals_seed_admin_page() {
 
 	global $wpdb;
 	$table = $wpdb->prefix . 'metal_prices';
-	$last = get_option( 'pmw_metals_seed_last_run', [] );
+	$last  = get_option( 'pmw_metals_seed_last_run', [] );
+	$last_source = isset( $last['_source'] ) ? $last['_source'] : '';
+	$free_apis_ready = true;
+	$env_status = [
+		'PMW_FREEGOLDAPI_URL'   => pmw_metals_seed_env_url_status( 'PMW_FREEGOLDAPI_URL', 'https://freegoldapi.com/data/latest.json' ),
+		'PMW_SILVER_API_URL'   => pmw_metals_seed_env_url_status( 'PMW_SILVER_API_URL' ),
+		'PMW_PLATINUM_API_URL' => pmw_metals_seed_env_url_status( 'PMW_PLATINUM_API_URL' ),
+		'PMW_PALLADIUM_API_URL'=> pmw_metals_seed_env_url_status( 'PMW_PALLADIUM_API_URL' ),
+	];
+	foreach ( [ 'PMW_FREEGOLDAPI_URL', 'PMW_SILVER_API_URL', 'PMW_PLATINUM_API_URL', 'PMW_PALLADIUM_API_URL' ] as $k ) {
+		if ( ! $env_status[ $k ]['set'] ) {
+			$free_apis_ready = false;
+			break;
+		}
+	}
+	$metals_dev_key_set = defined( 'PMW_METALS_DEV_API_KEY' ) && trim( (string) PMW_METALS_DEV_API_KEY ) !== '';
 	$counts = [];
 	$latest = [];
 	foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) {
@@ -325,16 +398,67 @@ function pmw_metals_seed_admin_page() {
 			'tension' => 0.2,
 		];
 	}
+
+	$notice = get_transient( 'pmw_metals_seed_notice' );
+	if ( $notice && ! empty( $notice['message'] ) ) {
+		delete_transient( 'pmw_metals_seed_notice' );
+	}
 	?>
 	<div class="wrap">
 		<h1>PMW Metals Seed</h1>
-		<p>Creates <code>metal_prices</code> table and loads historical data. Gold: FreeGoldAPI. Silver, platinum, palladium: Metals.dev (set <code>PMW_METALS_DEV_API_KEY</code> in .env).</p>
+		<p>Creates <code>metal_prices</code> table and loads historical data. Choose a source below, then run a full seed or a one-off daily update.</p>
 
-		<form method="post" action="">
+		<?php if ( $notice && ! empty( $notice['message'] ) ) : ?>
+			<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['message'] ); ?></p></div>
+		<?php endif; ?>
+
+		<form method="post" action="" id="pmw-metals-seed-form">
 			<?php wp_nonce_field( 'pmw_metals_seed_run', 'pmw_metals_seed_nonce' ); ?>
+
+			<div class="pmw-source-selector" style="max-width: 640px; margin: 1em 0; padding: 1em; border: 1px solid #c3c4c7; background: #fff;">
+				<h3 style="margin-top: 0;">Source for full seed</h3>
+
+				<p>
+					<label>
+						<input type="radio" name="pmw_seed_source_choice" value="free" <?php echo $free_apis_ready ? 'checked ' : 'disabled '; ?> />
+						<strong>Free APIs (FreeGoldAPI + MetalPriceAPI)</strong>
+					</label>
+					<span id="pmw-free-badge"></span>
+				</p>
+				<p class="description" style="margin-left: 1.5em;">Uses your configured environment variables. No API key required.</p>
+				<ul class="description" style="margin-left: 1.5em; list-style: none;">
+					<?php foreach ( $env_status as $name => $s ) : ?>
+						<li><?php echo esc_html( $name ); ?> <?php echo $s['set'] ? '✓ set' : '<span style="color:red">✗ not set</span>'; ?>
+							<?php if ( $s['set'] && $s['display'] ) : ?> <code style="font-size: 11px;"><?php echo esc_html( $s['display'] ); ?></code><?php endif; ?>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+				<?php if ( ! $free_apis_ready ) : ?>
+					<p class="description" style="margin-left: 1.5em; color: #d63638;">Configure missing URLs in .env to enable.</p>
+				<?php endif; ?>
+
+				<p style="margin-top: 1.2em;">
+					<label>
+						<input type="radio" name="pmw_seed_source_choice" value="metalsdev" <?php echo ( $metals_dev_key_set && ! $free_apis_ready ) ? 'checked ' : ''; echo $metals_dev_key_set ? '' : 'disabled '; ?> />
+						<strong>Metals.dev (full historical timeseries)</strong>
+					</label>
+					<?php if ( ! $metals_dev_key_set ) : ?>
+						<span class="notice notice-info inline" style="margin-left: 8px; padding: 2px 8px;">API key not set</span>
+					<?php else : ?>
+						<span id="pmw-metalsdev-badge"></span>
+					<?php endif; ?>
+				</p>
+				<p class="description" style="margin-left: 1.5em;">Fetches daily data from 1990-01-01 via Metals.dev API. Slower — use once for initial historical backfill.</p>
+				<?php if ( ! $metals_dev_key_set ) : ?>
+					<p class="description" style="margin-left: 1.5em; color: #646970;">Set <code>PMW_METALS_DEV_API_KEY</code> in .env or wp-config.php to enable.</p>
+				<?php endif; ?>
+			</div>
+
 			<p>
-				<button type="submit" name="pmw_metals_seed" class="button button-primary">Seed / Re-run Now</button>
+				<button type="submit" name="pmw_seed_source" value="1" class="button button-primary" id="pmw-seed-btn">Run Seed Now</button>
+				<button type="submit" name="pmw_daily_update" value="1" class="button button-secondary" title="Always uses free API sources. Same as the daily cron job.">Run Daily Update Now</button>
 			</p>
+			<p class="description">Run Daily Update Now always uses free API sources (same as the daily cron job).</p>
 		</form>
 
 		<h2>Current prices (latest in database)</h2>
@@ -380,12 +504,18 @@ function pmw_metals_seed_admin_page() {
 			<?php endforeach; ?>
 		</ul>
 
-		<?php if ( ! empty( $last ) ) : ?>
+		<?php
+		$last_metals = array_diff_key( $last, [ '_source' => 1 ] );
+		if ( ! empty( $last_metals ) ) :
+		?>
 		<h2>Last run</h2>
 		<table class="widefat striped">
-			<thead><tr><th>Metal</th><th>Result</th></tr></thead>
+			<thead><tr><th>Metal</th><th>Result</th><?php if ( $last_source ) : ?><th>Source</th><?php endif; ?></tr></thead>
 			<tbody>
-			<?php foreach ( $last as $metal => $r ) : ?>
+			<?php
+			foreach ( $last_metals as $metal => $r ) :
+				if ( ! is_array( $r ) ) continue;
+			?>
 				<tr>
 					<td><?php echo esc_html( ucfirst( $metal ) ); ?></td>
 					<td>
@@ -399,6 +529,7 @@ function pmw_metals_seed_admin_page() {
 						}
 						?>
 					</td>
+					<?php if ( $last_source ) : ?><td><?php echo esc_html( $last_source ); ?></td><?php endif; ?>
 				</tr>
 			<?php endforeach; ?>
 			</tbody>
@@ -406,7 +537,68 @@ function pmw_metals_seed_admin_page() {
 		<?php endif; ?>
 
 		<h2>Configuration</h2>
-		<p>Set in <code>.env</code> or wp-config: <code>PMW_METALS_DEV_API_KEY</code> for silver/platinum/palladium from Metals.dev. Optional fallback URLs: <code>PMW_SILVER_API_URL</code>, <code>PMW_PLATINUM_API_URL</code>, <code>PMW_PALLADIUM_API_URL</code>.</p>
+		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code>, <code>PMW_SILVER_API_URL</code>, <code>PMW_PLATINUM_API_URL</code>, <code>PMW_PALLADIUM_API_URL</code> for free APIs. <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries).</p>
+
+		<?php if ( $metals_dev_key_set ) : ?>
+		<script>
+		(function() {
+			var ajaxUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+			var nonce = <?php echo wp_json_encode( wp_create_nonce( 'pmw_metals_seed_validate' ) ); ?>;
+			var badgeEl = document.getElementById('pmw-metalsdev-badge');
+			var seedBtn = document.getElementById('pmw-seed-btn');
+			var form = document.getElementById('pmw-metals-seed-form');
+			var metalsDevValid = null;
+
+			function setBadge(valid, error) {
+				if (!badgeEl) return;
+				if (valid === true) {
+					badgeEl.innerHTML = '<span style="color: #00a32a; margin-left: 6px;">✓ Key valid</span>';
+					badgeEl.style.color = '';
+				} else if (valid === false) {
+					badgeEl.innerHTML = '<span style="color: #d63638; margin-left: 6px;">✗ Key invalid — ' + (error || 'Unknown error') + '</span>';
+					badgeEl.style.color = '#d63638';
+				} else {
+					badgeEl.innerHTML = '<span style="color: #646970; margin-left: 6px;">Checking…</span>';
+				}
+			}
+
+			function validateKey(cb) {
+				setBadge(null);
+				jQuery.post(ajaxUrl, { action: 'pmw_metals_seed_validate_key', _wpnonce: nonce }, function(data) {
+					metalsDevValid = data.valid === true;
+					setBadge(data.valid, data.error || '');
+					if (cb) cb(data);
+				}).fail(function() {
+					metalsDevValid = false;
+					setBadge(false, 'Request failed');
+					if (cb) cb({ valid: false, error: 'Request failed' });
+				});
+			}
+
+			function updateSeedButtonState() {
+				var choice = form && form.querySelector('input[name="pmw_seed_source_choice"]:checked');
+				if (!seedBtn) return;
+				if (choice && choice.value === 'metalsdev' && metalsDevValid === false) {
+					seedBtn.disabled = true;
+				} else {
+					seedBtn.disabled = false;
+				}
+			}
+
+			if (badgeEl && form) {
+				validateKey(updateSeedButtonState);
+				form.addEventListener('change', function() {
+					var choice = form.querySelector('input[name="pmw_seed_source_choice"]:checked');
+					if (choice && choice.value === 'metalsdev') {
+						validateKey(updateSeedButtonState);
+					} else {
+						updateSeedButtonState();
+					}
+				});
+			}
+		})();
+		</script>
+		<?php endif; ?>
 	</div>
 	<?php
 }
@@ -705,12 +897,59 @@ function pmw_metals_seed_update_market_data_acf( $metals_data, $usd_gbp ) {
 }
 
 function pmw_metals_seed_handle_action() {
-	if ( ! isset( $_POST['pmw_metals_seed'] ) || ! current_user_can( 'manage_options' ) ) return;
-	if ( ! wp_verify_nonce( $_POST['pmw_metals_seed_nonce'] ?? '', 'pmw_metals_seed_run' ) ) return;
+	if ( ! current_user_can( 'manage_options' ) ) return;
+	if ( ! isset( $_POST['pmw_metals_seed_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_metals_seed_nonce'], 'pmw_metals_seed_run' ) ) return;
 
 	pmw_metals_seed_create_table();
-	pmw_metals_seed_run();
 
+	$notice = [ 'type' => 'info', 'message' => '' ];
+
+	if ( ! empty( $_POST['pmw_seed_source'] ) ) {
+		$choice = isset( $_POST['pmw_seed_source_choice'] ) ? sanitize_text_field( $_POST['pmw_seed_source_choice'] ) : 'free';
+		if ( ! in_array( $choice, [ 'free', 'metalsdev' ], true ) ) {
+			$choice = 'free';
+		}
+		$results = pmw_metals_seed_run( $choice );
+		$source_label = $results['_source'] ?? $choice;
+		unset( $results['_source'] );
+		$errors = array_filter( $results, function ( $r ) { return ! empty( $r['error'] ); } );
+		$inserted_total = array_sum( array_column( $results, 'inserted' ) );
+		if ( empty( $errors ) ) {
+			$notice = [ 'type' => 'success', 'message' => sprintf( 'Seed complete. %d records inserted across 4 metals using %s.', $inserted_total, $source_label ) ];
+		} elseif ( count( $errors ) < 4 ) {
+			$parts = [];
+			foreach ( $errors as $metal => $r ) {
+				$parts[] = ucfirst( $metal ) . ': ' . ( $r['error'] ?? 'error' );
+			}
+			$notice = [ 'type' => 'warning', 'message' => 'Seed completed with errors. ' . implode( ' ', $parts ) . ' Check the Last Run table below.' ];
+		} else {
+			$notice = [ 'type' => 'error', 'message' => 'Seed failed. See details in the Last Run table below.' ];
+		}
+	} elseif ( ! empty( $_POST['pmw_daily_update'] ) ) {
+		$req = new WP_REST_Request( 'POST' );
+		$resp = pmw_metals_seed_cron_price_update( $req );
+		$data = $resp->get_data();
+		$last_run = [ '_source' => 'Free APIs (daily)' ];
+		foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) {
+			if ( ! empty( $data['errors'][ $m ] ) ) {
+				$last_run[ $m ] = [ 'error' => $data['errors'][ $m ], 'inserted' => 0, 'skipped' => 0 ];
+			} else {
+				$last_run[ $m ] = [ 'inserted' => 1, 'skipped' => 0 ];
+			}
+		}
+		update_option( 'pmw_metals_seed_last_run', $last_run );
+		if ( ! empty( $data['success'] ) && empty( $data['errors'] ) ) {
+			$notice = [ 'type' => 'success', 'message' => 'Daily update complete. All 4 metals updated using free APIs.' ];
+		} elseif ( ! empty( $data['metals'] ) ) {
+			$notice = [ 'type' => 'warning', 'message' => 'Daily update completed with some errors. Check the Last Run table below.' ];
+		} else {
+			$notice = [ 'type' => 'error', 'message' => 'Daily update failed. See details below.' ];
+		}
+	} else {
+		return;
+	}
+
+	set_transient( 'pmw_metals_seed_notice', $notice, 30 );
 	wp_safe_redirect( add_query_arg( [ 'page' => 'pmw-metals-seed' ], admin_url( 'tools.php' ) ) );
 	exit;
 }
