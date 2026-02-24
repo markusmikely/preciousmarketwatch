@@ -4,38 +4,13 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { PriceChart } from "@/components/shared/PriceChart";
+import { Button } from "@/components/ui/button";
+import { useMetalPageData } from "@/components/metals/useMetalPageData";
 
-const articles = [
-  {
-    title: "Platinum in the Automotive Industry: Future Outlook",
-    excerpt: "How hydrogen fuel cells and emissions standards are driving platinum demand.",
-    category: "Industry Analysis",
-    author: "David Park",
-    date: "Dec 9, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
-    href: "/articles/platinum-automotive",
-  },
-  {
-    title: "Platinum vs Gold: Investment Comparison",
-    excerpt: "Comparing the investment characteristics of platinum against gold.",
-    category: "Comparison",
-    author: "Sarah Williams",
-    date: "Dec 8, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
-    href: "/articles/platinum-vs-gold",
-  },
-  {
-    title: "South African Mining: Platinum Supply Dynamics",
-    excerpt: "Understanding how South African production affects global platinum supply.",
-    category: "Supply Chain",
-    author: "Michael Chen",
-    date: "Dec 7, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80",
-    href: "/articles/south-african-platinum",
-  },
+const FALLBACK_ARTICLES = [
+  { title: "Platinum in the Automotive Industry", excerpt: "How hydrogen fuel cells and emissions drive platinum demand.", category: "Industry Analysis", author: "Staff", date: "Dec 9, 2024", readTime: "6 min read", image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80", href: "/market-insights" },
+  { title: "Platinum vs Gold: Investment Comparison", excerpt: "Comparing platinum and gold investment characteristics.", category: "Comparison", author: "Staff", date: "Dec 8, 2024", readTime: "5 min read", image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80", href: "/market-insights" },
+  { title: "South African Mining: Platinum Supply", excerpt: "How South African production affects global platinum supply.", category: "Supply Chain", author: "Staff", date: "Dec 7, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80", href: "/market-insights" },
 ];
 
 const applications = [
@@ -46,6 +21,9 @@ const applications = [
 ];
 
 export default function Platinum() {
+  const { articles: graphqlArticles } = useMetalPageData("platinum");
+  const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
+
   return (
     <PageLayout>
       <PageHero
@@ -114,7 +92,7 @@ export default function Platinum() {
             </Button>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {articles.map((article) => (
+            {articles.slice(0, 6).map((article) => (
               <ArticleCard key={article.title} {...article} />
             ))}
           </div>

@@ -4,38 +4,13 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { PriceChart } from "@/components/shared/PriceChart";
+import { Button } from "@/components/ui/button";
+import { useMetalPageData } from "@/components/metals/useMetalPageData";
 
-const articles = [
-  {
-    title: "Palladium Supply Crisis: Russia's Market Impact",
-    excerpt: "Analyzing how geopolitical factors affect palladium supply and pricing.",
-    category: "Market Analysis",
-    author: "Michael Chen",
-    date: "Dec 9, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
-    href: "/articles/palladium-russia-impact",
-  },
-  {
-    title: "Palladium vs Platinum: Catalytic Converter Battle",
-    excerpt: "How automakers choose between palladium and platinum for emissions control.",
-    category: "Industry",
-    author: "David Park",
-    date: "Dec 8, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80",
-    href: "/articles/palladium-vs-platinum",
-  },
-  {
-    title: "Investing in Palladium: Complete Guide",
-    excerpt: "Everything you need to know about palladium investment options.",
-    category: "Investment Guide",
-    author: "Sarah Williams",
-    date: "Dec 7, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
-    href: "/articles/palladium-investment-guide",
-  },
+const FALLBACK_ARTICLES = [
+  { title: "Palladium Supply Crisis: Russia's Market Impact", excerpt: "How geopolitical factors affect palladium supply and pricing.", category: "Market Analysis", author: "Staff", date: "Dec 9, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80", href: "/market-insights" },
+  { title: "Palladium vs Platinum: Catalytic Converter Battle", excerpt: "How automakers choose between palladium and platinum.", category: "Industry", author: "Staff", date: "Dec 8, 2024", readTime: "5 min read", image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80", href: "/market-insights" },
+  { title: "Investing in Palladium: Complete Guide", excerpt: "Everything you need to know about palladium investment.", category: "Investment Guide", author: "Staff", date: "Dec 7, 2024", readTime: "6 min read", image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80", href: "/market-insights" },
 ];
 
 const useCases = [
@@ -46,6 +21,9 @@ const useCases = [
 ];
 
 export default function Palladium() {
+  const { articles: graphqlArticles } = useMetalPageData("palladium");
+  const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
+
   return (
     <PageLayout>
       <PageHero
@@ -114,7 +92,7 @@ export default function Palladium() {
             </Button>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {articles.map((article) => (
+            {articles.slice(0, 6).map((article) => (
               <ArticleCard key={article.title} {...article} />
             ))}
           </div>

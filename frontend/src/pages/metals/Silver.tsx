@@ -4,38 +4,13 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { PriceChart } from "@/components/shared/PriceChart";
+import { Button } from "@/components/ui/button";
+import { useMetalPageData } from "@/components/metals/useMetalPageData";
 
-const articles = [
-  {
-    title: "Silver's Role in the Green Energy Revolution",
-    excerpt: "How solar panel demand and electric vehicle production are reshaping the silver market.",
-    category: "Market Analysis",
-    author: "Jennifer Adams",
-    date: "Dec 9, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=800&q=80",
-    href: "/articles/silver-green-energy",
-  },
-  {
-    title: "Silver Coins for Investment: Complete Guide",
-    excerpt: "From American Eagles to Canadian Maples, discover the best silver coins for your portfolio.",
-    category: "Buying Guide",
-    author: "Michael Chen",
-    date: "Dec 8, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1607292803062-5b3f3d3e5e3a?w=800&q=80",
-    href: "/articles/silver-coins-guide",
-  },
-  {
-    title: "Gold-to-Silver Ratio: Trading Strategies",
-    excerpt: "Understanding the gold-silver ratio and how to use it for strategic precious metals investing.",
-    category: "Strategy",
-    author: "David Park",
-    date: "Dec 7, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
-    href: "/articles/gold-silver-ratio",
-  },
+const FALLBACK_ARTICLES = [
+  { title: "Silver's Role in the Green Energy Revolution", excerpt: "How solar panel demand and EV production reshape the silver market.", category: "Market Analysis", author: "Staff", date: "Dec 9, 2024", readTime: "6 min read", image: "https://images.unsplash.com/photo-1589656966895-2f33e7653819?w=800&q=80", href: "/market-insights" },
+  { title: "Silver Coins for Investment", excerpt: "Discover the best silver coins for your portfolio.", category: "Buying Guide", author: "Staff", date: "Dec 8, 2024", readTime: "5 min read", image: "https://images.unsplash.com/photo-1607292803062-5b3f3d3e5e3a?w=800&q=80", href: "/market-insights" },
+  { title: "Gold-to-Silver Ratio", excerpt: "Trading strategies using the gold-silver ratio.", category: "Strategy", author: "Staff", date: "Dec 7, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80", href: "/market-insights" },
 ];
 
 const demandSectors = [
@@ -46,6 +21,9 @@ const demandSectors = [
 ];
 
 export default function Silver() {
+  const { articles: graphqlArticles } = useMetalPageData("silver");
+  const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
+
   return (
     <PageLayout>
       <PageHero
@@ -114,7 +92,7 @@ export default function Silver() {
             </Button>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {articles.map((article) => (
+            {articles.slice(0, 6).map((article) => (
               <ArticleCard key={article.title} {...article} />
             ))}
           </div>

@@ -264,23 +264,66 @@ function pmw_metals_seed_insert_records_with_gbp( $metal, $records, $source ) {
 }
 
 function pmw_metals_seed_admin_menu() {
-	add_management_page(
+	$hook = add_management_page(
 		'PMW Metals Seed',
 		'Metals Seed',
 		'manage_options',
 		'pmw-metals-seed',
 		'pmw_metals_seed_admin_page'
 	);
+	add_action( "load-{$hook}", 'pmw_metals_seed_admin_scripts' );
+}
+
+function pmw_metals_seed_admin_scripts() {
+	wp_enqueue_script(
+		'chartjs',
+		'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+		[],
+		'4.4.1',
+		true
+	);
 }
 
 function pmw_metals_seed_admin_page() {
 	if ( ! current_user_can( 'manage_options' ) ) return;
 
+	global $wpdb;
+	$table = $wpdb->prefix . 'metal_prices';
 	$last = get_option( 'pmw_metals_seed_last_run', [] );
-	$table = $GLOBALS['wpdb']->prefix . 'metal_prices';
 	$counts = [];
+	$latest = [];
 	foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) {
-		$counts[ $m ] = (int) $GLOBALS['wpdb']->get_var( $GLOBALS['wpdb']->prepare( "SELECT COUNT(*) FROM $table WHERE metal = %s", $m ) );
+		$counts[ $m ] = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $table WHERE metal = %s", $m ) );
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT date, price_usd, price_gbp FROM $table WHERE metal = %s ORDER BY date DESC LIMIT 1",
+			$m
+		), ARRAY_A );
+		$latest[ $m ] = $row;
+	}
+
+	$rows = $wpdb->get_results(
+		"SELECT metal, date, price_usd FROM $table WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) ORDER BY date ASC",
+		ARRAY_A
+	);
+	$by_metal = [ 'gold' => [], 'silver' => [], 'platinum' => [], 'palladium' => [] ];
+	$all_dates = [];
+	foreach ( $rows as $r ) {
+		$all_dates[ $r['date'] ] = true;
+		$by_metal[ $r['metal'] ][ $r['date'] ] = (float) $r['price_usd'];
+	}
+	$labels = array_keys( $all_dates );
+	sort( $labels );
+	$chart_datasets = [];
+	$colors = [ 'gold' => [ '#d4a84b', 'rgba(212,168,75,0.1)' ], 'silver' => [ '#94a3b8', 'rgba(148,163,184,0.1)' ], 'platinum' => [ '#0d9488', 'rgba(13,148,136,0.1)' ], 'palladium' => [ '#ea580c', 'rgba(234,88,12,0.1)' ] ];
+	foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) {
+		$chart_datasets[] = [
+			'label' => ucfirst( $m ),
+			'data'  => array_map( function ( $d ) use ( $by_metal, $m ) { return $by_metal[ $m ][ $d ] ?? null; }, $labels ),
+			'borderColor' => $colors[ $m ][0],
+			'backgroundColor' => $colors[ $m ][1],
+			'fill' => true,
+			'tension' => 0.2,
+		];
 	}
 	?>
 	<div class="wrap">
@@ -294,7 +337,43 @@ function pmw_metals_seed_admin_page() {
 			</p>
 		</form>
 
-		<h2>Current counts</h2>
+		<h2>Current prices (latest in database)</h2>
+		<table class="widefat striped" style="max-width: 600px;">
+			<thead><tr><th>Metal</th><th>Date</th><th>USD</th><th>GBP</th></tr></thead>
+			<tbody>
+			<?php foreach ( [ 'gold', 'silver', 'platinum', 'palladium' ] as $m ) : $r = $latest[ $m ] ?? null; ?>
+				<tr>
+					<td><strong><?php echo esc_html( ucfirst( $m ) ); ?></strong></td>
+					<td><?php echo $r ? esc_html( $r['date'] ) : '—'; ?></td>
+					<td><?php echo $r ? '$' . esc_html( number_format( (float) $r['price_usd'], 2 ) ) : '—'; ?></td>
+					<td><?php echo ( $r && $r['price_gbp'] ) ? '£' . esc_html( number_format( (float) $r['price_gbp'], 2 ) ) : '—'; ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<p class="description">Also shown on <a href="<?php echo esc_url( admin_url( 'admin.php?page=market_data' ) ); ?>">Market Data</a> (updated by daily cron).</p>
+
+		<h2>30-day price chart</h2>
+		<div style="max-width: 800px; height: 300px;">
+			<canvas id="pmw-metals-chart"></canvas>
+		</div>
+		<script>
+		document.addEventListener('DOMContentLoaded', function() {
+			if (typeof Chart === 'undefined') return;
+			var ctx = document.getElementById('pmw-metals-chart');
+			if (!ctx) return;
+			var labels = <?php echo wp_json_encode( $labels ); ?>;
+			var datasets = <?php echo wp_json_encode( $chart_datasets ); ?>;
+			if (labels.length === 0) { ctx.parentNode.innerHTML = '<p>No data to display. Run Seed first.</p>'; return; }
+			new Chart(ctx, {
+				type: 'line',
+				data: { labels: labels, datasets: datasets },
+				options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+			});
+		});
+		</script>
+
+		<h2>Record counts</h2>
 		<ul>
 			<?php foreach ( $counts as $metal => $n ) : ?>
 				<li><strong><?php echo esc_html( ucfirst( $metal ) ); ?></strong>: <?php echo (int) $n; ?> records</li>

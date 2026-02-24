@@ -6,63 +6,17 @@ import { ArticleCard } from "@/components/shared/ArticleCard";
 import { DealerCard } from "@/components/shared/DealerCard";
 import { Button } from "@/components/ui/button";
 import { PriceChart } from "@/components/shared/PriceChart";
+import { useMetalPageData } from "@/components/metals/useMetalPageData";
 
-const articles = [
-  {
-    title: "Gold ETFs vs Physical Gold: Which is Right for You?",
-    excerpt: "A comprehensive comparison of gold investment vehicles, including costs, liquidity, and storage considerations.",
-    category: "Investment Guide",
-    author: "Michael Chen",
-    date: "Dec 9, 2024",
-    readTime: "7 min read",
-    image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80",
-    href: "/articles/gold-etfs-vs-physical",
-  },
-  {
-    title: "Understanding Gold Purity: 24K, 22K, and 18K Explained",
-    excerpt: "Everything you need to know about gold karats, hallmarks, and how purity affects value and durability.",
-    category: "Education",
-    author: "Sarah Williams",
-    date: "Dec 8, 2024",
-    readTime: "5 min read",
-    image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80",
-    href: "/articles/gold-purity-explained",
-  },
-  {
-    title: "Gold Coins vs Gold Bars: A Complete Buying Guide",
-    excerpt: "Learn the pros and cons of investing in gold coins versus gold bars, including premiums and resale value.",
-    category: "Buying Guide",
-    author: "David Park",
-    date: "Dec 7, 2024",
-    readTime: "6 min read",
-    image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80",
-    href: "/articles/gold-coins-vs-bars",
-  },
+const FALLBACK_ARTICLES = [
+  { title: "Gold ETFs vs Physical Gold", excerpt: "Comprehensive comparison of gold investment vehicles.", category: "Investment Guide", author: "Staff", date: "Dec 9, 2024", readTime: "7 min read", image: "https://images.unsplash.com/photo-1610375461246-83df859d849d?w=800&q=80", href: "/market-insights" },
+  { title: "Understanding Gold Purity", excerpt: "Everything you need to know about gold karats and hallmarks.", category: "Education", author: "Staff", date: "Dec 8, 2024", readTime: "5 min read", image: "https://images.unsplash.com/photo-1624365168968-f283d506c6b6?w=800&q=80", href: "/market-insights" },
+  { title: "Gold Coins vs Gold Bars", excerpt: "Pros and cons of investing in gold coins versus gold bars.", category: "Buying Guide", author: "Staff", date: "Dec 7, 2024", readTime: "6 min read", image: "https://images.unsplash.com/photo-1579532536935-619928decd08?w=800&q=80", href: "/market-insights" },
 ];
 
-const dealers = [
-  {
-    name: "APMEX",
-    description: "One of the largest online precious metals dealers with extensive gold selection.",
-    rating: 4.8,
-    reviews: 12450,
-    categories: ["Gold Bars", "Gold Coins", "Bullion"],
-    features: ["Free shipping $199+", "Price match guarantee", "Secure storage"],
-    logo: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80",
-    href: "https://apmex.com",
-    featured: true,
-  },
-  {
-    name: "JM Bullion",
-    description: "Trusted dealer offering competitive prices on gold products.",
-    rating: 4.7,
-    reviews: 8920,
-    categories: ["Gold", "Silver", "Platinum"],
-    features: ["Low premiums", "Fast shipping", "IRA eligible"],
-    logo: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80",
-    href: "https://jmbullion.com",
-    featured: false,
-  },
+const FALLBACK_DEALERS = [
+  { name: "APMEX", description: "One of the largest online precious metals dealers with extensive gold selection.", rating: 4.8, reviews: 12450, categories: ["Gold Bars", "Gold Coins", "Bullion"], features: ["Free shipping $199+", "Price match guarantee"], logo: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80", href: "https://apmex.com", featured: true },
+  { name: "JM Bullion", description: "Trusted dealer offering competitive prices on gold products.", rating: 4.7, reviews: 8920, categories: ["Gold", "Silver", "Platinum"], features: ["Low premiums", "Fast shipping", "IRA eligible"], logo: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&q=80", href: "https://jmbullion.com", featured: false },
 ];
 
 const investmentOptions = [
@@ -73,6 +27,10 @@ const investmentOptions = [
 ];
 
 export default function Gold() {
+  const { articles: graphqlArticles, dealers: graphqlDealers, loading } = useMetalPageData("gold");
+  const articles = graphqlArticles.length > 0 ? graphqlArticles : FALLBACK_ARTICLES;
+  const dealers = graphqlDealers.length > 0 ? graphqlDealers : FALLBACK_DEALERS;
+
   return (
     <PageLayout>
       <PageHero
@@ -141,7 +99,7 @@ export default function Gold() {
             </Button>
           </div>
           <div className="grid md:grid-cols-2 gap-6">
-            {dealers.map((dealer) => (
+            {(loading ? FALLBACK_DEALERS : dealers).slice(0, 4).map((dealer) => (
               <DealerCard key={dealer.name} {...dealer} />
             ))}
           </div>
@@ -161,7 +119,7 @@ export default function Gold() {
             </Button>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {articles.map((article) => (
+            {(loading ? FALLBACK_ARTICLES : articles).slice(0, 6).map((article) => (
               <ArticleCard key={article.title} {...article} />
             ))}
           </div>
