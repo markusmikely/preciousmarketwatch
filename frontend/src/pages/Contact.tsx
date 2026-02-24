@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Mail, Building, Newspaper, Send } from "lucide-react";
+import { Mail, Building, Newspaper, Send, Loader2 } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { submitContactForm } from "@/services/contact";
 
 const inquiryTypes = [
   { id: "general", label: "General Inquiry", icon: Mail },
@@ -14,8 +14,11 @@ const inquiryTypes = [
   { id: "press", label: "Press & Media", icon: Newspaper },
 ];
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export default function Contact() {
-  const { toast } = useToast();
   const [selectedType, setSelectedType] = useState("general");
   const [formData, setFormData] = useState({
     name: "",
@@ -24,15 +27,43 @@ export default function Contact() {
     subject: "",
     message: "",
   });
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [submitError, setSubmitError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Form submission logic would go here
-    toast({
-      title: "Message Sent",
-      description: "Thank you for reaching out. We'll respond within 24-48 hours.",
+
+    // Client-side validation
+    const err: Record<string, string> = {};
+    if (!formData.name.trim()) err.name = "Name is required.";
+    if (!formData.email.trim()) err.email = "Email is required.";
+    else if (!isValidEmail(formData.email)) err.email = "Please enter a valid email address.";
+    if (!formData.subject.trim()) err.subject = "Subject is required.";
+    if (!formData.message.trim()) err.message = "Message is required.";
+    setFieldErrors(err);
+    if (Object.keys(err).length > 0) return;
+
+    setStatus("loading");
+    setSubmitError("");
+
+    const result = await submitContactForm({
+      name: formData.name,
+      email: formData.email,
+      subject: formData.subject,
+      message: formData.company.trim()
+        ? `Company: ${formData.company}\n\n${formData.message}`
+        : formData.message,
     });
-    setFormData({ name: "", email: "", company: "", subject: "", message: "" });
+
+    setStatus(result.success ? "success" : "error");
+    if (result.success) {
+      setFormData({ name: "", email: "", company: "", subject: "", message: "" });
+      setFieldErrors({});
+    } else {
+      setSubmitError(result.message);
+      if (result.errors) setFieldErrors(result.errors);
+    }
   };
 
   return (
@@ -86,93 +117,143 @@ export default function Contact() {
             {/* Contact Form */}
             <div className="lg:col-span-2">
               <div className="bg-card rounded-xl border border-border p-8">
-                <h2 className="font-display text-xl font-bold text-foreground mb-6">Send a Message</h2>
-
-                {/* Inquiry Type Selection */}
-                <div className="flex flex-wrap gap-3 mb-8">
-                  {inquiryTypes.map((type) => (
-                    <button
-                      key={type.id}
-                      onClick={() => setSelectedType(type.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
-                        selectedType === type.id
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-background border-border text-muted-foreground hover:border-primary hover:text-foreground"
-                      }`}
-                    >
-                      <type.icon className="h-4 w-4" />
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name *</Label>
-                      <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                        placeholder="John Smith"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email Address *</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        required
-                        placeholder="john@example.com"
-                      />
-                    </div>
+                {status === "success" ? (
+                  <div className="py-8 text-center">
+                    <p className="text-lg font-medium text-foreground">
+                      Your message has been sent. We'll be in touch shortly.
+                    </p>
                   </div>
+                ) : (
+                  <>
+                    <h2 className="font-display text-xl font-bold text-foreground mb-6">Send a Message</h2>
 
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="company">Company {selectedType !== "general" && "*"}</Label>
-                      <Input
-                        id="company"
-                        value={formData.company}
-                        onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                        required={selectedType !== "general"}
-                        placeholder="Company Name"
-                      />
+                    {/* Inquiry Type Selection */}
+                    <div className="flex flex-wrap gap-3 mb-8">
+                      {inquiryTypes.map((type) => (
+                        <button
+                          key={type.id}
+                          type="button"
+                          onClick={() => setSelectedType(type.id)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
+                            selectedType === type.id
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background border-border text-muted-foreground hover:border-primary hover:text-foreground"
+                          }`}
+                        >
+                          <type.icon className="h-4 w-4" />
+                          {type.label}
+                        </button>
+                      ))}
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="subject">Subject *</Label>
-                      <Input
-                        id="subject"
-                        value={formData.subject}
-                        onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                        required
-                        placeholder="How can we help?"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="message">Message *</Label>
-                    <Textarea
-                      id="message"
-                      value={formData.message}
-                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                      required
-                      placeholder="Tell us more about your inquiry..."
-                      rows={6}
-                    />
-                  </div>
+                    {submitError && (
+                      <p role="alert" className="mb-4 text-sm text-destructive">
+                        {submitError}
+                      </p>
+                    )}
 
-                  <Button type="submit" size="lg" className="w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90">
-                    <Send className="mr-2 h-4 w-4" />
-                    Send Message
-                  </Button>
-                </form>
-              </div>
-            </div>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="name">Full Name *</Label>
+                          <Input
+                            id="name"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            required
+                            disabled={status === "loading"}
+                            placeholder="John Smith"
+                            className={fieldErrors.name ? "border-destructive" : ""}
+                          />
+                          {fieldErrors.name && (
+                            <p className="text-sm text-destructive">{fieldErrors.name}</p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email Address *</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                            required
+                            disabled={status === "loading"}
+                            placeholder="john@example.com"
+                            className={fieldErrors.email ? "border-destructive" : ""}
+                          />
+                          {fieldErrors.email && (
+                            <p className="text-sm text-destructive">{fieldErrors.email}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor="company">Company {selectedType !== "general" && "*"}</Label>
+                          <Input
+                            id="company"
+                            value={formData.company}
+                            onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                            required={selectedType !== "general"}
+                            disabled={status === "loading"}
+                            placeholder="Company Name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="subject">Subject *</Label>
+                          <Input
+                            id="subject"
+                            value={formData.subject}
+                            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                            required
+                            disabled={status === "loading"}
+                            placeholder="How can we help?"
+                            className={fieldErrors.subject ? "border-destructive" : ""}
+                          />
+                          {fieldErrors.subject && (
+                            <p className="text-sm text-destructive">{fieldErrors.subject}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="message">Message *</Label>
+                        <Textarea
+                          id="message"
+                          value={formData.message}
+                          onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                          required
+                          disabled={status === "loading"}
+                          placeholder="Tell us more about your inquiry..."
+                          rows={6}
+                          className={fieldErrors.message ? "border-destructive" : ""}
+                        />
+                        {fieldErrors.message && (
+                          <p className="text-sm text-destructive">{fieldErrors.message}</p>
+                        )}
+                      </div>
+
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={status === "loading"}
+                        className="w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        {status === "loading" ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending…
+                          </>
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            Send Message
+                          </>
+                        )}
+                      </Button>
+                    </form>
+                  </>
+                )}
           </div>
         </div>
       </section>

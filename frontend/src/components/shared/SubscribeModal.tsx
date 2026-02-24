@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
+import { subscribeNewsletter } from "@/services/newsletter";
 
 interface SubscribeModalProps {
   open: boolean;
@@ -20,28 +20,28 @@ export function SubscribeModal({ open, onOpenChange }: SubscribeModalProps) {
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const { toast } = useToast();
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
 
+    setError(null);
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const result = await subscribeNewsletter(email);
+
     setIsSubmitting(false);
-    setIsSuccess(true);
-
-    toast({
-      title: "Successfully subscribed!",
-      description: "You'll receive our weekly market insights.",
-    });
-
-    setTimeout(() => {
-      onOpenChange(false);
-      setIsSuccess(false);
+    if (result.success) {
+      setIsSuccess(true);
       setEmail("");
-    }, 2000);
+      setTimeout(() => {
+        onOpenChange(false);
+        setIsSuccess(false);
+      }, 2000);
+    } else {
+      setError(result.message);
+    }
   };
 
   return (
@@ -79,7 +79,13 @@ export function SubscribeModal({ open, onOpenChange }: SubscribeModalProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full"
+                  aria-invalid={!!error}
                 />
+                {error && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
               </div>
               <Button
                 type="submit"

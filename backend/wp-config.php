@@ -24,6 +24,14 @@ define('PMW_PLATINUM_API_URL',   $_ENV['PMW_PLATINUM_API_URL']   ?? '');
 define('PMW_PALLADIUM_API_URL',  $_ENV['PMW_PALLADIUM_API_URL']  ?? '');
 define('PMW_CRON_SECRET',        $_ENV['PMW_CRON_SECRET']        ?? '');
 
+// Newsletter (Mailchimp) — use PMW_* or legacy MAILCHIMP_* from .env
+if (!defined('PMW_MAILCHIMP_API_KEY')) {
+    define('PMW_MAILCHIMP_API_KEY', $_ENV['PMW_MAILCHIMP_API_KEY'] ?? $_ENV['MAILCHIMP_API_KEY'] ?? '');
+}
+if (!defined('PMW_MAILCHIMP_LIST_ID')) {
+    define('PMW_MAILCHIMP_LIST_ID', $_ENV['PMW_MAILCHIMP_LIST_ID'] ?? $_ENV['MAILCHIMP_AUDIENCE_ID'] ?? '');
+}
+
 
 
 if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {

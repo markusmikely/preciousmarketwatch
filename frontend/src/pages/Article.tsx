@@ -5,6 +5,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { AffiliateProductCard } from "@/components/shared/AffiliateProductCard";
 import { DealerCard } from "@/components/shared/DealerCard";
+import { ArticleNewsletterSignup } from "@/components/shared/ArticleNewsletterSignup";
 import { DataFetchStateHandler } from "@/components/shared/DataFetchStateHandler";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -289,18 +290,7 @@ export default function Article() {
                   </div>
 
                   {/* Newsletter */}
-                  <div className="bg-gradient-hero rounded-xl p-6">
-                    <h3 className="font-display text-lg font-bold text-silver-light mb-2">Stay Updated</h3>
-                    <p className="text-sm text-silver mb-4">Get weekly market insights delivered to your inbox.</p>
-                    <div className="space-y-3">
-                      <input
-                        type="email"
-                        placeholder="Enter your email"
-                        className="w-full px-4 py-2 rounded-lg bg-navy border border-silver/30 text-silver-light placeholder:text-silver/60 focus:outline-none focus:border-primary"
-                      />
-                      <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Subscribe</Button>
-                    </div>
-                  </div>
+                  <ArticleNewsletterSignup />
 
                   {/* Quick Links */}
                   <div className="bg-card rounded-xl border border-border p-6">

@@ -102,6 +102,51 @@ function pmw_register_post_types() {
         'graphql_single_name' => 'gemIndex',
         'graphql_plural_name' => 'gemIndices',
     ] );
+
+    // ── Form Submission (contact form, etc.) ──
+    register_post_type( 'form_submission', [
+        'labels' => [
+            'name'               => 'Form Submissions',
+            'singular_name'      => 'Form Submission',
+            'add_new_item'       => 'Add New Submission',
+            'edit_item'          => 'Edit Submission',
+            'search_items'       => 'Search Submissions',
+            'not_found'          => 'No submissions found',
+        ],
+        'public'              => false,
+        'show_ui'             => true,
+        'show_in_menu'        => true,
+        'menu_icon'           => 'dashicons-email-alt',
+        'capability_type'     => 'post',
+        'supports'            => [ 'title', 'custom-fields' ],
+        'has_archive'        => false,
+        'rewrite'             => false,
+    ] );
+}
+
+add_action( 'add_meta_boxes', 'pmw_form_submission_meta_box' );
+function pmw_form_submission_meta_box() {
+    add_meta_box(
+        'pmw_form_submission_details',
+        __( 'Contact details', 'pmw-core' ),
+        'pmw_form_submission_meta_box_cb',
+        'form_submission',
+        'normal'
+    );
+}
+
+function pmw_form_submission_meta_box_cb( $post ) {
+    $name    = get_post_meta( $post->ID, '_pmw_contact_name', true );
+    $email   = get_post_meta( $post->ID, '_pmw_contact_email', true );
+    $subject = get_post_meta( $post->ID, '_pmw_contact_subject', true );
+    $message = get_post_meta( $post->ID, '_pmw_contact_message', true );
+    $source  = get_post_meta( $post->ID, '_pmw_contact_source', true );
+    $at      = get_post_meta( $post->ID, '_pmw_contact_submitted_at', true );
+    echo '<p><strong>Name:</strong> ' . esc_html( $name ) . '</p>';
+    echo '<p><strong>Email:</strong> ' . esc_html( $email ) . '</p>';
+    echo '<p><strong>Subject:</strong> ' . esc_html( $subject ) . '</p>';
+    echo '<p><strong>Submitted:</strong> ' . esc_html( $at ) . ' <em>(' . esc_html( $source ) . ')</em></p>';
+    echo '<p><strong>Message:</strong></p><p>' . nl2br( esc_html( $message ) ) . '</p>';
 }
 
 
@@ -620,6 +665,7 @@ add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
+add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
 
 // ── HOME-02: Mailchimp newsletter subscribe (WordPress REST; frontend has no /api) ──
@@ -637,12 +683,22 @@ function pmw_register_subscribe_route() {
                     return is_email( $value ) ? true : new WP_Error( 'invalid_email', 'Invalid email address', [ 'status' => 400 ] );
                 },
             ],
+            'tags' => [
+                'required' => false,
+                'type'     => 'array',
+                'items'    => [ 'type' => 'string' ],
+                'default'  => [],
+            ],
         ],
     ] );
 }
 
 function pmw_rest_post_subscribe( WP_REST_Request $request ) {
     $email = $request->get_param( 'email' );
+    $tags  = $request->get_param( 'tags' );
+    if ( ! is_array( $tags ) ) {
+        $tags = [];
+    }
     $api_key = defined( 'PMW_MAILCHIMP_API_KEY' ) ? PMW_MAILCHIMP_API_KEY : '';
     $list_id = defined( 'PMW_MAILCHIMP_LIST_ID' ) ? PMW_MAILCHIMP_LIST_ID : '';
 
@@ -661,10 +717,16 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
         'email_address' => $email,
         'status'        => 'subscribed',
     ];
+    if ( ! empty( $tags ) ) {
+        $body['tags'] = array_map( function ( $name ) {
+            return [ 'name' => $name, 'status' => 'active' ];
+        }, $tags );
+    }
 
+    $auth = 'Bearer ' . $api_key;
     $resp = wp_remote_post( $url, [
         'headers' => [
-            'Authorization' => 'Bearer ' . $api_key,
+            'Authorization' => $auth,
             'Content-Type'  => 'application/json',
         ],
         'body'    => wp_json_encode( $body ),
@@ -676,21 +738,123 @@ function pmw_rest_post_subscribe( WP_REST_Request $request ) {
     }
 
     $code = wp_remote_retrieve_response_code( $resp );
-    $data = json_decode( wp_remote_retrieve_body( $resp ), true );
+    $raw  = wp_remote_retrieve_body( $resp );
+    $data = json_decode( $raw, true );
+
+    // Log raw Mailchimp response for diagnosis (remove or reduce in production if desired)
+    if ( function_exists( 'error_log' ) ) {
+        error_log( '[PMW Newsletter] Mailchimp response code=' . $code . ' body=' . $raw );
+    }
 
     if ( $code === 200 ) {
         return new WP_REST_Response( [ 'success' => true, 'message' => 'Subscribed! Check your email to confirm.' ], 200 );
     }
 
-    if ( $code === 400 && isset( $data['title'] ) ) {
-        $msg = $data['title'];
-        if ( isset( $data['detail'] ) && strpos( $data['detail'], 'already' ) !== false ) {
+    if ( $code === 400 && is_array( $data ) ) {
+        $msg = isset( $data['title'] ) ? $data['title'] : 'Invalid request';
+        if ( isset( $data['detail'] ) && strpos( (string) $data['detail'], 'already' ) !== false ) {
             $msg = 'This email is already subscribed.';
         }
-        return new WP_REST_Response( [ 'success' => false, 'message' => $msg ], 400 );
+        $err_code = isset( $data['status'] ) ? (int) $data['status'] : 400;
+        return new WP_REST_Response( [ 'success' => false, 'message' => $msg, 'error_code' => $err_code ], 400 );
     }
 
-    return new WP_REST_Response( [ 'success' => false, 'message' => 'Subscription failed. Please try again.' ], 502 );
+    // Return raw error code for diagnosis (401 bad key, 400 bad list, etc.)
+    $err_code = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : $code;
+    return new WP_REST_Response( [
+        'success'    => false,
+        'message'    => 'Subscription failed. Please try again.',
+        'error_code' => $err_code,
+    ], $code >= 400 ? $code : 502 );
+}
+
+// ── Contact form submit: POST /pmw/v1/contact/submit ──
+function pmw_register_contact_submit_route() {
+    register_rest_route( 'pmw/v1', '/contact/submit', [
+        'methods'             => 'POST',
+        'callback'            => 'pmw_rest_post_contact_submit',
+        'permission_callback' => '__return_true',
+        'args'                => [
+            'name'    => [
+                'required'          => true,
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'email'   => [
+                'required'          => true,
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_email',
+                'validate_callback'  => function ( $value ) {
+                    return is_email( $value ) ? true : new WP_Error( 'invalid_email', 'Please enter a valid email address.', [ 'status' => 400 ] );
+                },
+            ],
+            'subject' => [
+                'required'          => true,
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'message' => [
+                'required'          => true,
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_textarea_field',
+            ],
+        ],
+    ] );
+}
+
+function pmw_rest_post_contact_submit( WP_REST_Request $request ) {
+    $name    = $request->get_param( 'name' );
+    $email   = $request->get_param( 'email' );
+    $subject = $request->get_param( 'subject' );
+    $message = $request->get_param( 'message' );
+
+    $name = trim( $name );
+    $subject = trim( $subject );
+    $message = trim( $message );
+
+    $errors = [];
+    if ( strlen( $name ) < 1 ) {
+        $errors['name'] = 'Name is required.';
+    }
+    if ( ! is_email( $email ) ) {
+        $errors['email'] = 'Please enter a valid email address.';
+    }
+    if ( strlen( $subject ) < 1 ) {
+        $errors['subject'] = 'Subject is required.';
+    }
+    if ( strlen( $message ) < 1 ) {
+        $errors['message'] = 'Message is required.';
+    }
+    if ( ! empty( $errors ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Validation failed.', 'errors' => $errors ], 400 );
+    }
+
+    $post_id = wp_insert_post( [
+        'post_type'   => 'form_submission',
+        'post_title'  => wp_kses_post( $subject ),
+        'post_status' => 'publish',
+        'post_author' => 0,
+    ], true );
+
+    if ( is_wp_error( $post_id ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'message' => 'Could not save submission. Please try again.' ], 500 );
+    }
+
+    update_post_meta( $post_id, '_pmw_contact_name', $name );
+    update_post_meta( $post_id, '_pmw_contact_email', $email );
+    update_post_meta( $post_id, '_pmw_contact_subject', $subject );
+    update_post_meta( $post_id, '_pmw_contact_message', $message );
+    update_post_meta( $post_id, '_pmw_contact_source', 'contact-form' );
+    update_post_meta( $post_id, '_pmw_contact_submitted_at', current_time( 'mysql' ) );
+
+    $admin_email = get_option( 'admin_email' );
+    if ( $admin_email ) {
+        $mail_subject = '[Precious Market Watch] ' . $subject;
+        $mail_body    = "Name: $name\nEmail: $email\nSubject: $subject\n\nMessage:\n$message";
+        wp_mail( $admin_email, $mail_subject, $mail_body, [ 'Content-Type: text/plain; charset=UTF-8' ] );
+    }
+
+    return new WP_REST_Response( [ 'success' => true, 'message' => 'Your message has been sent. We\'ll be in touch shortly.' ], 200 );
 }
 
 // ── METAL-04: Price History API ──────────────────────

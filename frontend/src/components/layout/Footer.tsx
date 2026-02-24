@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import { TrendingUp, Mail, Youtube, Instagram, Twitter, FacebookIcon } from "lucide-react";
+import { TrendingUp, Mail, Youtube, Instagram, Twitter, FacebookIcon, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import mailchimp from '@mailchimp/mailchimp_marketing';
+import { subscribeNewsletter } from "@/services/newsletter";
 
 const TikTokIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -41,48 +41,30 @@ const footerNavigation = {
 
 export function Footer() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!email) {
+
+    if (!email.trim()) {
       setStatus('error');
       setMessage('Please enter an email address');
       return;
     }
 
     setStatus('loading');
-    
-    try {
-      // Send to backend API endpoint which handles Mailchimp
-      const response = await fetch('/wp/wp-json/pmw/v1/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email,
-        }),
-      });
+    setMessage('');
 
-      const data = await response.json();
+    const result = await subscribeNewsletter(email.trim());
 
-      if (response.ok) {
-        setStatus('success');
-        setMessage('✓ Subscribed! Check your email to confirm.');
-        setEmail('');
-        // Auto-clear message after 3 seconds
-        setTimeout(() => setStatus('idle'), 3000);
-      } else {
-        setStatus('error');
-        setMessage(data.message || 'Something went wrong. Please try again.');
-      }
-    } catch (error) {
+    if (result.success) {
+      setStatus('success');
+      setMessage("You're subscribed!");
+      setEmail('');
+    } else {
       setStatus('error');
-      setMessage('Network error. Please try again later.');
-      console.error('[Newsletter] Subscription error:', error);
+      setMessage(result.message || 'Something went wrong. Please try again.');
     }
   };
 
@@ -98,21 +80,47 @@ export function Footer() {
             <p className="mt-3 text-silver">
               Get weekly insights on precious metals, gemstones, and investment opportunities delivered to your inbox.
             </p>
-            <form className="mt-6 flex flex-col gap-3 sm:flex-row sm:gap-4" onSubmit={handleSubmit}>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                className="flex-1 bg-navy border-silver/30 text-silver-light placeholder:text-silver/60 focus:border-primary focus:ring-primary"
-              />
-              {status === 'success' && <p>✓ Subscribed!</p>}
-              {status === 'error' && <p>✗ Something went wrong</p>}
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold" type="submit" onClick={handleSubmit}>
-                <Mail className="mr-2 h-4 w-4" />
-                Subscribe
-              </Button>
-            </form>
+            {status === 'success' ? (
+              <p className="mt-6 text-silver-light font-medium" role="status">
+                You're subscribed!
+              </p>
+            ) : (
+              <form className="mt-6 flex flex-col gap-3 sm:flex-row sm:gap-4" onSubmit={handleSubmit}>
+                <div className="flex flex-1 flex-col gap-1">
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    disabled={status === 'loading'}
+                    aria-invalid={status === 'error'}
+                    className={`flex-1 bg-navy border-silver/30 text-silver-light placeholder:text-silver/60 focus:border-primary focus:ring-primary ${status === 'error' ? 'border-destructive focus:border-destructive focus:ring-destructive' : ''}`}
+                  />
+                  {status === 'error' && message && (
+                    <p role="alert" className="text-left text-sm text-destructive">
+                      {message}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  type="submit"
+                  disabled={status === 'loading'}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold shrink-0"
+                >
+                  {status === 'loading' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Subscribing…
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="mr-2 h-4 w-4" />
+                      Subscribe
+                    </>
+                  )}
+                </Button>
+              </form>
+            )}
             <p className="mt-3 text-xs text-silver/60">
               No spam. Unsubscribe anytime. Read our{" "}
               <Link to="/privacy" className="underline hover:text-primary">
