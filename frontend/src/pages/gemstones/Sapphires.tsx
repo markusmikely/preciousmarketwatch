@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Gem, Palette, MapPin, Award } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
+import { GemIndexSection } from "@/components/shared/GemIndexSection";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { Button } from "@/components/ui/button";
 
@@ -66,14 +67,9 @@ export default function Sapphires() {
           { label: "Sapphires" },
         ]}
         badge="Corundum Variety"
-      >
-        <div className="flex items-center gap-4 mt-6">
-          <div className="text-silver text-sm">
-            <span className="block">Sapphire Index: 165.8 (+1.12%)</span>
-            <span className="block">Kashmir premium: 3-5x over Ceylon</span>
-          </div>
-        </div>
-      </PageHero>
+      />
+
+      <GemIndexSection gemIndexName="Blue Sapphire" />
 
       {/* Color Varieties */}
       <section className="py-12">

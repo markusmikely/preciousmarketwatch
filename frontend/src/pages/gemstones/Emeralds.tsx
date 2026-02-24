@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Gem, Droplets, MapPin, Eye } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
+import { GemIndexSection } from "@/components/shared/GemIndexSection";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { Button } from "@/components/ui/button";
 
@@ -71,14 +72,9 @@ export default function Emeralds() {
           { label: "Emeralds" },
         ]}
         badge="Green Beryl"
-      >
-        <div className="flex items-center gap-4 mt-6">
-          <div className="text-silver text-sm">
-            <span className="block">Emerald Index: 178.2 (+0.89%)</span>
-            <span className="block">Colombian premium: 50-100% over Zambian</span>
-          </div>
-        </div>
-      </PageHero>
+      />
+
+      <GemIndexSection gemIndexName="Emerald" />
 
       {/* Quality Factors */}
       <section className="py-12">

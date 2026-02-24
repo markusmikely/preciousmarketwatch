@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Gem, MapPin, Award, Sparkles } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
+import { GemIndexSection } from "@/components/shared/GemIndexSection";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { Button } from "@/components/ui/button";
 
@@ -64,14 +65,9 @@ export default function Rubies() {
           { label: "Rubies" },
         ]}
         badge="Precious Corundum"
-      >
-        <div className="flex items-center gap-4 mt-6">
-          <div className="text-silver text-sm">
-            <span className="block">Ruby Index: 198.3 (+2.34%)</span>
-            <span className="block">Top quality: $15,000-$25,000+ per carat</span>
-          </div>
-        </div>
-      </PageHero>
+      />
+
+      <GemIndexSection gemIndexName="Ruby" />
 
       {/* Quality Factors */}
       <section className="py-12">

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Diamond, Award, Shield, Sparkles } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
+import { GemIndexSection } from "@/components/shared/GemIndexSection";
 import { ArticleCard } from "@/components/shared/ArticleCard";
 import { Button } from "@/components/ui/button";
 
@@ -61,14 +62,9 @@ export default function Diamonds() {
           { label: "Diamonds" },
         ]}
         badge="King of Gemstones"
-      >
-        <div className="flex items-center gap-4 mt-6">
-          <div className="text-silver text-sm">
-            <span className="block">Diamond Index: 142.5 (-0.15%)</span>
-            <span className="block">Lab-grown discount: ~70-80% vs natural</span>
-          </div>
-        </div>
-      </PageHero>
+      />
+
+      <GemIndexSection gemIndexName="Diamond" />
 
       {/* The 4Cs */}
       <section className="py-12">
