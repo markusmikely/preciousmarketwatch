@@ -41,30 +41,48 @@ const footerNavigation = {
 
 export function Footer() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState('idle');
+  const [message, setMessage] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (!email) {
+      setStatus('error');
+      setMessage('Please enter an email address');
+      return;
+    }
+
+    setStatus('loading');
+    
     try {
-      mailchimp.setConfig({
-        apiKey: import.meta.env.REACT_APP_MAILCHIMP_API_KEY,
-        server: import.meta.env.REACT_APP_MAILCHIMP_SERVER, // e.g., 'us1'
+      // Send to backend API endpoint which handles Mailchimp
+      const response = await fetch('/wp/wp-json/pmw/v1/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email,
+        }),
       });
 
-      await mailchimp.lists.addListMember(
-        process.env.REACT_APP_MAILCHIMP_LIST_ID,
-        {
-          email_address: email,
-          status: 'subscribed',
-        }
-      );
+      const data = await response.json();
 
-      setStatus('success');
-      setEmail('');
+      if (response.ok) {
+        setStatus('success');
+        setMessage('✓ Subscribed! Check your email to confirm.');
+        setEmail('');
+        // Auto-clear message after 3 seconds
+        setTimeout(() => setStatus('idle'), 3000);
+      } else {
+        setStatus('error');
+        setMessage(data.message || 'Something went wrong. Please try again.');
+      }
     } catch (error) {
       setStatus('error');
-      console.error(error);
+      setMessage('Network error. Please try again later.');
+      console.error('[Newsletter] Subscription error:', error);
     }
   };
 

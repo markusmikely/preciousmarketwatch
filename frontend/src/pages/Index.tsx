@@ -2,7 +2,6 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { MarketTicker } from "@/components/home/MarketTicker";
 import { HeroSection } from "@/components/home/HeroSection";
-import { CoverageStats } from "@/components/home/CoverageStats";
 import { FeaturedArticles } from "@/components/home/FeaturedArticles";
 import { CategoryCards } from "@/components/home/CategoryCards";
 import { MarketOverview } from "@/components/home/MarketOverview";
