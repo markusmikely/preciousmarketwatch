@@ -143,6 +143,30 @@ function pmw_register_post_types() {
         'has_archive'        => false,
         'rewrite'             => false,
     ] );
+
+    // ── PMW Agent (AI agent identity & display; workflow runs separately) ──
+    register_post_type( 'pmw_agent', [
+        'labels' => [
+            'name'               => 'Agents',
+            'singular_name'      => 'Agent',
+            'add_new_item'       => 'Add New Agent',
+            'edit_item'          => 'Edit Agent',
+            'new_item'           => 'New Agent',
+            'view_item'          => 'View Agent',
+            'search_items'       => 'Search Agents',
+            'not_found'          => 'No agents found',
+            'all_items'          => 'All Agents',
+        ],
+        'public'              => true,
+        'has_archive'         => true,
+        'rewrite'             => [ 'slug' => 'agents' ],
+        'supports'            => [ 'title', 'editor', 'excerpt', 'thumbnail', 'custom-fields' ],
+        'menu_icon'           => 'dashicons-groups',
+        'show_in_rest'        => true,
+        'show_in_graphql'     => true,
+        'graphql_single_name' => 'pmwAgent',
+        'graphql_plural_name' => 'pmwAgents',
+    ] );
 }
 
 add_action( 'add_meta_boxes', 'pmw_form_submission_meta_box' );

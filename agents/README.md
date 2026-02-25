@@ -77,5 +77,4 @@ graph TD
     F --> G[WordPress Publishing]
     G --> H[Social Media Distribution]
 ```
-
 [Continue with detailed agent descriptions, API usage, monitoring...]
