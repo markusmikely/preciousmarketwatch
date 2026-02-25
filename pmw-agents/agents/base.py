@@ -7,9 +7,9 @@ from datetime import datetime
 from functools import wraps
 
 import redis
+import os
 
-REDIS_URL = "redis://localhost:6379"
-CHANNEL = "pmw:events"
+REDIS_URL = redis.from_url(os.environ["REDIS_URL"])
 COST_LOG_KEY = "pmw:cost_log"
 
 

@@ -774,21 +774,30 @@ function pmw_register_acf_fields() {
     ] );
 
     // ── Page Sections (Flexible Content for all Pages) ──
+    // Requires ACF PRO — flexible_content is a PRO-only field type.
+    $has_flexible = function_exists( 'acf_get_field_type' ) && acf_get_field_type( 'flexible_content' );
+    if ( ! $has_flexible ) {
+        add_action( 'admin_notices', function() {
+            echo '<div class="notice notice-warning"><p><strong>PMW:</strong> Page Sections require ACF PRO (flexible content). <a href="https://www.advancedcustomfields.com/pro/">Upgrade to ACF PRO</a> to manage page sections from WordPress.</p></div>';
+        } );
+    } else {
     acf_add_local_field_group( [
         'key'    => 'group_page_sections',
         'title'  => 'Page Sections',
         'fields' => [
             [
                 'key'          => 'field_page_sections',
-                'label'        => 'Sections',
+                'label'        => 'Page Sections',
                 'name'         => 'page_sections',
                 'type'         => 'flexible_content',
                 'button_label' => 'Add Section',
+                'instructions' => 'Build the page layout. Add hero, rich text, team grid, stats, CTA, and more.',
                 'layouts'      => [
                     [
                         'key'        => 'layout_hero',
                         'name'       => 'hero',
                         'label'      => 'Hero',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_hero_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                             [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
@@ -801,6 +810,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_rich_text',
                         'name'       => 'rich_text',
                         'label'      => 'Rich Text',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_rich_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
                         ],
@@ -809,6 +819,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_team_grid',
                         'name'       => 'team_grid',
                         'label'      => 'Team Grid',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_team_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                             [ 'key' => 'field_team_show_tiers', 'label' => 'Show Tiers', 'name' => 'show_tiers', 'type' => 'true_false', 'ui' => 1, 'show_in_graphql' => 1, 'graphql_field_name' => 'showTiers' ],
@@ -819,6 +830,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_pipeline_steps',
                         'name'       => 'pipeline_steps',
                         'label'      => 'Pipeline Steps',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_pipeline_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                             [
@@ -839,6 +851,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_stats_bar',
                         'name'       => 'stats_bar',
                         'label'      => 'Stats Bar',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [
                                 'key'        => 'field_stats_bar_stats',
@@ -857,6 +870,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_cta_block',
                         'name'       => 'cta_block',
                         'label'      => 'CTA Block',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                             [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
@@ -868,6 +882,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_link_cards',
                         'name'       => 'link_cards',
                         'label'      => 'Link Cards',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [
                                 'key'        => 'field_link_cards_cards',
@@ -888,6 +903,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_data_sources',
                         'name'       => 'data_sources',
                         'label'      => 'Data Sources',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [
                                 'key'        => 'field_data_sources_items',
@@ -907,6 +923,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_faq',
                         'name'       => 'faq',
                         'label'      => 'FAQ Accordion',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [
                                 'key'        => 'field_faq_items',
@@ -925,6 +942,7 @@ function pmw_register_acf_fields() {
                         'key'        => 'layout_image_text',
                         'name'       => 'image_text',
                         'label'      => 'Image + Text',
+                        'display'    => 'block',
                         'sub_fields' => [
                             [ 'key' => 'field_image_text_image', 'label' => 'Image', 'name' => 'image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1 ],
                             [ 'key' => 'field_image_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
@@ -942,6 +960,7 @@ function pmw_register_acf_fields() {
         'show_in_graphql'    => 1,
         'graphql_field_name' => 'pageSections',
     ] );
+    } // end ACF PRO check
 
     // ── PMW Agent Fields ─────────────────────
     acf_add_local_field_group( [
