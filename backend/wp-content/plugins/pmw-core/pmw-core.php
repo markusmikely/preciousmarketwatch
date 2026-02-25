@@ -10,6 +10,23 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// Add this near the top of your plugin file for debugging
+add_action('admin_init', function() {
+    if ( current_user_can('manage_options') ) {
+        $acf_pro_active = class_exists('acf_pro');
+        $flexible_exists = function_exists('acf_get_field_type') && acf_get_field_type('flexible_content');
+        
+        if ( ! $acf_pro_active || ! $flexible_exists ) {
+            add_action('admin_notices', function() use ($acf_pro_active, $flexible_exists) {
+                echo '<div class="notice notice-warning"><p><strong>PMW Core Debug:</strong> ';
+                echo 'ACF Pro active: ' . ($acf_pro_active ? '✅' : '❌') . ' | ';
+                echo 'Flexible content available: ' . ($flexible_exists ? '✅' : '❌');
+                echo '</p></div>';
+            });
+        }
+    }
+});
+
 // ── CORS for REST API (Fix D: allow React frontend to call pmw/v1 from browser) ──
 add_action( 'rest_api_init', function() {
     remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
@@ -774,195 +791,224 @@ function pmw_register_acf_fields() {
     ] );
 
     // ── Page Sections (Flexible Content for all Pages) ──
-    // Requires ACF PRO — flexible_content is a PRO-only field type.
+    // Check if ACF PRO is active and flexible content is available
     $has_flexible = function_exists( 'acf_get_field_type' ) && acf_get_field_type( 'flexible_content' );
+
     if ( ! $has_flexible ) {
         add_action( 'admin_notices', function() {
-            echo '<div class="notice notice-warning"><p><strong>PMW:</strong> Page Sections require ACF PRO (flexible content). <a href="https://www.advancedcustomfields.com/pro/">Upgrade to ACF PRO</a> to manage page sections from WordPress.</p></div>';
+            echo '<div class="notice notice-warning"><p><strong>PMW Core:</strong> Page Sections require ACF PRO (flexible content). <a href="https://www.advancedcustomfields.com/pro/" target="_blank">Upgrade to ACF PRO</a> to manage page sections from WordPress.</p></div>';
         } );
-        // Fallback: register pageSections on Page so GraphQL query doesn't fail (returns null).
-        add_action( 'graphql_register_types', 'pmw_register_page_sections_fallback' );
+        
+        // Fallback: register a simple text field so at least something shows in the editor
+        acf_add_local_field_group( [
+            'key'    => 'group_page_sections_fallback',
+            'title'  => 'Page Content',
+            'fields' => [
+                [
+                    'key'   => 'field_page_content_fallback',
+                    'label' => 'Content',
+                    'name'  => 'page_content_fallback',
+                    'type'  => 'wysiwyg',
+                    'instructions' => 'ACF PRO is required for full page sections functionality. Please install ACF PRO to use the flexible content builder.',
+                    'show_in_graphql' => 1,
+                ],
+            ],
+            'location' => [
+                [ [ 'param' => 'post_type', 'operator' => '==', 'value' => 'page' ] ],
+            ],
+            'show_in_graphql' => 1,
+            'graphql_field_name' => 'pageContent',
+        ] );
     } else {
-    acf_add_local_field_group( [
-        'key'    => 'group_page_sections',
-        'title'  => 'Page Sections',
-        'fields' => [
-            [
-                'key'          => 'field_page_sections',
-                'label'        => 'Page Sections',
-                'name'         => 'page_sections',
-                'type'         => 'flexible_content',
-                'button_label' => 'Add Section',
-                'instructions' => 'Build the page layout. Add hero, rich text, team grid, stats, CTA, and more.',
-                'layouts'      => [
-                    [
-                        'key'        => 'layout_hero',
-                        'name'       => 'hero',
-                        'label'      => 'Hero',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_hero_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_hero_background_image', 'label' => 'Background Image', 'name' => 'background_image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1, 'graphql_field_name' => 'backgroundImage' ],
-                            [ 'key' => 'field_hero_cta_label', 'label' => 'CTA Label', 'name' => 'cta_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaLabel' ],
-                            [ 'key' => 'field_hero_cta_url', 'label' => 'CTA URL', 'name' => 'cta_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaUrl' ],
+        // ACF PRO is active - register the full flexible content field group
+        acf_add_local_field_group( [
+            'key'    => 'group_page_sections',
+            'title'  => 'Page Sections',
+            'fields' => [
+                [
+                    'key'          => 'field_page_sections',
+                    'label'        => 'Page Sections',
+                    'name'         => 'page_sections',
+                    'type'         => 'flexible_content',
+                    'button_label' => 'Add Section',
+                    'instructions' => 'Build the page layout. Add hero, rich text, team grid, stats, CTA, and more.',
+                    'layouts'      => [
+                        [
+                            'key'        => 'layout_hero',
+                            'name'       => 'hero',
+                            'label'      => 'Hero',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_hero_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_hero_background_image', 'label' => 'Background Image', 'name' => 'background_image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1, 'graphql_field_name' => 'backgroundImage' ],
+                                [ 'key' => 'field_hero_cta_label', 'label' => 'CTA Label', 'name' => 'cta_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaLabel' ],
+                                [ 'key' => 'field_hero_cta_url', 'label' => 'CTA URL', 'name' => 'cta_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaUrl' ],
+                            ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_rich_text',
-                        'name'       => 'rich_text',
-                        'label'      => 'Rich Text',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_rich_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_rich_text',
+                            'name'       => 'rich_text',
+                            'label'      => 'Rich Text',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_rich_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
+                            ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_team_grid',
-                        'name'       => 'team_grid',
-                        'label'      => 'Team Grid',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_team_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_team_show_tiers', 'label' => 'Show Tiers', 'name' => 'show_tiers', 'type' => 'true_false', 'ui' => 1, 'show_in_graphql' => 1, 'graphql_field_name' => 'showTiers' ],
-                            [ 'key' => 'field_team_filter_status', 'label' => 'Filter Status (optional)', 'name' => 'filter_status', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'filterStatus' ],
+                        [
+                            'key'        => 'layout_team_grid',
+                            'name'       => 'team_grid',
+                            'label'      => 'Team Grid',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_team_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_team_show_tiers', 'label' => 'Show Tiers', 'name' => 'show_tiers', 'type' => 'true_false', 'ui' => 1, 'show_in_graphql' => 1, 'graphql_field_name' => 'showTiers' ],
+                                [ 'key' => 'field_team_filter_status', 'label' => 'Filter Status (optional)', 'name' => 'filter_status', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'filterStatus' ],
+                            ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_pipeline_steps',
-                        'name'       => 'pipeline_steps',
-                        'label'      => 'Pipeline Steps',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_pipeline_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
-                            [
-                                'key'        => 'field_pipeline_steps',
-                                'label'      => 'Steps',
-                                'name'       => 'steps',
-                                'type'       => 'repeater',
-                                'layout'     => 'table',
-                                'sub_fields' => [
-                                    [ 'key' => 'field_step_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_step_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_step_agent_role', 'label' => 'Agent Role', 'name' => 'agent_role', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'agentRole' ],
+                        [
+                            'key'        => 'layout_pipeline_steps',
+                            'name'       => 'pipeline_steps',
+                            'label'      => 'Pipeline Steps',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_pipeline_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                [
+                                    'key'        => 'field_pipeline_steps',
+                                    'label'      => 'Steps',
+                                    'name'       => 'steps',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_step_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_step_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_step_agent_role', 'label' => 'Agent Role', 'name' => 'agent_role', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'agentRole' ],
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_stats_bar',
-                        'name'       => 'stats_bar',
-                        'label'      => 'Stats Bar',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [
-                                'key'        => 'field_stats_bar_stats',
-                                'label'      => 'Stats',
-                                'name'       => 'stats',
-                                'type'       => 'repeater',
-                                'layout'     => 'table',
-                                'sub_fields' => [
-                                    [ 'key' => 'field_stat_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_stat_value', 'label' => 'Value', 'name' => 'value', 'type' => 'text', 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_stats_bar',
+                            'name'       => 'stats_bar',
+                            'label'      => 'Stats Bar',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [
+                                    'key'        => 'field_stats_bar_stats',
+                                    'label'      => 'Stats',
+                                    'name'       => 'stats',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_stat_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_stat_value', 'label' => 'Value', 'name' => 'value', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_cta_block',
-                        'name'       => 'cta_block',
-                        'label'      => 'CTA Block',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_cta_button_label', 'label' => 'Button Label', 'name' => 'button_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonLabel' ],
-                            [ 'key' => 'field_cta_button_url', 'label' => 'Button URL', 'name' => 'button_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonUrl' ],
+                        [
+                            'key'        => 'layout_cta_block',
+                            'name'       => 'cta_block',
+                            'label'      => 'CTA Block',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_cta_button_label', 'label' => 'Button Label', 'name' => 'button_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonLabel' ],
+                                [ 'key' => 'field_cta_button_url', 'label' => 'Button URL', 'name' => 'button_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonUrl' ],
+                            ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_link_cards',
-                        'name'       => 'link_cards',
-                        'label'      => 'Link Cards',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [
-                                'key'        => 'field_link_cards_cards',
-                                'label'      => 'Cards',
-                                'name'       => 'cards',
-                                'type'       => 'repeater',
-                                'layout'     => 'block',
-                                'sub_fields' => [
-                                    [ 'key' => 'field_card_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_card_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_card_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_card_icon', 'label' => 'Icon (lucide name)', 'name' => 'icon', 'type' => 'text', 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_link_cards',
+                            'name'       => 'link_cards',
+                            'label'      => 'Link Cards',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [
+                                    'key'        => 'field_link_cards_cards',
+                                    'label'      => 'Cards',
+                                    'name'       => 'cards',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'block',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_card_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_card_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_card_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_card_icon', 'label' => 'Icon (lucide name)', 'name' => 'icon', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_data_sources',
-                        'name'       => 'data_sources',
-                        'label'      => 'Data Sources',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [
-                                'key'        => 'field_data_sources_items',
-                                'label'      => 'Sources',
-                                'name'       => 'items',
-                                'type'       => 'repeater',
-                                'layout'     => 'table',
-                                'sub_fields' => [
-                                    [ 'key' => 'field_source_name', 'label' => 'Name', 'name' => 'name', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_source_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_source_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_data_sources',
+                            'name'       => 'data_sources',
+                            'label'      => 'Data Sources',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [
+                                    'key'        => 'field_data_sources_items',
+                                    'label'      => 'Sources',
+                                    'name'       => 'items',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_source_name', 'label' => 'Name', 'name' => 'name', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_source_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_source_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_faq',
-                        'name'       => 'faq',
-                        'label'      => 'FAQ Accordion',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [
-                                'key'        => 'field_faq_items',
-                                'label'      => 'Items',
-                                'name'       => 'items',
-                                'type'       => 'repeater',
-                                'layout'     => 'block',
-                                'sub_fields' => [
-                                    [ 'key' => 'field_faq_question', 'label' => 'Question', 'name' => 'question', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                    [ 'key' => 'field_faq_answer', 'label' => 'Answer', 'name' => 'answer', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_faq',
+                            'name'       => 'faq',
+                            'label'      => 'FAQ Accordion',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [
+                                    'key'        => 'field_faq_items',
+                                    'label'      => 'Items',
+                                    'name'       => 'items',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'block',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_faq_question', 'label' => 'Question', 'name' => 'question', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_faq_answer', 'label' => 'Answer', 'name' => 'answer', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                                    ],
                                 ],
                             ],
                         ],
-                    ],
-                    [
-                        'key'        => 'layout_image_text',
-                        'name'       => 'image_text',
-                        'label'      => 'Image + Text',
-                        'display'    => 'block',
-                        'sub_fields' => [
-                            [ 'key' => 'field_image_text_image', 'label' => 'Image', 'name' => 'image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_image_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
-                            [ 'key' => 'field_image_text_alignment', 'label' => 'Image Position', 'name' => 'alignment', 'type' => 'select', 'choices' => [ 'left' => 'Left', 'right' => 'Right' ], 'show_in_graphql' => 1 ],
+                        [
+                            'key'        => 'layout_image_text',
+                            'name'       => 'image_text',
+                            'label'      => 'Image + Text',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_image_text_image', 'label' => 'Image', 'name' => 'image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_image_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_image_text_alignment', 'label' => 'Image Position', 'name' => 'alignment', 'type' => 'select', 'choices' => [ 'left' => 'Left', 'right' => 'Right' ], 'show_in_graphql' => 1 ],
+                            ],
                         ],
+                    ],
+                    'show_in_graphql'  => 1,
+                    'graphql_field_name' => 'sections',
+                ],
+            ],
+            'location' => [
+                [
+                    [
+                        'param' => 'post_type',
+                        'operator' => '==',
+                        'value' => 'page',
                     ],
                 ],
-                'show_in_graphql'  => 1,
-                'graphql_field_name' => 'sections',
             ],
-        ],
-        'location' => [
-            [ [ 'param' => 'post_type', 'operator' => '==', 'value' => 'page' ] ],
-        ],
-        'show_in_graphql'    => 1,
-        'graphql_field_name' => 'pageSections',
-        'graphql_types'      => [ 'Page' ],
-    ] );
+            'show_in_graphql'    => 1,
+            'graphql_field_name' => 'pageSections',
+            'graphql_types'      => [ 'Page' ],
+            'active'             => true,
+            'description'        => 'Build custom page layouts using flexible content sections',
+        ]);
     } // end ACF PRO check
 
     // ── PMW Agent Fields ─────────────────────
