@@ -780,6 +780,8 @@ function pmw_register_acf_fields() {
         add_action( 'admin_notices', function() {
             echo '<div class="notice notice-warning"><p><strong>PMW:</strong> Page Sections require ACF PRO (flexible content). <a href="https://www.advancedcustomfields.com/pro/">Upgrade to ACF PRO</a> to manage page sections from WordPress.</p></div>';
         } );
+        // Fallback: register pageSections on Page so GraphQL query doesn't fail (returns null).
+        add_action( 'graphql_register_types', 'pmw_register_page_sections_fallback' );
     } else {
     acf_add_local_field_group( [
         'key'    => 'group_page_sections',
@@ -959,6 +961,7 @@ function pmw_register_acf_fields() {
         ],
         'show_in_graphql'    => 1,
         'graphql_field_name' => 'pageSections',
+        'graphql_types'      => [ 'Page' ],
     ] );
     } // end ACF PRO check
 
@@ -1028,6 +1031,113 @@ function pmw_register_acf_fields() {
     ] );
 }
 
+/**
+ * Fallback: register pageSections + layout types when ACF PRO (flexible content) is not available.
+ * Returns empty sections so the frontend query doesn't fail.
+ */
+function pmw_register_page_sections_fallback() {
+    if ( ! function_exists( 'register_graphql_field' ) || ! function_exists( 'register_graphql_object_type' ) || ! function_exists( 'register_graphql_union_type' ) ) {
+        return;
+    }
+    $media_stub = 'Page_PageSections_MediaStub';
+    register_graphql_object_type( $media_stub, [
+        'description' => __( 'Media stub for page sections fallback', 'pmw-core' ),
+        'fields'      => [
+            'sourceUrl' => [ 'type' => 'String' ],
+            'altText'   => [ 'type' => 'String' ],
+        ],
+    ] );
+    $layout_types = [
+        'Page_PageSections_Sections_HeroLayout',
+        'Page_PageSections_Sections_RichTextLayout',
+        'Page_PageSections_Sections_TeamGridLayout',
+        'Page_PageSections_Sections_PipelineStepsLayout',
+        'Page_PageSections_Sections_StatsBarLayout',
+        'Page_PageSections_Sections_CtaBlockLayout',
+        'Page_PageSections_Sections_LinkCardsLayout',
+        'Page_PageSections_Sections_DataSourcesLayout',
+        'Page_PageSections_Sections_FaqLayout',
+        'Page_PageSections_Sections_ImageTextLayout',
+    ];
+    foreach ( $layout_types as $type_name ) {
+        register_graphql_object_type( $type_name, [
+            'description' => __( 'Page section layout (stub when ACF PRO not active)', 'pmw-core' ),
+            'fields'      => [
+                'fieldGroupName' => [ 'type' => 'String' ],
+                'heading'        => [ 'type' => 'String' ],
+                'subheading'     => [ 'type' => 'String' ],
+                'content'        => [ 'type' => 'String' ],
+                'backgroundImage' => [ 'type' => $media_stub ],
+                'ctaLabel'       => [ 'type' => 'String' ],
+                'ctaUrl'         => [ 'type' => 'String' ],
+                'showTiers'      => [ 'type' => 'Boolean' ],
+                'filterStatus'   => [ 'type' => 'String' ],
+                'steps'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Step' ] ],
+                'stats'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Stat' ] ],
+                'body'           => [ 'type' => 'String' ],
+                'buttonLabel'    => [ 'type' => 'String' ],
+                'buttonUrl'      => [ 'type' => 'String' ],
+                'cards'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Card' ] ],
+                'items'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Item' ] ],
+                'image'          => [ 'type' => $media_stub ],
+                'alignment'      => [ 'type' => 'String' ],
+            ],
+        ] );
+    }
+    register_graphql_object_type( 'Page_PageSections_Sections_Step', [
+        'fields' => [
+            'label'      => [ 'type' => 'String' ],
+            'description' => [ 'type' => 'String' ],
+            'agentRole'  => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_object_type( 'Page_PageSections_Sections_Stat', [
+        'fields' => [
+            'label' => [ 'type' => 'String' ],
+            'value' => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_object_type( 'Page_PageSections_Sections_Card', [
+        'fields' => [
+            'label'       => [ 'type' => 'String' ],
+            'description' => [ 'type' => 'String' ],
+            'url'         => [ 'type' => 'String' ],
+            'icon'        => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_object_type( 'Page_PageSections_Sections_Item', [
+        'fields' => [
+            'name'        => [ 'type' => 'String' ],
+            'description' => [ 'type' => 'String' ],
+            'url'         => [ 'type' => 'String' ],
+            'question'    => [ 'type' => 'String' ],
+            'answer'      => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_union_type( 'Page_PageSections_Sections_Union', [
+        'typeNames'   => $layout_types,
+        'resolveType' => function() {
+            return null;
+        },
+    ] );
+    register_graphql_object_type( 'Page_PageSections', [
+        'description' => __( 'Page sections (requires ACF PRO when populated)', 'pmw-core' ),
+        'fields'      => [
+            'sections' => [
+                'type'    => [ 'list_of' => 'Page_PageSections_Sections_Union' ],
+                'resolve' => function() {
+                    return [];
+                },
+            ],
+        ],
+    ] );
+    register_graphql_field( 'Page', 'pageSections', [
+        'type'    => 'Page_PageSections',
+        'resolve' => function( $page ) {
+            return [ 'sections' => [] ];
+        },
+    ] );
+}
 
 // ─────────────────────────────────────────────
 // 5. GEM INDEX REST API (GEM-03)
