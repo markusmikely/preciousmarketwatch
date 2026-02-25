@@ -1,17 +1,15 @@
-# AI Agents - Precious Market Watch
+# PMW — LangGraph Agent Engine
 
-Python-based AI agents for automated content research and generation.
+Python-based AI agents for content research, creation, optimisation, and continuous improvement. LangGraph 1.0 with durable execution, checkpointing, and human-in-the-loop.
 
 ## 🤖 Overview
-The AI agent system follows a content plan to research facts and recent news about precious metals and gemstones, then generates blog content using the top-rated information.
 
-## 🏗️ Architecture
-- **Framework**: LangChain + LangGraph
+- **Framework**: LangGraph (production-ready, not Swarm)
 - **Language**: Python 3.11+
-- **LLM**: OpenAI GPT-4 / Anthropic Claude
-- **Vector Store**: [Your vector DB]
-- **Orchestration**: LangGraph state machines
-- **Task Queue**: Celery / Redis
+- **LLM**: Claude (primary) / GPT-4o (fallback)
+- **State**: PostgreSQL (LangGraph checkpointer)
+- **Message Queue**: Redis (bridge to WordPress)
+- **Observability**: LangSmith
 
 ## 📦 Installation
 ```bash

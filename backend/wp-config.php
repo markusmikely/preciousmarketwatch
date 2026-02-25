@@ -34,6 +34,11 @@ if (!defined('PMW_MAILCHIMP_LIST_ID')) {
 // Uncomment next line to log Mailchimp key/list and raw API response (wp-content/debug.log); remove after 403 resolved
 // define('PMW_MAILCHIMP_DEBUG', true);
 
+// PMW Bridge — WebSocket URL for Mission Control real-time updates (pmw-bridge plugin)
+if (!defined('PMW_BRIDGE_WS_URL')) {
+    define('PMW_BRIDGE_WS_URL', $_ENV['PMW_BRIDGE_WS_URL'] ?? 'ws://localhost:8000/ws');
+}
+
 
 
 if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {

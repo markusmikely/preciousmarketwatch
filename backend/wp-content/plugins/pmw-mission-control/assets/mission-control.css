@@ -1,0 +1,229 @@
+/**
+ * PMW Mission Control — Design System
+ */
+:root {
+    --mc-bg:          #080b12;
+    --mc-surface:     #0f1520;
+    --mc-surface-2:   #161d2e;
+    --mc-surface-3:   #1c2540;
+    --mc-border:      #1e2d47;
+    --mc-border-light:#253553;
+    --mc-gold:        #c9a84c;
+    --mc-gold-dim:    #7a6230;
+    --mc-gold-glow:   rgba(201,168,76,0.15);
+    --mc-green:       #22d3a0;
+    --mc-green-dim:   rgba(34,211,160,0.12);
+    --mc-red:         #f43f5e;
+    --mc-red-dim:     rgba(244,63,94,0.12);
+    --mc-amber:       #f59e0b;
+    --mc-amber-dim:   rgba(245,158,11,0.12);
+    --mc-blue:        #3b82f6;
+    --mc-blue-dim:    rgba(59,130,246,0.12);
+    --mc-text:        #e2e8f0;
+    --mc-text-muted:  #64748b;
+    --mc-text-dim:    #334155;
+    --mc-font:        'Inter', system-ui, -apple-system, sans-serif;
+    --mc-font-mono:   'JetBrains Mono', 'Fira Code', monospace;
+    --mc-radius:      6px;
+    --mc-radius-lg:   10px;
+}
+
+#wpwrap.wp-admin #wpcontent,
+#wpwrap.wp-admin #wpbody,
+#wpwrap.wp-admin #wpbody-content,
+.wrap#dashboard-widgets-wrap {
+    background: var(--mc-bg) !important;
+}
+
+.pmw-mc {
+    background: var(--mc-bg);
+    color: var(--mc-text);
+    font-family: var(--mc-font);
+    padding: 24px;
+}
+
+.pmw-panel {
+    background: var(--mc-surface);
+    border: 1px solid var(--mc-border);
+    border-radius: var(--mc-radius-lg);
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+}
+
+.pmw-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--mc-gold) 0%, transparent 100%);
+}
+
+.pmw-panel-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--mc-gold);
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pmw-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.pmw-dot--active  { background: var(--mc-green); box-shadow: 0 0 8px var(--mc-green); }
+.pmw-dot--idle    { background: var(--mc-text-dim); }
+.pmw-dot--error   { background: var(--mc-red); box-shadow: 0 0 8px var(--mc-red); }
+.pmw-dot--queued  { background: var(--mc-amber); }
+.pmw-dot--bg      { background: var(--mc-blue); }
+
+.pmw-metric {
+    background: var(--mc-surface-2);
+    border: 1px solid var(--mc-border);
+    border-radius: var(--mc-radius);
+    padding: 12px 16px;
+    text-align: center;
+}
+.pmw-metric__value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--mc-text);
+    line-height: 1;
+}
+.pmw-metric__label {
+    font-size: 11px;
+    color: var(--mc-text-muted);
+    margin-top: 4px;
+}
+.pmw-metric__delta--up   { color: var(--mc-green); }
+.pmw-metric__delta--down { color: var(--mc-red); }
+
+.pmw-connection-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--mc-text-muted);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--mc-border);
+}
+.pmw-connection-indicator::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--mc-red);
+}
+.pmw-connection-indicator.connected::before {
+    background: var(--mc-green);
+    box-shadow: 0 0 6px var(--mc-green);
+    animation: pmw-pulse 2s infinite;
+}
+
+@keyframes pmw-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+}
+
+.pmw-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: var(--mc-radius);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.pmw-btn--primary {
+    background: var(--mc-gold);
+    color: #000;
+}
+.pmw-btn--primary:hover { filter: brightness(1.1); }
+.pmw-btn--ghost {
+    background: transparent;
+    border-color: var(--mc-border-light);
+    color: var(--mc-text-muted);
+}
+.pmw-btn--ghost:hover {
+    border-color: var(--mc-gold);
+    color: var(--mc-gold);
+}
+.pmw-btn--danger {
+    background: var(--mc-red-dim);
+    border-color: var(--mc-red);
+    color: var(--mc-red);
+}
+
+.pmw-progress {
+    height: 6px;
+    background: var(--mc-surface-3);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.pmw-progress__fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--mc-gold-dim), var(--mc-gold));
+    border-radius: 3px;
+    transition: width 0.8s ease;
+}
+
+.pmw-scroll-list {
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mc-border) transparent;
+}
+
+.pmw-mono { font-family: var(--mc-font-mono); font-size: 12px; }
+
+.pmw-mc__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+.pmw-mc__brand { display: flex; align-items: center; gap: 12px; }
+.pmw-mc__logo { font-size: 20px; font-weight: 700; color: var(--mc-gold); }
+.pmw-mc__title { font-size: 18px; font-weight: 600; }
+.pmw-mc__status-bar { display: flex; align-items: center; gap: 16px; }
+.pmw-mc__updated { font-size: 12px; color: var(--mc-text-muted); }
+
+.pmw-mc__metrics-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.pmw-mc__row { display: grid; gap: 24px; margin-bottom: 24px; }
+.pmw-mc__row--thirds { grid-template-columns: repeat(3, 1fr); }
+.pmw-mc__row--4060  { grid-template-columns: 40% 1fr; }
+.pmw-mc__col--right { display: flex; flex-direction: column; gap: 24px; }
+
+@media (max-width: 1200px) {
+    .pmw-mc__row--thirds { grid-template-columns: 1fr; }
+    .pmw-mc__row--4060  { grid-template-columns: 1fr; }
+}
+
+/* Mission Control widget: full-width, no postbox chrome */
+#pmw_mission_control.postbox {
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+#pmw_mission_control .postbox-header,
+#pmw_mission_control .handlediv {
+    display: none;
+}
+#pmw_mission_control .inside {
+    margin: 0;
+    padding: 0;
+}
