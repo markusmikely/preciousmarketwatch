@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Shield, Award, Users, BookOpen, Target, Eye } from "lucide-react";
+import { CmsPage } from "@/components/cms/CmsPage";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PageHero } from "@/components/shared/PageHero";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,7 @@ const stats = [
   { value: "10+", label: "Years Experience" },
 ];
 
-export default function About() {
+function AboutFallback() {
   return (
     <PageLayout showTicker={false}>
       <PageHero
@@ -189,5 +190,15 @@ export default function About() {
         </div>
       </section>
     </PageLayout>
+  );
+}
+
+export default function About() {
+  return (
+    <CmsPage
+      slug="about"
+      breadcrumbs={[{ label: "Home", href: "/" }, { label: "About" }]}
+      fallback={<AboutFallback />}
+    />
   );
 }

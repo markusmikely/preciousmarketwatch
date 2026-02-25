@@ -1,6 +1,7 @@
 import { LegalPageLayout } from "@/components/shared/LegalPageLayout";
+import { CmsPage } from "@/components/cms/CmsPage";
 
-export default function EditorialStandards() {
+function EditorialStandardsFallback() {
   return (
     <LegalPageLayout
       title="Editorial Standards"
@@ -150,5 +151,15 @@ export default function EditorialStandards() {
         .
       </p>
     </LegalPageLayout>
+  );
+}
+
+export default function EditorialStandards() {
+  return (
+    <CmsPage
+      slug="editorial-standards"
+      breadcrumbs={[{ label: "Home", href: "/" }, { label: "Editorial Standards" }]}
+      fallback={<EditorialStandardsFallback />}
+    />
   );
 }

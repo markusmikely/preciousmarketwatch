@@ -36,6 +36,7 @@ add_action( 'rest_api_init', function() {
 // ─────────────────────────────────────────────
 
 add_action( 'init', 'pmw_register_post_types' );
+add_action( 'init', 'pmw_maybe_seed_agents', 20 );
 
 function pmw_register_post_types() {
 
@@ -276,7 +277,12 @@ function pmw_register_taxonomies() {
 // 3. SEED DEFAULT TERMS (runs once on activation)
 // ─────────────────────────────────────────────
 
-register_activation_hook( __FILE__, 'pmw_seed_terms' );
+register_activation_hook( __FILE__, 'pmw_on_activation' );
+
+function pmw_on_activation() {
+    pmw_seed_terms();
+    pmw_seed_agents();
+}
 
 function pmw_seed_terms() {
 
@@ -315,6 +321,73 @@ function pmw_seed_terms() {
             wp_insert_term( $term, 'pmw-dealer-category' );
         }
     }
+}
+
+function pmw_seed_agents() {
+    if ( ! post_type_exists( 'pmw_agent' ) ) {
+        return;
+    }
+    $agents = [
+        [ 'title' => 'The Director', 'role' => 'Executive Orchestrator', 'tier' => 1, 'agent_role' => 'The Director', 'bio' => 'Orchestrates the entire pipeline. Receives briefs, assigns tasks, makes final publish decisions.', 'specialisms' => 'Strategy, Coordination', 'menu_order' => 1 ],
+        [ 'title' => 'The Trend Analyst', 'role' => 'Trend Analyst', 'tier' => 2, 'agent_role' => 'The Trend Analyst', 'bio' => 'Monitors Google Trends, Reddit, X/Twitter for emerging topics. Weekly trending reports.', 'specialisms' => 'Search trends, Social velocity', 'menu_order' => 10 ],
+        [ 'title' => 'The Content Gap Analyst', 'role' => 'Content Gap Analyst', 'tier' => 2, 'agent_role' => 'The Content Gap Analyst', 'bio' => 'Audits content against competitors and search demand. Identifies missing topics.', 'specialisms' => 'SEO gaps, Competitor analysis', 'menu_order' => 11 ],
+        [ 'title' => 'The Performance Intelligence Agent', 'role' => 'Performance Intelligence', 'tier' => 2, 'agent_role' => 'The Performance Intelligence Agent', 'bio' => 'Analyses GA4 and Clarity. Flags underperforming pages, UX issues.', 'specialisms' => 'Analytics, Conversion', 'menu_order' => 12 ],
+        [ 'title' => 'The Financial Intelligence Agent', 'role' => 'Financial Intelligence', 'tier' => 2, 'agent_role' => 'The Financial Intelligence Agent', 'bio' => 'Monitors markets, central banks, commodity exchanges. Real-time alerts for price movements.', 'specialisms' => 'Markets, Macro events', 'menu_order' => 13 ],
+        [ 'title' => 'The Affiliate Intelligence Agent', 'role' => 'Affiliate Intelligence', 'tier' => 2, 'agent_role' => 'The Affiliate Intelligence Agent', 'bio' => 'Monitors affiliate performance. Tracks conversion, recommends placements.', 'specialisms' => 'Affiliate, Revenue', 'menu_order' => 14 ],
+        [ 'title' => 'The Editor-in-Chief', 'role' => 'Editor-in-Chief', 'tier' => 3, 'agent_role' => 'The Editor-in-Chief', 'bio' => 'Reviews all drafted content. Enforces house style, tone, factual consistency.', 'specialisms' => 'Editorial standards, Style guide', 'menu_order' => 20 ],
+        [ 'title' => 'The Research Director', 'role' => 'Research Director', 'tier' => 3, 'agent_role' => 'The Research Director', 'bio' => 'Validates research output before it reaches writers. Source quality gatekeeper.', 'specialisms' => 'Source validation, Accuracy', 'menu_order' => 21 ],
+        [ 'title' => 'The SEO Strategist', 'role' => 'SEO Strategist', 'tier' => 3, 'agent_role' => 'The SEO Strategist', 'bio' => 'Defines keyword strategy. Reviews content for SEO compliance. Internal linking.', 'specialisms' => 'Keywords, Search performance', 'menu_order' => 22 ],
+        [ 'title' => 'The Metals Analyst', 'role' => 'Metals Analyst', 'tier' => 4, 'agent_role' => 'The Metals Analyst', 'bio' => 'Specialist research: gold, silver, platinum, palladium. Price data, macro trends.', 'specialisms' => 'Gold, Silver, Platinum, Palladium', 'menu_order' => 30 ],
+        [ 'title' => 'The Gemstone Analyst', 'role' => 'Gemstone Analyst', 'tier' => 4, 'agent_role' => 'The Gemstone Analyst', 'bio' => 'Specialist research: diamonds, rubies, sapphires, emeralds. Auction results.', 'specialisms' => 'Diamonds, Colored stones', 'menu_order' => 31 ],
+        [ 'title' => 'The Market Writer', 'role' => 'Market Writer', 'tier' => 4, 'agent_role' => 'The Market Writer', 'bio' => 'Writes market insight articles and price analysis. Translates research into editorial.', 'specialisms' => 'Market insights, Analysis', 'menu_order' => 32 ],
+        [ 'title' => 'The Feature Writer', 'role' => 'Feature Writer', 'tier' => 4, 'agent_role' => 'The Feature Writer', 'bio' => 'Writes long-form educational content: buying guides, investment strategy.', 'specialisms' => 'Guides, Evergreen content', 'menu_order' => 33 ],
+        [ 'title' => 'The Fact Checker', 'role' => 'Fact Checker', 'tier' => 4, 'agent_role' => 'The Fact Checker', 'bio' => 'Cross-references all claims against verified sources before editorial review.', 'specialisms' => 'Verification, Sources', 'menu_order' => 34 ],
+        [ 'title' => 'The Publisher', 'role' => 'Publisher', 'tier' => 4, 'agent_role' => 'The Publisher', 'bio' => 'Handles the mechanical publish process: formatting, taxonomies, SEO fields.', 'specialisms' => 'WordPress, Publishing', 'menu_order' => 35 ],
+        [ 'title' => 'The Newsletter Curator', 'role' => 'Newsletter Curator', 'tier' => 5, 'agent_role' => 'The Newsletter Curator', 'bio' => 'Assembles newsletter digests. Selects relevant pieces, writes summary copy.', 'specialisms' => 'Newsletter, Mailchimp', 'menu_order' => 40 ],
+        [ 'title' => 'The Social Scribe', 'role' => 'Social Scribe', 'tier' => 5, 'agent_role' => 'The Social Scribe', 'bio' => 'Generates platform-appropriate social content: LinkedIn, X threads.', 'specialisms' => 'Social media, Distribution', 'menu_order' => 41 ],
+        [ 'title' => 'The Quality Monitor', 'role' => 'Quality Monitor', 'tier' => 5, 'agent_role' => 'The Quality Monitor', 'bio' => 'Ongoing audit agent. Flags outdated content, broken links, declining visibility.', 'specialisms' => 'Content audit, Re-optimisation', 'menu_order' => 42 ],
+    ];
+    foreach ( $agents as $a ) {
+        $existing = get_posts( [
+            'post_type'      => 'pmw_agent',
+            'title'          => $a['title'],
+            'post_status'    => 'any',
+            'posts_per_page' => 1,
+        ] );
+        if ( ! empty( $existing ) ) {
+            continue;
+        }
+        $id = wp_insert_post( [
+            'post_type'    => 'pmw_agent',
+            'post_title'   => $a['title'],
+            'post_status'  => 'publish',
+            'menu_order'   => $a['menu_order'],
+        ], true );
+        if ( $id && ! is_wp_error( $id ) && function_exists( 'update_field' ) ) {
+            update_field( 'role', $a['role'], $id );
+            update_field( 'tier', $a['tier'], $id );
+            update_field( 'agent_role', $a['agent_role'], $id );
+            update_field( 'bio', $a['bio'], $id );
+            update_field( 'specialisms', $a['specialisms'], $id );
+            update_field( 'status', 'active', $id );
+        }
+    }
+}
+
+function pmw_maybe_seed_agents() {
+    if ( get_option( 'pmw_agents_seeded' ) ) {
+        return;
+    }
+    if ( ! post_type_exists( 'pmw_agent' ) ) {
+        return;
+    }
+    $count = wp_count_posts( 'pmw_agent' );
+    if ( $count && (int) $count->publish > 0 ) {
+        update_option( 'pmw_agents_seeded', 1 );
+        return;
+    }
+    pmw_seed_agents();
+    update_option( 'pmw_agents_seeded', 1 );
 }
 
 
@@ -699,6 +772,241 @@ function pmw_register_acf_fields() {
         'show_in_graphql'    => 1,
         'graphql_field_name' => 'gemIndexData',
     ] );
+
+    // ── Page Sections (Flexible Content for all Pages) ──
+    acf_add_local_field_group( [
+        'key'    => 'group_page_sections',
+        'title'  => 'Page Sections',
+        'fields' => [
+            [
+                'key'          => 'field_page_sections',
+                'label'        => 'Sections',
+                'name'         => 'page_sections',
+                'type'         => 'flexible_content',
+                'button_label' => 'Add Section',
+                'layouts'      => [
+                    [
+                        'key'        => 'layout_hero',
+                        'name'       => 'hero',
+                        'label'      => 'Hero',
+                        'sub_fields' => [
+                            [ 'key' => 'field_hero_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_hero_background_image', 'label' => 'Background Image', 'name' => 'background_image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1, 'graphql_field_name' => 'backgroundImage' ],
+                            [ 'key' => 'field_hero_cta_label', 'label' => 'CTA Label', 'name' => 'cta_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaLabel' ],
+                            [ 'key' => 'field_hero_cta_url', 'label' => 'CTA URL', 'name' => 'cta_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaUrl' ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_rich_text',
+                        'name'       => 'rich_text',
+                        'label'      => 'Rich Text',
+                        'sub_fields' => [
+                            [ 'key' => 'field_rich_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_team_grid',
+                        'name'       => 'team_grid',
+                        'label'      => 'Team Grid',
+                        'sub_fields' => [
+                            [ 'key' => 'field_team_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_team_show_tiers', 'label' => 'Show Tiers', 'name' => 'show_tiers', 'type' => 'true_false', 'ui' => 1, 'show_in_graphql' => 1, 'graphql_field_name' => 'showTiers' ],
+                            [ 'key' => 'field_team_filter_status', 'label' => 'Filter Status (optional)', 'name' => 'filter_status', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'filterStatus' ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_pipeline_steps',
+                        'name'       => 'pipeline_steps',
+                        'label'      => 'Pipeline Steps',
+                        'sub_fields' => [
+                            [ 'key' => 'field_pipeline_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                            [
+                                'key'        => 'field_pipeline_steps',
+                                'label'      => 'Steps',
+                                'name'       => 'steps',
+                                'type'       => 'repeater',
+                                'layout'     => 'table',
+                                'sub_fields' => [
+                                    [ 'key' => 'field_step_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_step_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_step_agent_role', 'label' => 'Agent Role', 'name' => 'agent_role', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'agentRole' ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_stats_bar',
+                        'name'       => 'stats_bar',
+                        'label'      => 'Stats Bar',
+                        'sub_fields' => [
+                            [
+                                'key'        => 'field_stats_bar_stats',
+                                'label'      => 'Stats',
+                                'name'       => 'stats',
+                                'type'       => 'repeater',
+                                'layout'     => 'table',
+                                'sub_fields' => [
+                                    [ 'key' => 'field_stat_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_stat_value', 'label' => 'Value', 'name' => 'value', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_cta_block',
+                        'name'       => 'cta_block',
+                        'label'      => 'CTA Block',
+                        'sub_fields' => [
+                            [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_cta_button_label', 'label' => 'Button Label', 'name' => 'button_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonLabel' ],
+                            [ 'key' => 'field_cta_button_url', 'label' => 'Button URL', 'name' => 'button_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonUrl' ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_link_cards',
+                        'name'       => 'link_cards',
+                        'label'      => 'Link Cards',
+                        'sub_fields' => [
+                            [
+                                'key'        => 'field_link_cards_cards',
+                                'label'      => 'Cards',
+                                'name'       => 'cards',
+                                'type'       => 'repeater',
+                                'layout'     => 'block',
+                                'sub_fields' => [
+                                    [ 'key' => 'field_card_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_card_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_card_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_card_icon', 'label' => 'Icon (lucide name)', 'name' => 'icon', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_data_sources',
+                        'name'       => 'data_sources',
+                        'label'      => 'Data Sources',
+                        'sub_fields' => [
+                            [
+                                'key'        => 'field_data_sources_items',
+                                'label'      => 'Sources',
+                                'name'       => 'items',
+                                'type'       => 'repeater',
+                                'layout'     => 'table',
+                                'sub_fields' => [
+                                    [ 'key' => 'field_source_name', 'label' => 'Name', 'name' => 'name', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_source_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_source_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_faq',
+                        'name'       => 'faq',
+                        'label'      => 'FAQ Accordion',
+                        'sub_fields' => [
+                            [
+                                'key'        => 'field_faq_items',
+                                'label'      => 'Items',
+                                'name'       => 'items',
+                                'type'       => 'repeater',
+                                'layout'     => 'block',
+                                'sub_fields' => [
+                                    [ 'key' => 'field_faq_question', 'label' => 'Question', 'name' => 'question', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    [ 'key' => 'field_faq_answer', 'label' => 'Answer', 'name' => 'answer', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    [
+                        'key'        => 'layout_image_text',
+                        'name'       => 'image_text',
+                        'label'      => 'Image + Text',
+                        'sub_fields' => [
+                            [ 'key' => 'field_image_text_image', 'label' => 'Image', 'name' => 'image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_image_text_content', 'label' => 'Content', 'name' => 'content', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_image_text_alignment', 'label' => 'Image Position', 'name' => 'alignment', 'type' => 'select', 'choices' => [ 'left' => 'Left', 'right' => 'Right' ], 'show_in_graphql' => 1 ],
+                        ],
+                    ],
+                ],
+                'show_in_graphql'  => 1,
+                'graphql_field_name' => 'sections',
+            ],
+        ],
+        'location' => [
+            [ [ 'param' => 'post_type', 'operator' => '==', 'value' => 'page' ] ],
+        ],
+        'show_in_graphql'    => 1,
+        'graphql_field_name' => 'pageSections',
+    ] );
+
+    // ── PMW Agent Fields ─────────────────────
+    acf_add_local_field_group( [
+        'key'    => 'group_pmw_agent',
+        'title'  => 'Agent Details',
+        'fields' => [
+            [
+                'key'              => 'field_agent_role',
+                'label'            => 'Role',
+                'name'             => 'role',
+                'type'             => 'text',
+                'instructions'     => 'e.g. Editor-in-Chief',
+                'show_in_graphql'  => 1,
+            ],
+            [
+                'key'              => 'field_agent_tier',
+                'label'            => 'Tier',
+                'name'             => 'tier',
+                'type'             => 'number',
+                'instructions'     => '1=Executive, 2=Intelligence, 3=Editorial, 4=Production, 5=Distribution',
+                'min'              => 1,
+                'max'              => 5,
+                'show_in_graphql'  => 1,
+            ],
+            [
+                'key'              => 'field_agent_bio',
+                'label'            => 'Bio',
+                'name'             => 'bio',
+                'type'             => 'textarea',
+                'rows'             => 3,
+                'show_in_graphql'  => 1,
+            ],
+            [
+                'key'              => 'field_agent_agent_role',
+                'label'            => 'Agent Role (for pipeline matching)',
+                'name'             => 'agent_role',
+                'type'             => 'text',
+                'instructions'     => 'Exact string to match pipeline steps, e.g. "The Director"',
+                'show_in_graphql'  => 1,
+                'graphql_field_name' => 'agentRole',
+            ],
+            [
+                'key'              => 'field_agent_specialisms',
+                'label'            => 'Specialisms',
+                'name'             => 'specialisms',
+                'type'             => 'text',
+                'instructions'     => 'Comma-separated',
+                'show_in_graphql'  => 1,
+            ],
+            [
+                'key'              => 'field_agent_status',
+                'label'            => 'Status',
+                'name'             => 'status',
+                'type'             => 'select',
+                'choices'          => [ 'active' => 'Active', 'inactive' => 'Inactive' ],
+                'default_value'    => 'active',
+                'show_in_graphql'  => 1,
+            ],
+        ],
+        'location' => [
+            [ [ 'param' => 'post_type', 'operator' => '==', 'value' => 'pmw_agent' ] ],
+        ],
+        'show_in_graphql'    => 1,
+        'graphql_field_name' => 'agentDetails',
+    ] );
 }
 
 
@@ -711,7 +1019,9 @@ add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
 add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
+add_action( 'rest_api_init', 'pmw_register_agents_rest_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
+add_action( 'acf/init', 'pmw_register_site_settings_options_page' );
 
 // ── HOME-02: Mailchimp newsletter subscribe (WordPress REST; frontend has no /api) ──
 function pmw_register_subscribe_route() {
@@ -930,6 +1240,136 @@ function pmw_rest_post_contact_submit( WP_REST_Request $request ) {
     }
 
     return new WP_REST_Response( [ 'success' => true, 'message' => 'Your message has been sent. We\'ll be in touch shortly.' ], 200 );
+}
+
+// ── Agents API: GET /pmw/v1/agents (tier-grouped) ──
+function pmw_register_agents_rest_route() {
+    register_rest_route( 'pmw/v1', '/agents', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_agents',
+        'permission_callback' => '__return_true',
+    ] );
+}
+
+function pmw_rest_get_agents( WP_REST_Request $request ) {
+    $status = $request->get_param( 'status' ) ?: 'active';
+    $posts  = get_posts( [
+        'post_type'      => 'pmw_agent',
+        'post_status'    => 'publish',
+        'posts_per_page' => 100,
+        'orderby'        => [ 'menu_order' => 'ASC', 'title' => 'ASC' ],
+    ] );
+
+    $agents = [];
+    foreach ( $posts as $post ) {
+        if ( ! function_exists( 'get_field' ) ) {
+            continue;
+        }
+        $agent_status = get_field( 'status', $post->ID ) ?: 'active';
+        if ( $status !== 'all' && $agent_status !== $status ) {
+            continue;
+        }
+        $tier = (int) ( get_field( 'tier', $post->ID ) ?: 1 );
+        $img  = get_the_post_thumbnail_url( $post->ID, 'medium' );
+        $agents[] = [
+            'id'         => (string) $post->ID,
+            'name'       => get_the_title( $post ),
+            'role'       => (string) ( get_field( 'role', $post->ID ) ?: '' ),
+            'tier'       => $tier,
+            'bio'        => (string) ( get_field( 'bio', $post->ID ) ?: '' ),
+            'agentRole'  => (string) ( get_field( 'agent_role', $post->ID ) ?: '' ),
+            'specialisms'=> (string) ( get_field( 'specialisms', $post->ID ) ?: '' ),
+            'status'     => $agent_status,
+            'avatar'     => $img ?: null,
+        ];
+    }
+
+    $by_tier = [];
+    foreach ( $agents as $a ) {
+        $t = $a['tier'];
+        if ( ! isset( $by_tier[ $t ] ) ) {
+            $by_tier[ $t ] = [];
+        }
+        $by_tier[ $t ][] = $a;
+    }
+    ksort( $by_tier );
+
+    $response = new WP_REST_Response( [
+        'agents'   => $agents,
+        'byTier'   => array_values( $by_tier ),
+    ], 200 );
+    $response->header( 'Cache-Control', 'public, max-age=300' );
+    return $response;
+}
+
+// ── Site Settings Options Page ───────────────────────
+function pmw_register_site_settings_options_page() {
+    if ( ! function_exists( 'acf_add_options_page' ) ) return;
+
+    acf_add_options_page( [
+        'page_title'  => 'Site Settings',
+        'menu_title'  => 'Site Settings',
+        'menu_slug'   => 'site-settings',
+        'capability'  => 'edit_posts',
+        'redirect'    => false,
+        'post_id'     => 'site_settings',
+    ] );
+
+    if ( ! function_exists( 'acf_add_local_field_group' ) ) return;
+
+    acf_add_local_field_group( [
+        'key'    => 'group_site_settings',
+        'title'  => 'Site Settings',
+        'fields' => [
+            [ 'key' => 'field_site_tagline', 'label' => 'Site Tagline', 'name' => 'site_tagline', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'siteTagline' ],
+            [ 'key' => 'field_nav_cta_label', 'label' => 'Nav CTA Label', 'name' => 'nav_cta_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'navCtaLabel' ],
+            [ 'key' => 'field_nav_cta_url', 'label' => 'Nav CTA URL', 'name' => 'nav_cta_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'navCtaUrl' ],
+            [ 'key' => 'field_footer_about_text', 'label' => 'Footer About Text', 'name' => 'footer_about_text', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1, 'graphql_field_name' => 'footerAboutText' ],
+            [
+                'key'        => 'field_footer_columns',
+                'label'      => 'Footer Columns',
+                'name'       => 'footer_columns',
+                'type'       => 'repeater',
+                'layout'     => 'block',
+                'sub_fields' => [
+                    [ 'key' => 'field_fc_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                    [
+                        'key'        => 'field_fc_links',
+                        'label'      => 'Links',
+                        'name'       => 'links',
+                        'type'       => 'repeater',
+                        'layout'     => 'table',
+                        'sub_fields' => [
+                            [ 'key' => 'field_fcl_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                            [ 'key' => 'field_fcl_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                        ],
+                    ],
+                ],
+                'show_in_graphql'  => 1,
+                'graphql_field_name' => 'footerColumns',
+            ],
+            [
+                'key'        => 'field_social_links',
+                'label'      => 'Social Links',
+                'name'       => 'social_links',
+                'type'       => 'group',
+                'sub_fields' => [
+                    [ 'key' => 'field_social_twitter', 'label' => 'Twitter/X URL', 'name' => 'twitter_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'twitterUrl' ],
+                    [ 'key' => 'field_social_linkedin', 'label' => 'LinkedIn URL', 'name' => 'linkedin_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'linkedinUrl' ],
+                    [ 'key' => 'field_social_youtube', 'label' => 'YouTube URL', 'name' => 'youtube_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'youtubeUrl' ],
+                ],
+                'show_in_graphql'  => 1,
+                'graphql_field_name' => 'socialLinks',
+            ],
+            [ 'key' => 'field_cookie_notice_text', 'label' => 'Cookie Notice Text', 'name' => 'cookie_notice_text', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1, 'graphql_field_name' => 'cookieNoticeText' ],
+            [ 'key' => 'field_analytics_notice', 'label' => 'Show Analytics Disclosure', 'name' => 'analytics_notice', 'type' => 'true_false', 'ui' => 1, 'show_in_graphql' => 1, 'graphql_field_name' => 'analyticsNotice' ],
+        ],
+        'location' => [
+            [ [ 'param' => 'options_page', 'operator' => '==', 'value' => 'site-settings' ] ],
+        ],
+        'show_in_graphql'    => 1,
+        'graphql_field_name' => 'siteSettings',
+    ] );
 }
 
 // ── METAL-04: Price History API ──────────────────────
