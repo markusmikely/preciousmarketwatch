@@ -5,33 +5,20 @@ import { gql } from "graphql-request";
  * ACF layouts: hero, rich_text, team_grid, pipeline_steps, stats_bar,
  * cta_block, link_cards, data_sources, faq, image_text
  *
- * Supports both naming conventions:
- * - Fallback (no ACF PRO): Page_PageSections_Sections_HeroLayout etc.
- * - ACF PRO + WPGraphQL ACF: Page_PageSections_Sections_Hero etc.
+ * Schema types: Page_Pagesections_PageSections_* (note: lowercase 's' in Pagesections)
  */
 const SECTION_FRAGMENTS = `
   __typename
-  fieldGroupName
-  ... on Page_PageSections_Sections_HeroLayout { heading subheading backgroundImage { sourceUrl altText } ctaLabel ctaUrl }
-  ... on Page_PageSections_Sections_Hero { heading subheading backgroundImage { sourceUrl altText } ctaLabel ctaUrl }
-  ... on Page_PageSections_Sections_RichTextLayout { content }
-  ... on Page_PageSections_Sections_RichText { content }
-  ... on Page_PageSections_Sections_TeamGridLayout { heading showTiers filterStatus }
-  ... on Page_PageSections_Sections_TeamGrid { heading showTiers filterStatus }
-  ... on Page_PageSections_Sections_PipelineStepsLayout { heading steps { label description agentRole } }
-  ... on Page_PageSections_Sections_PipelineSteps { heading steps { label description agentRole } }
-  ... on Page_PageSections_Sections_StatsBarLayout { stats { label value } }
-  ... on Page_PageSections_Sections_StatsBar { stats { label value } }
-  ... on Page_PageSections_Sections_CtaBlockLayout { heading body buttonLabel buttonUrl }
-  ... on Page_PageSections_Sections_CtaBlock { heading body buttonLabel buttonUrl }
-  ... on Page_PageSections_Sections_LinkCardsLayout { cards { label description url icon } }
-  ... on Page_PageSections_Sections_LinkCards { cards { label description url icon } }
-  ... on Page_PageSections_Sections_DataSourcesLayout { items { name description url } }
-  ... on Page_PageSections_Sections_DataSources { items { name description url } }
-  ... on Page_PageSections_Sections_FaqLayout { items { question answer } }
-  ... on Page_PageSections_Sections_Faq { items { question answer } }
-  ... on Page_PageSections_Sections_ImageTextLayout { image { sourceUrl altText } content alignment }
-  ... on Page_PageSections_Sections_ImageText { image { sourceUrl altText } content alignment }
+  ... on Page_Pagesections_PageSections_Hero { fieldGroupName heading subheading backgroundImage { sourceUrl altText } ctaLabel ctaUrl }
+  ... on Page_Pagesections_PageSections_RichText { fieldGroupName content }
+  ... on Page_Pagesections_PageSections_TeamGrid { fieldGroupName heading showTiers filterStatus }
+  ... on Page_Pagesections_PageSections_PipelineSteps { fieldGroupName heading steps { label description agentRole } }
+  ... on Page_Pagesections_PageSections_StatsBar { fieldGroupName stats { label value } }
+  ... on Page_Pagesections_PageSections_CtaBlock { fieldGroupName heading body buttonLabel buttonUrl }
+  ... on Page_Pagesections_PageSections_LinkCards { fieldGroupName cards { label description url icon } }
+  ... on Page_Pagesections_PageSections_DataSources { fieldGroupName items { name description url } }
+  ... on Page_Pagesections_PageSections_Faq { fieldGroupName items { question answer } }
+  ... on Page_Pagesections_PageSections_ImageText { fieldGroupName image { sourceUrl altText } content alignment }
 `;
 
 export const GET_PAGE_QUERY = gql`
