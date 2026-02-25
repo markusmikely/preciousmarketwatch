@@ -2,25 +2,8 @@ import { gql } from "graphql-request";
 
 /**
  * Fetch a WordPress page by slug with page_sections flexible content.
- * ACF layouts: hero, rich_text, team_grid, pipeline_steps, stats_bar,
- * cta_block, link_cards, data_sources, faq, image_text
- *
- * Schema types: Page_Pagesections_PageSections_* (note: lowercase 's' in Pagesections)
+ * Schema types: Page_Pagesections_PageSections_* (lowercase 's' in Pagesections)
  */
-const SECTION_FRAGMENTS = `
-  __typename
-  ... on Page_Pagesections_PageSections_Hero { fieldGroupName heading subheading backgroundImage { sourceUrl altText } ctaLabel ctaUrl }
-  ... on Page_Pagesections_PageSections_RichText { fieldGroupName content }
-  ... on Page_Pagesections_PageSections_TeamGrid { fieldGroupName heading showTiers filterStatus }
-  ... on Page_Pagesections_PageSections_PipelineSteps { fieldGroupName heading steps { label description agentRole } }
-  ... on Page_Pagesections_PageSections_StatsBar { fieldGroupName stats { label value } }
-  ... on Page_Pagesections_PageSections_CtaBlock { fieldGroupName heading body buttonLabel buttonUrl }
-  ... on Page_Pagesections_PageSections_LinkCards { fieldGroupName cards { label description url icon } }
-  ... on Page_Pagesections_PageSections_DataSources { fieldGroupName items { name description url } }
-  ... on Page_Pagesections_PageSections_Faq { fieldGroupName items { question answer } }
-  ... on Page_Pagesections_PageSections_ImageText { fieldGroupName image { sourceUrl altText } content alignment }
-`;
-
 export const GET_PAGE_QUERY = gql`
   query GetPage($slug: ID!) {
     page(id: $slug, idType: URI) {
@@ -29,7 +12,84 @@ export const GET_PAGE_QUERY = gql`
       slug
       pageSections {
         sections {
-          ${SECTION_FRAGMENTS}
+          __typename
+          ... on Page_Pagesections_PageSections_Hero {
+            fieldGroupName
+            heading
+            subheading
+            backgroundImage {
+              sourceUrl
+              altText
+            }
+            ctaLabel
+            ctaUrl
+          }
+          ... on Page_Pagesections_PageSections_RichText {
+            fieldGroupName
+            content
+          }
+          ... on Page_Pagesections_PageSections_TeamGrid {
+            fieldGroupName
+            heading
+            showTiers
+            filterStatus
+          }
+          ... on Page_Pagesections_PageSections_PipelineSteps {
+            fieldGroupName
+            heading
+            steps {
+              label
+              description
+              agentRole
+            }
+          }
+          ... on Page_Pagesections_PageSections_StatsBar {
+            fieldGroupName
+            stats {
+              label
+              value
+            }
+          }
+          ... on Page_Pagesections_PageSections_CtaBlock {
+            fieldGroupName
+            heading
+            body
+            buttonLabel
+            buttonUrl
+          }
+          ... on Page_Pagesections_PageSections_LinkCards {
+            fieldGroupName
+            cards {
+              label
+              description
+              url
+              icon
+            }
+          }
+          ... on Page_Pagesections_PageSections_DataSources {
+            fieldGroupName
+            items {
+              name
+              description
+              url
+            }
+          }
+          ... on Page_Pagesections_PageSections_Faq {
+            fieldGroupName
+            items {
+              question
+              answer
+            }
+          }
+          ... on Page_Pagesections_PageSections_ImageText {
+            fieldGroupName
+            image {
+              sourceUrl
+              altText
+            }
+            content
+            alignment
+          }
         }
       }
     }
