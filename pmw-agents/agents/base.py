@@ -3,14 +3,15 @@ PMW Agent Base — Cost logging and tracked LLM calls
 Every LLM call logs tokens and cost before returning.
 """
 import json
+import os
 from datetime import datetime
 from functools import wraps
 
 import redis
-import os
 
-REDIS_URL = redis.from_url(os.environ["REDIS_URL"])
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 COST_LOG_KEY = "pmw:cost_log"
+CHANNEL_EVENTS = "pmw:events"
 
 
 def _get_redis():
@@ -33,7 +34,7 @@ def log_cost(entry: dict):
     entry["timestamp"] = datetime.utcnow().isoformat()
     r = _get_redis()
     r.lpush(COST_LOG_KEY, json.dumps(entry))
-    r.publish(CHANNEL, json.dumps({"type": "cost_update", "payload": entry}))
+    r.publish(CHANNEL_EVENTS, json.dumps({"type": "cost_update", "payload": entry}))
 
 
 def current_task_id() -> str | None:

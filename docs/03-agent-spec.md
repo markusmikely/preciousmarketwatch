@@ -1224,3 +1224,73 @@ docs/
 ```
 
 > **Architecture Decision Records (ADRs):** Each significant design decision made in this document should have a corresponding ADR capturing: the context, the options considered, the decision made, and the consequences. The five ADRs listed above cover the most consequential decisions in the current design. New ADRs should be written before implementing any change that affects the vault, the scoring model, or the agent pipeline structure.
+
+---
+
+## 17. V1 Pipeline & Railway Architecture
+
+### 17a. Queue + DB Strategy (Correct Mental Model)
+
+**Postgres = Source of Truth.** Stores:
+
+- `workflow_runs` — run metadata, status, current_stage
+- `workflow_stages` — stage outputs, scores, retries
+- `topics` — predefined topics with affiliate data
+
+**Redis = Signal Bus.** Stores:
+
+- Job-ready notifications (LPUSH / BRPOP)
+- Stage completion events
+- Restart signals, heartbeat signals, distributed locks
+
+Jobs are persisted in DB. Queue is a signalling layer only.
+
+### 17b. V1 Flow (Phase 1 — Content Generator)
+
+```
+Topic (predefined list)
+        ↓
+Workflow Run Created (DB)
+        ↓
+Research Agent → (score >= 0.75)
+        ↓
+Planning Agent → (score >= 0.80)
+        ↓
+Content Agent → (score >= 0.80)
+        ↓
+Publishing Agent (draft to WP)
+        ↓
+Run Complete
+```
+
+No social, analytics, human team simulation, or reinforcement loops in v1.
+
+### 17c. Minimal V1 DB Schema
+
+- `workflow_runs`: id, topic_id, status, current_stage, started_at, completed_at, final_score
+- `workflow_stages`: id, run_id, stage_name, status, score, attempt_number, output_json, judge_feedback, created_at
+- `topics`: id, topic_name, affiliate_name, affiliate_url, target_keyword, active
+
+### 17d. Worker Pattern (PMW-Agents)
+
+```python
+while True:
+    event = redis.brpop("agent:queue")
+    task_id = event.task_id
+    task = db.get_task(task_id)
+    if task.status != "pending":
+        continue  # idempotency
+    process(task)
+```
+
+Row-level locking: `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` to prevent duplicate processing when scaling horizontally.
+
+### 17e. Expansion Roadmap
+
+| Phase | Layer | Additions |
+|-------|-------|-----------|
+| **Phase 2** | Evaluation | Scoring Aggregator, Performance Feedback Loop |
+| **Phase 3** | Distribution | Social Agent, Newsletter Agent |
+| **Phase 4** | Editorial Intelligence | Trend Scout Agent, Gap Analyzer |
+
+Do **not** build in v1: dynamic self-modifying prompts, reinforcement learning, multi-agent debates, fully autonomous publishing, affiliate auto-switching.
