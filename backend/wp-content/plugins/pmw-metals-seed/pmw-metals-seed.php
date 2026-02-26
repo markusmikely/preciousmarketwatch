@@ -106,6 +106,7 @@ function pmw_metals_seed_get_metalpriceapi_url( $metal ) {
  * Uses base=USD and rates.USDXAG, rates.USDXPT, rates.USDXPD (USD per troy oz).
  * URL: https://api.metalpriceapi.com/v1/{YYYY-MM-DD}?api_key=KEY&base=USD&currencies=XAU,XAG,XPT,XPD
  * Fetches last N days (default 90). Throttles 1 request/sec to avoid rate limits.
+ * Skips failed dates and continues so partial data is still inserted.
  */
 function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
 	if ( function_exists( 'set_time_limit' ) ) {
@@ -127,9 +128,15 @@ function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
 		$start_date = $cutoff;
 	}
 
-	$metal_symbols = [ 'silver' => 'USDXAG', 'platinum' => 'USDXPT', 'palladium' => 'USDXPD' ];
-	$records       = [ 'silver' => [], 'platinum' => [], 'palladium' => [] ];
-	$source        = 'metalpriceapi_historical';
+	// Prefer USDXAG (USD per oz); fallback: 1/rates.XAG when base=USD (XAG = oz per 1 USD).
+	$metal_config = [
+		'silver'   => [ 'usd_key' => 'USDXAG', 'quote_key' => 'XAG' ],
+		'platinum' => [ 'usd_key' => 'USDXPT', 'quote_key' => 'XPT' ],
+		'palladium'=> [ 'usd_key' => 'USDXPD', 'quote_key' => 'XPD' ],
+	];
+	$records    = [ 'silver' => [], 'platinum' => [], 'palladium' => [] ];
+	$source     = 'metalpriceapi_historical';
+	$last_error = null;
 
 	for ( $date = $start_date; $date <= $end_date; ) {
 		$url = add_query_arg( [
@@ -140,40 +147,39 @@ function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
 
 		$resp = wp_remote_get( $url, [ 'timeout' => 30 ] );
 		if ( is_wp_error( $resp ) ) {
-			$err = $resp->get_error_message();
-			return [
-				'silver'   => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-				'platinum' => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-				'palladium'=> [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-			];
+			$last_error = $resp->get_error_message() . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			sleep( 1 );
+			continue;
 		}
 		if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
-			$err = 'HTTP ' . wp_remote_retrieve_response_code( $resp );
-			return [
-				'silver'   => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-				'platinum' => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-				'palladium'=> [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
-			];
+			$last_error = 'HTTP ' . wp_remote_retrieve_response_code( $resp ) . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			sleep( 1 );
+			continue;
 		}
 
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
 		if ( empty( $data['success'] ) || empty( $data['rates'] ) ) {
-			$msg = $data['error']['info'] ?? ( $data['message'] ?? 'Invalid MetalPriceAPI response' );
-			return [
-				'silver'   => [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
-				'platinum' => [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
-				'palladium'=> [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
-			];
+			$msg = isset( $data['error']['info'] ) ? $data['error']['info'] : ( isset( $data['message'] ) ? $data['message'] : 'Invalid response' );
+			$last_error = $msg . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			sleep( 1 );
+			continue;
 		}
 
-		// rates.USDXAG = USD per 1 oz silver; rates.USDXPT, rates.USDXPD same for pt/pd
 		$usd_to_gbp = 0.79;
 		if ( ! empty( $data['rates']['GBP'] ) && (float) $data['rates']['GBP'] > 0 ) {
 			$usd_to_gbp = (float) $data['rates']['GBP'];
 		}
 
-		foreach ( $metal_symbols as $metal => $rate_key ) {
-			$price_usd = isset( $data['rates'][ $rate_key ] ) ? (float) $data['rates'][ $rate_key ] : null;
+		foreach ( $metal_config as $metal => $cfg ) {
+			$price_usd = null;
+			if ( ! empty( $data['rates'][ $cfg['usd_key'] ] ) && (float) $data['rates'][ $cfg['usd_key'] ] > 0 ) {
+				$price_usd = (float) $data['rates'][ $cfg['usd_key'] ];
+			} elseif ( ! empty( $data['rates'][ $cfg['quote_key'] ] ) && (float) $data['rates'][ $cfg['quote_key'] ] > 0 ) {
+				$price_usd = 1.0 / (float) $data['rates'][ $cfg['quote_key'] ];
+			}
 			if ( $price_usd !== null && $price_usd > 0 ) {
 				$records[ $metal ][] = [
 					'date'      => $date,
@@ -190,10 +196,34 @@ function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
 
 	$results = [];
 	foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
-		$results[ $metal ] = ! empty( $records[ $metal ] )
-			? pmw_metals_seed_insert_records_with_gbp( $metal, $records[ $metal ], $source )
-			: [ 'inserted' => 0, 'skipped' => 0, 'message' => 'No rates for ' . $metal ];
+		if ( ! empty( $records[ $metal ] ) ) {
+			$results[ $metal ] = pmw_metals_seed_insert_records_with_gbp( $metal, $records[ $metal ], $source );
+		} else {
+			$results[ $metal ] = [
+				'inserted' => 0,
+				'skipped'  => 0,
+				'error'    => $last_error ?: 'No rates returned for ' . $metal,
+			];
+		}
 	}
+
+	// Fallback: if no data from date range (e.g. API only allows "yesterday"), fetch yesterday once.
+	$any_empty = ( empty( $records['silver'] ) || empty( $records['platinum'] ) || empty( $records['palladium'] ) );
+	if ( $any_empty ) {
+		$single = pmw_metals_seed_fetch_metalpriceapi_historical_single( 'yesterday' );
+		if ( ! is_wp_error( $single ) && ! empty( $single ) ) {
+			$yesterday = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
+			foreach ( $single as $metal => $prices ) {
+				if ( empty( $records[ $metal ] ) ) {
+					$inserted = pmw_metals_seed_insert_records_with_gbp( $metal, [
+						[ 'date' => $yesterday, 'price' => $prices['price_usd'], 'price_gbp' => $prices['price_gbp'], 'source' => $source ],
+					], $source );
+					$results[ $metal ] = $inserted;
+				}
+			}
+		}
+	}
+
 	return $results;
 }
 
