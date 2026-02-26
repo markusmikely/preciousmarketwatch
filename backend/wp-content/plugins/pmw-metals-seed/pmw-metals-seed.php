@@ -309,9 +309,16 @@ function pmw_metals_seed_load_metals_dev( $metal ) {
 		}
 
 		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
-		if ( empty( $data['status'] ) || $data['status'] !== 'success' || empty( $data['rates'] ) ) {
-			$msg = isset( $data['error_message'] ) ? $data['error_message'] : 'Invalid Metals.dev response';
+		if ( empty( $data['status'] ) || $data['status'] !== 'success' ) {
+			$code = isset( $data['error_code'] ) ? (int) $data['error_code'] : 0;
+			$msg  = isset( $data['error_message'] ) ? trim( (string) $data['error_message'] ) : 'Invalid Metals.dev response';
+			if ( $code ) {
+				$msg = $msg . ' (code ' . $code . ')';
+			}
 			return [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ];
+		}
+		if ( empty( $data['rates'] ) || ! is_array( $data['rates'] ) ) {
+			return [ 'error' => 'Metals.dev returned no rates (check date range: max 30 days, end_date cannot be today)', 'inserted' => 0, 'skipped' => 0 ];
 		}
 
 		foreach ( $data['rates'] as $date => $row ) {
