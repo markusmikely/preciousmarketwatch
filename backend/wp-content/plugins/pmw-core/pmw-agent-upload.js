@@ -1,4 +1,4 @@
-(function($) {
+git (function($) {
     'use strict';
 
     $(document).ready(function() {
@@ -17,7 +17,7 @@
                 $status.text('Please select a file first.').css('color', '#b32d2e');
                 return;
             }
-
+            
             $btn.prop('disabled', true);
             $status.text('Uploading…').css('color', '');
 

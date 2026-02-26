@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useGraphQL } from "@/hooks/useGraphQL";
 import { ARTICLE_BY_SLUG, RELATED_ARTICLES } from "@/queries/articles";
 
+
 // Demo affiliate products - these would come from product catalog
 const affiliateProducts = [
   {
