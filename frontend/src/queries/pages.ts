@@ -33,6 +33,23 @@ export const GET_PAGE_QUERY = gql`
             heading
             showTiers
             filterStatus
+            agents {
+              id
+              slug
+              displayName
+              title
+              role
+              tier
+              bio
+              personality
+              quirks
+              specialisms
+              status
+              eta
+              displayOrder
+              avatarImageUrl
+              avatarVideoUrl
+            }
           }
           ... on Page_Pagesections_PageSections_PipelineSteps {
             fieldGroupName

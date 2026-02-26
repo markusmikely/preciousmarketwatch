@@ -1525,6 +1525,7 @@ add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_ticker_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
 add_action( 'graphql_register_types', 'pmw_register_metal_prices_graphql' );
+add_action( 'graphql_register_types', 'pmw_register_team_grid_agents_graphql', 20 );
 add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
 add_action( 'rest_api_init', 'pmw_register_agents_rest_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
@@ -2254,6 +2255,104 @@ function pmw_register_metal_prices_graphql() {
             }, $data );
         },
     ] );
+}
+
+// ── GraphQL: agents field on TeamGrid section (populates team data in page response) ──
+function pmw_register_team_grid_agents_graphql() {
+    if ( ! function_exists( 'register_graphql_object_type' ) || ! function_exists( 'register_graphql_field' ) ) {
+        return;
+    }
+    register_graphql_object_type( 'PmwAgentProfile', [
+        'description' => __( 'Agent profile for Team section', 'pmw-core' ),
+        'fields'      => [
+            'id'                  => [ 'type' => 'Int' ],
+            'slug'                => [ 'type' => 'String' ],
+            'displayName'          => [ 'type' => 'String' ],
+            'title'               => [ 'type' => 'String' ],
+            'role'                => [ 'type' => 'String' ],
+            'tier'                => [ 'type' => 'String' ],
+            'modelFamily'         => [ 'type' => 'String' ],
+            'bio'                 => [ 'type' => 'String' ],
+            'personality'         => [ 'type' => 'String' ],
+            'quirks'              => [ 'type' => [ 'list_of' => 'String' ] ],
+            'specialisms'         => [ 'type' => [ 'list_of' => 'String' ] ],
+            'status'              => [ 'type' => 'String' ],
+            'eta'                 => [ 'type' => 'String' ],
+            'displayOrder'        => [ 'type' => 'Int' ],
+            'avatarImageUrl'      => [ 'type' => 'String' ],
+            'avatarVideoUrl'      => [ 'type' => 'String' ],
+            'avatarImagePrompt'   => [ 'type' => 'String' ],
+            'avatarVideoPrompt'   => [ 'type' => 'String' ],
+        ],
+    ] );
+
+    $type_names = [
+        'Page_Pagesections_PageSections_TeamGrid',
+        'Page_PageSections_PageSections_TeamGrid',
+    ];
+    foreach ( $type_names as $type_name ) {
+        register_graphql_field( $type_name, 'agents', [
+            'type'        => [ 'list_of' => 'PmwAgentProfile' ],
+            'description' => __( 'Team agents to display in the grid', 'pmw-core' ),
+            'resolve'     => function () {
+                $posts = get_posts( [
+                    'post_type'      => 'pmw_agent',
+                    'post_status'    => 'publish',
+                    'posts_per_page' => 100,
+                ] );
+                $agents = [];
+                foreach ( $posts as $post ) {
+                    $agents[] = pmw_graphql_agent_profile( $post );
+                }
+                usort( $agents, function ( $a, $b ) {
+                    return ( $a['displayOrder'] ?? 999 ) - ( $b['displayOrder'] ?? 999 );
+                } );
+                return $agents;
+            },
+        ] );
+    }
+}
+
+function pmw_graphql_agent_profile( $post ) {
+    $id   = $post->ID;
+    $slug = get_post_meta( $id, 'pmw_slug', true );
+    if ( $slug === '' ) {
+        $slug = sanitize_title( get_the_title( $post ) );
+    }
+    $quirks_raw     = get_post_meta( $id, 'pmw_quirks', true );
+    $specialisms_raw = get_post_meta( $id, 'pmw_specialisms', true );
+    $quirks         = is_string( $quirks_raw ) ? json_decode( $quirks_raw, true ) : [];
+    $specialisms    = is_string( $specialisms_raw ) ? json_decode( $specialisms_raw, true ) : [];
+    if ( ! is_array( $quirks ) ) $quirks = [];
+    if ( ! is_array( $specialisms ) ) $specialisms = [];
+
+    $avatar_img = get_post_meta( $id, 'pmw_avatar_image_url', true );
+    $avatar_vid = get_post_meta( $id, 'pmw_avatar_video_url', true );
+    if ( $avatar_img === '' ) $avatar_img = null;
+    if ( $avatar_vid === '' ) $avatar_vid = null;
+    $eta = get_post_meta( $id, 'pmw_eta', true );
+    if ( $eta === '' ) $eta = null;
+
+    return [
+        'id'                => (int) $id,
+        'slug'              => $slug,
+        'displayName'       => (string) ( get_post_meta( $id, 'pmw_display_name', true ) ?: get_the_title( $post ) ),
+        'title'             => (string) get_post_meta( $id, 'pmw_title', true ),
+        'role'              => (string) get_post_meta( $id, 'pmw_role', true ),
+        'tier'              => (string) get_post_meta( $id, 'pmw_tier', true ),
+        'modelFamily'       => (string) get_post_meta( $id, 'pmw_model_family', true ),
+        'bio'               => (string) get_post_meta( $id, 'pmw_bio', true ),
+        'personality'       => (string) get_post_meta( $id, 'pmw_personality', true ),
+        'quirks'            => $quirks,
+        'specialisms'       => $specialisms,
+        'status'            => (string) ( get_post_meta( $id, 'pmw_status', true ) ?: 'active' ),
+        'eta'               => $eta,
+        'displayOrder'      => (int) ( get_post_meta( $id, 'pmw_display_order', true ) ?: 999 ),
+        'avatarImageUrl'    => $avatar_img,
+        'avatarVideoUrl'    => $avatar_vid,
+        'avatarImagePrompt' => (string) get_post_meta( $id, 'pmw_avatar_image_prompt', true ),
+        'avatarVideoPrompt' => (string) get_post_meta( $id, 'pmw_avatar_video_prompt', true ),
+    ];
 }
 
 // ── METAL-05: Market Data ACF Options Page ───────────

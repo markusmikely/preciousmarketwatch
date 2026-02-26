@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AgentProfileModal } from "../AgentProfileModal";
-import { fetchAgents, type Agent } from "@/services/agents";
+import {
+  fetchAgents,
+  normalizeAgent,
+  type Agent,
+  type GraphQLAgent,
+} from "@/services/agents";
 import type { PageSection } from "../PageBuilder";
 
 interface TeamGridSectionData {
   heading?: string | null;
   showTiers?: boolean | null;
   filterStatus?: string | null;
+  agents?: GraphQLAgent[] | null;
 }
 
 const TIER_ORDER = ["intelligence", "editorial", "production"];
@@ -19,17 +25,24 @@ const TIER_LABELS: Record<string, string> = {
 
 export function TeamGrid({ section }: { section: PageSection }) {
   const data = section as TeamGridSectionData;
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const sectionAgents = data.agents?.map(normalizeAgent) ?? [];
+  const hasSectionAgents = sectionAgents.length > 0;
+  const [agents, setAgents] = useState<Agent[]>(hasSectionAgents ? sectionAgents : []);
+  const [loading, setLoading] = useState(!hasSectionAgents);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
+    if (hasSectionAgents) {
+      setAgents(sectionAgents);
+      setLoading(false);
+      return;
+    }
     fetchAgents("all")
       .then(setAgents)
       .catch(() => setAgents([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [hasSectionAgents]);
 
   const byTier: { tier: string; agents: Agent[] }[] = data.showTiers
     ? TIER_ORDER.map((tier) => ({
