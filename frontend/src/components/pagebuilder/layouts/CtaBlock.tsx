@@ -25,7 +25,10 @@ export function CtaBlock({ section }: { section: PageSection }) {
           </h2>
         )}
         {data.body && (
-          <p className={`max-w-2xl mx-auto mb-8 ${isLight ? "text-muted-foreground" : "text-silver"}`}>{data.body}</p>
+          <div
+            className={`max-w-2xl mx-auto mb-8 prose max-w-none ${isLight ? "prose-foreground prose-p:text-muted-foreground" : "prose-invert prose-p:text-silver"}`}
+            dangerouslySetInnerHTML={{ __html: data.body }}
+          />
         )}
         {data.buttonLabel && data.buttonUrl && (
           data.buttonUrl.startsWith("/") ? (

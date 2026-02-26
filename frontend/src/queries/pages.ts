@@ -10,6 +10,7 @@ export const GET_PAGE_QUERY = gql`
       id
       title
       slug
+      breadcrumbLabel
       pageSections {
         sections {
           __typename
@@ -22,6 +23,10 @@ export const GET_PAGE_QUERY = gql`
               altText
             }
             topicPill
+            breadcrumbs {
+              label
+              url
+            }
             bookmarks {
               label
               url

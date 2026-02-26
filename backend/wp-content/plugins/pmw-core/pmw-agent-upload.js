@@ -1,4 +1,4 @@
-git (function($) {
+(function($) {
     'use strict';
 
     $(document).ready(function() {
@@ -18,6 +18,7 @@ git (function($) {
                 return;
             }
             
+
             $btn.prop('disabled', true);
             $status.text('Uploading…').css('color', '');
 

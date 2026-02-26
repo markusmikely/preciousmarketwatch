@@ -17,7 +17,7 @@ export interface PageSection {
   [key: string]: unknown;
 }
 
-const LAYOUT_MAP: Record<string, React.ComponentType<{ section: PageSection }>> = {
+const LAYOUT_MAP: Record<string, React.ComponentType<{ section: PageSection; page?: { title?: string; breadcrumbLabel?: string | null } | null }>> = {
   hero: HeroSection,
   rich_text: RichTextSection,
   team_grid: TeamGrid,
@@ -53,9 +53,10 @@ function getLayoutKey(typename: string | undefined): string | null {
 
 interface PageBuilderProps {
   sections: PageSection[] | null | undefined;
+  page?: { title?: string; breadcrumbLabel?: string | null } | null;
 }
 
-export function PageBuilder({ sections }: PageBuilderProps) {
+export function PageBuilder({ sections, page }: PageBuilderProps) {
   if (!sections || sections.length === 0) return null;
 
   return (
@@ -64,7 +65,7 @@ export function PageBuilder({ sections }: PageBuilderProps) {
         const layoutKey = getLayoutKey(section.__typename) ?? getLayoutKey(section.fieldGroupName ?? "");
         const Component = layoutKey ? LAYOUT_MAP[layoutKey] : null;
         if (!Component) return null;
-        return <Component key={i} section={section} />;
+        return <Component key={i} section={section} page={page} />;
       })}
     </>
   );

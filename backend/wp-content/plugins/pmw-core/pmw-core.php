@@ -1257,6 +1257,15 @@ function pmw_register_acf_fields() {
             'title'  => 'Page Sections',
             'fields' => [
                 [
+                    'key'              => 'field_page_breadcrumb_label',
+                    'label'            => 'Breadcrumb Label (Short Name)',
+                    'name'             => 'breadcrumb_label',
+                    'type'             => 'text',
+                    'instructions'     => 'Short name for breadcrumbs (e.g. "About", "Gold"). Leave empty to use page title.',
+                    'show_in_graphql'  => 1,
+                    'graphql_field_name' => 'breadcrumbLabel',
+                ],
+                [
                     'key'          => 'field_page_sections',
                     'label'        => 'Page Sections',
                     'name'         => 'page_sections',
@@ -1274,6 +1283,18 @@ function pmw_register_acf_fields() {
                                 [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_hero_background_image', 'label' => 'Background Image', 'name' => 'background_image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1, 'graphql_field_name' => 'backgroundImage' ],
                                 [ 'key' => 'field_hero_topic_pill', 'label' => 'Topic/Category Pill', 'name' => 'topic_pill', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'topicPill' ],
+                                [
+                                    'key'        => 'field_hero_breadcrumbs',
+                                    'label'      => 'Breadcrumb Links',
+                                    'name'       => 'breadcrumbs',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'instructions' => 'Parent path links (e.g. Home, Precious Metals). The current page appears as non-linked text at the end.',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_breadcrumb_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_breadcrumb_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                    ],
+                                ],
                                 [
                                     'key'        => 'field_hero_bookmarks',
                                     'label'      => 'Page Bookmarks',
@@ -1395,7 +1416,7 @@ function pmw_register_acf_fields() {
                             'sub_fields' => [
                                 [ 'key' => 'field_cta_variant', 'label' => 'Variant', 'name' => 'variant', 'type' => 'select', 'choices' => [ 'dark' => 'Dark', 'light' => 'Light' ], 'default_value' => 'dark', 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
-                                [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
+                                [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'wysiwyg', 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_cta_button_label', 'label' => 'Button Label', 'name' => 'button_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonLabel' ],
                                 [ 'key' => 'field_cta_button_url', 'label' => 'Button URL', 'name' => 'button_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonUrl' ],
                             ],
@@ -1535,6 +1556,7 @@ function pmw_register_page_sections_fallback() {
                 'content'        => [ 'type' => 'String' ],
                 'backgroundImage' => [ 'type' => $media_stub ],
                 'topicPill'      => [ 'type' => 'String' ],
+                'breadcrumbs'    => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Bookmark' ] ],
                 'bookmarks'      => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Bookmark' ] ],
                 'variant'        => [ 'type' => 'String' ],
                 'showTiers'      => [ 'type' => 'Boolean' ],

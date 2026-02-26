@@ -40,6 +40,7 @@ export function CmsPage({ slug, fallback, breadcrumbs = [] }: CmsPageProps) {
   const page = data.page as {
     title?: string;
     slug?: string;
+    breadcrumbLabel?: string | null;
     pageSections?: { sections?: unknown[] } | null;
   };
   const sections = page.pageSections?.sections ?? [];
@@ -52,7 +53,7 @@ export function CmsPage({ slug, fallback, breadcrumbs = [] }: CmsPageProps) {
   return (
     <PageLayout showTicker={slug === "home" || slug === "/"}>
       {hasSections ? (
-        <PageBuilder sections={sections} />
+        <PageBuilder sections={sections} page={page} />
       ) : (
         fallback ?? (
           <PageHero title={page.title ?? ""} breadcrumbs={breadcrumbs} />
