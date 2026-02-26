@@ -53,6 +53,7 @@ add_action( 'rest_api_init', function() {
 // ─────────────────────────────────────────────
 
 add_action( 'init', 'pmw_register_post_types' );
+add_action( 'init', 'pmw_register_agent_meta', 20 );
 add_action( 'init', 'pmw_maybe_seed_agents', 20 );
 
 function pmw_register_post_types() {
@@ -185,6 +186,137 @@ function pmw_register_post_types() {
         'graphql_single_name' => 'pmwAgent',
         'graphql_plural_name' => 'pmwAgents',
     ] );
+}
+
+// ── PMW Agent Profile Meta (schema from brief) ──
+function pmw_register_agent_meta() {
+    $meta_fields = [
+        [ 'pmw_slug', 'string', 'URL-safe identifier e.g. research-analyst' ],
+        [ 'pmw_display_name', 'string', 'Full name e.g. Marcus Webb' ],
+        [ 'pmw_title', 'string', 'e.g. The Research Analyst' ],
+        [ 'pmw_role', 'string', 'e.g. Market Research & Data Specialist' ],
+        [ 'pmw_tier', 'string', 'One of: intelligence, editorial, production' ],
+        [ 'pmw_model_family', 'string', 'e.g. Claude (Anthropic)' ],
+        [ 'pmw_bio', 'string', 'Long text, plain text paragraph' ],
+        [ 'pmw_personality', 'string', 'Long text, plain text paragraph' ],
+        [ 'pmw_quirks', 'string', 'JSON-encoded array of quirk strings' ],
+        [ 'pmw_specialisms', 'string', 'JSON-encoded array of specialism strings' ],
+        [ 'pmw_status', 'string', 'One of: active, in-development' ],
+        [ 'pmw_eta', 'string', 'Optional. Only if status is in-development.' ],
+        [ 'pmw_avatar_image_url', 'string', 'URL to uploaded image. Empty until uploaded.' ],
+        [ 'pmw_avatar_video_url', 'string', 'URL to uploaded video. Empty until uploaded.' ],
+        [ 'pmw_avatar_image_prompt', 'string', 'Generation prompt for image.' ],
+        [ 'pmw_avatar_video_prompt', 'string', 'Generation prompt for video.' ],
+        [ 'pmw_display_order', 'integer', 'Controls order on Team page. 1 = first.' ],
+    ];
+    foreach ( $meta_fields as $f ) {
+        register_post_meta( 'pmw_agent', $f[0], [
+            'show_in_rest' => true,
+            'single'       => true,
+            'type'         => $f[1],
+            'description'  => $f[2],
+        ] );
+    }
+}
+
+add_action( 'add_meta_boxes', 'pmw_agent_profile_meta_box' );
+add_action( 'save_post_pmw_agent', 'pmw_save_agent_profile_meta', 10, 2 );
+add_filter( 'upload_mimes', 'pmw_allow_mp4_upload' );
+
+function pmw_allow_mp4_upload( $mimes ) {
+    $mimes['mp4'] = 'video/mp4';
+    return $mimes;
+}
+
+function pmw_agent_profile_meta_box() {
+    add_meta_box(
+        'pmw_agent_profile',
+        __( 'Agent Profile', 'pmw-core' ),
+        'pmw_agent_profile_meta_box_cb',
+        'pmw_agent',
+        'normal'
+    );
+}
+
+function pmw_agent_profile_meta_box_cb( $post ) {
+    wp_nonce_field( 'pmw_agent_profile_save', 'pmw_agent_profile_nonce' );
+
+    $fields = [
+        'pmw_slug'             => [ 'label' => 'Slug', 'type' => 'text', 'group' => 'identity' ],
+        'pmw_display_name'     => [ 'label' => 'Display name', 'type' => 'text', 'group' => 'identity' ],
+        'pmw_title'            => [ 'label' => 'Title', 'type' => 'text', 'group' => 'identity' ],
+        'pmw_role'             => [ 'label' => 'Role', 'type' => 'text', 'group' => 'identity' ],
+        'pmw_tier'             => [ 'label' => 'Tier', 'type' => 'select', 'choices' => [ 'intelligence' => 'intelligence', 'editorial' => 'editorial', 'production' => 'production' ], 'group' => 'identity' ],
+        'pmw_model_family'     => [ 'label' => 'Model family', 'type' => 'text', 'group' => 'identity' ],
+        'pmw_display_order'    => [ 'label' => 'Display order', 'type' => 'number', 'group' => 'identity' ],
+        'pmw_bio'              => [ 'label' => 'Bio', 'type' => 'textarea', 'group' => 'content' ],
+        'pmw_personality'      => [ 'label' => 'Personality', 'type' => 'textarea', 'group' => 'content' ],
+        'pmw_quirks'           => [ 'label' => 'Quirks (one per line)', 'type' => 'textarea', 'group' => 'content' ],
+        'pmw_specialisms'      => [ 'label' => 'Specialisms (one per line)', 'type' => 'textarea', 'group' => 'content' ],
+        'pmw_status'           => [ 'label' => 'Status', 'type' => 'select', 'choices' => [ 'active' => 'active', 'in-development' => 'in-development' ], 'group' => 'status' ],
+        'pmw_eta'              => [ 'label' => 'ETA (shown if in-development)', 'type' => 'text', 'group' => 'status' ],
+        'pmw_avatar_image_url' => [ 'label' => 'Avatar image URL', 'type' => 'readonly', 'group' => 'media' ],
+        'pmw_avatar_video_url' => [ 'label' => 'Avatar video URL', 'type' => 'readonly', 'group' => 'media' ],
+        'pmw_avatar_image_prompt' => [ 'label' => 'Avatar image prompt', 'type' => 'textarea', 'group' => 'media' ],
+        'pmw_avatar_video_prompt' => [ 'label' => 'Avatar video prompt', 'type' => 'textarea', 'group' => 'media' ],
+    ];
+
+    $groups = [ 'identity' => 'Identity', 'content' => 'Content', 'status' => 'Status', 'media' => 'Media' ];
+    foreach ( $groups as $gkey => $gtitle ) {
+        echo '<h4 style="margin:1em 0 0.5em;">' . esc_html( $gtitle ) . '</h4>';
+        echo '<table class="form-table" role="presentation"><tbody>';
+        foreach ( $fields as $key => $f ) {
+            if ( ( $f['group'] ?? '' ) !== $gkey ) continue;
+            $val = get_post_meta( $post->ID, $key, true );
+            if ( $key === 'pmw_quirks' || $key === 'pmw_specialisms' ) {
+                $arr = is_string( $val ) ? json_decode( $val, true ) : [];
+                $val = is_array( $arr ) ? implode( "\n", $arr ) : (string) $val;
+            }
+            echo '<tr><th scope="row"><label for="' . esc_attr( $key ) . '">' . esc_html( $f['label'] ) . '</label></th><td>';
+            if ( $f['type'] === 'readonly' ) {
+                echo '<input type="text" id="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" readonly class="regular-text" />';
+                echo '<p class="description">Populated automatically when media is uploaded via the API.</p>';
+            } elseif ( $f['type'] === 'textarea' ) {
+                echo '<textarea id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" rows="4" class="large-text">' . esc_textarea( $val ) . '</textarea>';
+            } elseif ( $f['type'] === 'select' ) {
+                echo '<select id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '">';
+                foreach ( $f['choices'] ?? [] as $opt => $lbl ) {
+                    echo '<option value="' . esc_attr( $opt ) . '" ' . selected( $val, $opt, false ) . '>' . esc_html( $lbl ) . '</option>';
+                }
+                echo '</select>';
+            } else {
+                echo '<input type="' . esc_attr( $f['type'] ) . '" id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" class="regular-text" />';
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table>';
+    }
+}
+
+function pmw_save_agent_profile_meta( $post_id, $post ) {
+    if ( ! isset( $_POST['pmw_agent_profile_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_agent_profile_nonce'], 'pmw_agent_profile_save' ) ) return;
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! current_user_can( 'edit_post', $post_id ) ) return;
+
+    $text_keys = [ 'pmw_slug', 'pmw_display_name', 'pmw_title', 'pmw_role', 'pmw_tier', 'pmw_model_family', 'pmw_bio', 'pmw_personality', 'pmw_status', 'pmw_eta', 'pmw_avatar_image_url', 'pmw_avatar_video_url', 'pmw_avatar_image_prompt', 'pmw_avatar_video_prompt' ];
+    foreach ( $text_keys as $key ) {
+        if ( isset( $_POST[ $key ] ) ) {
+            $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
+            if ( in_array( $key, [ 'pmw_bio', 'pmw_personality', 'pmw_avatar_image_prompt', 'pmw_avatar_video_prompt' ], true ) ) {
+                $v = wp_strip_all_tags( $v );
+            }
+            update_post_meta( $post_id, $key, $v );
+        }
+    }
+    if ( isset( $_POST['pmw_display_order'] ) && is_numeric( $_POST['pmw_display_order'] ) ) {
+        update_post_meta( $post_id, 'pmw_display_order', (int) $_POST['pmw_display_order'] );
+    }
+    foreach ( [ 'pmw_quirks', 'pmw_specialisms' ] as $key ) {
+        if ( isset( $_POST[ $key ] ) ) {
+            $lines = array_filter( array_map( 'trim', explode( "\n", wp_unslash( $_POST[ $key ] ) ) ) );
+            update_post_meta( $post_id, $key, wp_json_encode( $lines ) );
+        }
+    }
 }
 
 add_action( 'add_meta_boxes', 'pmw_form_submission_meta_box' );
@@ -405,6 +537,204 @@ function pmw_maybe_seed_agents() {
     }
     pmw_seed_agents();
     update_option( 'pmw_agents_seeded', 1 );
+}
+
+// ── Seed 7 Agent Profiles from Appendix A (Team page) ──
+add_action( 'admin_menu', 'pmw_agent_profiles_seed_menu' );
+add_action( 'admin_init', 'pmw_agent_profiles_seed_action' );
+
+function pmw_agent_profiles_seed_menu() {
+    add_management_page( 'Seed Agent Profiles', 'Seed Agent Profiles', 'manage_options', 'pmw-seed-agent-profiles', 'pmw_agent_profiles_seed_page' );
+}
+
+function pmw_agent_profiles_seed_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = isset( $_GET['pmw_seed_agent_profiles'] ) && $_GET['pmw_seed_agent_profiles'] === '1';
+    echo '<div class="wrap"><h1>Seed Agent Profiles</h1>';
+    if ( $done ) {
+        echo '<p class="notice notice-success">Agent profiles seeded. <a href="' . esc_url( admin_url( 'edit.php?post_type=pmw_agent' ) ) . '">View agents</a>.</p>';
+    } else {
+        echo '<p>Creates the 7 agent profiles from the Developer Brief (Appendix A).</p>';
+        echo '<p><a href="' . esc_url( admin_url( 'tools.php?page=pmw-seed-agent-profiles&pmw_seed_agent_profiles=1&_wpnonce=' . wp_create_nonce( 'pmw_seed_agent_profiles' ) ) ) . '" class="button button-primary">Run Seed</a></p>';
+    }
+    echo '</div>';
+}
+
+function pmw_agent_profiles_seed_action() {
+    if ( ! isset( $_GET['pmw_seed_agent_profiles'] ) || $_GET['pmw_seed_agent_profiles'] !== '1' ) return;
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'pmw_seed_agent_profiles' ) ) return;
+
+    pmw_seed_agent_profiles();
+    wp_safe_redirect( admin_url( 'tools.php?page=pmw-seed-agent-profiles&pmw_seed_agent_profiles=1' ) );
+    exit;
+}
+
+function pmw_seed_agent_profiles() {
+    if ( ! post_type_exists( 'pmw_agent' ) ) return;
+
+    $agents = pmw_get_agent_profiles_seed_data();
+    foreach ( $agents as $a ) {
+        $existing = get_posts( [ 'post_type' => 'pmw_agent', 'post_status' => 'any', 'posts_per_page' => 1, 'meta_key' => 'pmw_slug', 'meta_value' => $a['pmw_slug'] ] );
+        if ( ! empty( $existing ) ) continue;
+
+        $id = wp_insert_post( [
+            'post_type'   => 'pmw_agent',
+            'post_title'  => $a['post_title'],
+            'post_status' => 'publish',
+        ], true );
+        if ( ! $id || is_wp_error( $id ) ) continue;
+
+        foreach ( $a as $key => $val ) {
+            if ( $key === 'post_title' ) continue;
+            update_post_meta( $id, $key, $val );
+        }
+    }
+}
+
+function pmw_get_agent_profiles_seed_data() {
+    return [
+        [
+            'post_title' => 'Marcus Webb',
+            'pmw_slug' => 'research-analyst',
+            'pmw_display_name' => 'Marcus Webb',
+            'pmw_title' => 'The Research Analyst',
+            'pmw_role' => 'Market Research & Data Specialist',
+            'pmw_tier' => 'intelligence',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'active',
+            'pmw_eta' => '',
+            'pmw_display_order' => 1,
+            'pmw_bio' => "Marcus is first in every morning and last to leave — metaphorically speaking. Before a single word of an article is written, he has already scanned live price feeds, aggregated the latest market news, and identified the specific questions PMW readers are asking right now. He never passes a brief to the team without a minimum of five authoritative sources, a clear picture of what readers actually need, and a view on which affiliate partners are most relevant to the story.",
+            'pmw_personality' => "Marcus has the energy of a financial journalist on deadline — precise, relentless, slightly obsessive about source quality. He distrusts anything that can't be verified and has a known habit of flagging when a news story is 'thinner than it looks.' Colleagues joke that he treats a weak source like a personal affront.",
+            'pmw_quirks' => wp_json_encode( [ "Refuses to pass a brief with fewer than five sources — five is the floor, not the target", "Has a particular distrust of press releases masquerading as news", "Always notes the timestamp on price data — 'stale data is worse than no data'", "Thinks in tabs — reportedly has 47 open at any given moment" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Gold', 'Silver', 'Platinum', 'Palladium', 'Live Price Data', 'News Aggregation', 'Market Trends', 'Source Verification' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Sophia Brennan',
+            'pmw_slug' => 'content-strategist',
+            'pmw_display_name' => 'Sophia Brennan',
+            'pmw_title' => 'The Content Strategist',
+            'pmw_role' => 'Senior Content Architect',
+            'pmw_tier' => 'editorial',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'active',
+            'pmw_eta' => '',
+            'pmw_display_order' => 2,
+            'pmw_bio' => "Sophia takes the raw research Marcus produces and turns it into something a reader can actually use. She is the architect behind every article's structure — deciding how the story flows, where the reader's questions get answered, and at what point a recommended product becomes the natural next step rather than an interruption. She thinks in reader journeys, not word counts.",
+            'pmw_personality' => "Sophia has the strategic patience of a chess player and the commercial instincts of someone who has read too many conversion rate studies. She is warm but exacting — she will rebuild a content plan from scratch if the narrative arc isn't right, and she has a low tolerance for articles that bury the lead. Her feedback is always specific and never personal.",
+            'pmw_quirks' => wp_json_encode( [ "Draws content plans as flowcharts before writing a single heading", "Categorises every reader as one of three types before planning begins: price checker, researcher, or ready-to-buy", "Has a documented hatred of the phrase 'in today's fast-paced world'", "Believes the best affiliate placement is one the reader thanks you for" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Content Architecture', 'SEO Strategy', 'Affiliate Integration', 'Reader Journey Mapping', 'Conversion Optimisation', 'Editorial Planning' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Elliot Nash',
+            'pmw_slug' => 'content-writer',
+            'pmw_display_name' => 'Elliot Nash',
+            'pmw_title' => 'The Content Writer',
+            'pmw_role' => 'Specialist Financial Copywriter',
+            'pmw_tier' => 'production',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'active',
+            'pmw_eta' => '',
+            'pmw_display_order' => 3,
+            'pmw_bio' => "Elliot writes every article you read on PMW. He takes Sophia's plan and Marcus's research and turns them into something a real person actually wants to read — clear, factual, and honest about what it's recommending and why. He has a particular talent for making complex investment topics accessible without dumbing them down, and a zero-tolerance policy for vague claims that can't be backed with a source. Every article goes to a human reviewer before it goes live.",
+            'pmw_personality' => "Elliot has the disposition of a good science journalist — curious, clear-headed, and slightly allergic to hype. He writes the way a knowledgeable friend would explain something: directly, without jargon, without padding. He takes the craft seriously and occasionally pushes back on a brief he thinks is asking him to oversell.",
+            'pmw_quirks' => wp_json_encode( [ "Will not write a claim without a source to attach to it", "Rewrites his opening sentence last — 'the intro only works once you know the ending'", "Has an irrational dislike of the em dash being used for decoration rather than function", "Reads every article aloud internally before finalising — 'if it doesn't sound like a person, it isn't ready'" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Article Writing', 'Precious Metals', 'Gemstones', 'Investment Copy', 'Factual Accuracy', 'Plain English', 'Affiliate Copywriting' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Dr. Imogen Hale',
+            'pmw_slug' => 'quality-judge',
+            'pmw_display_name' => 'Dr. Imogen Hale',
+            'pmw_title' => 'The Quality Judge',
+            'pmw_role' => 'Editorial Standards Director',
+            'pmw_tier' => 'editorial',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'active',
+            'pmw_eta' => '',
+            'pmw_display_order' => 4,
+            'pmw_bio' => "Nothing published on PMW has passed through fewer than two of Imogen's reviews. She evaluates every piece of work independently — research, plans, and finished articles — against structured criteria and returns precise, actionable feedback when something doesn't meet the standard. She is not unkind, but she is not lenient. If it goes through Imogen and comes out the other side, it's ready.",
+            'pmw_personality' => "Imogen has the measured authority of a senior academic reviewer and the commercial sharpness of someone who has seen too many well-written articles fail to convert. She holds the team to standards they didn't know they had until she pointed them out. Her feedback is always in writing, always specific, and never about the person — only ever about the work.",
+            'pmw_quirks' => wp_json_encode( [ "Annotates everything — returns feedback as a structured breakdown, never a vague 'needs work'", "Tracks pass rates obsessively and notices immediately when first-attempt quality dips", "Has a particular issue with unsubstantiated superlatives — 'leading', 'best', 'most trusted' without evidence", "Keeps a private list of the questions readers would ask that the article fails to answer" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Quality Assurance', 'Conversion Analysis', 'Factual Verification', 'Editorial Standards', 'Scoring & Evaluation', 'Feedback Frameworks' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Zara Okonkwo',
+            'pmw_slug' => 'visual-designer',
+            'pmw_display_name' => 'Zara Okonkwo',
+            'pmw_title' => 'The Visual Designer',
+            'pmw_role' => 'Digital Asset Creator',
+            'pmw_tier' => 'production',
+            'pmw_model_family' => 'DALL-E (OpenAI)',
+            'pmw_status' => 'active',
+            'pmw_eta' => '',
+            'pmw_display_order' => 5,
+            'pmw_bio' => "Zara is responsible for every image and infographic you see on PMW. She translates each article's core message into a visual that works as a standalone asset — something worth sharing, worth clicking, and worth remembering. She has a particular eye for making financial content feel premium rather than corporate, and she understands that a well-made infographic does more for trust than three paragraphs of text.",
+            'pmw_personality' => "Zara has the aesthetic confidence of someone who knows exactly why something works visually and can articulate it precisely. She is quietly opinionated about colour — has strong views on when gold tones become tacky — and believes most financial content is let down by visual mediocrity rather than bad writing. She treats every asset as a potential first impression.",
+            'pmw_quirks' => wp_json_encode( [ "Strong opinions on the difference between 'gold' and 'yellow' — they are not the same", "Will not put text in an image if the layout works without it", "Judges a financial site's credibility by its typography before reading a word", "Has a habit of noticing when competitors use the same stock photo and flagging it" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Featured Images', 'Infographics', 'Data Visualisation', 'Brand Consistency', 'Financial Photography Aesthetics', 'SVG Design' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Rio Castellano',
+            'pmw_slug' => 'social-author',
+            'pmw_display_name' => 'Rio Castellano',
+            'pmw_title' => 'The Social Author',
+            'pmw_role' => 'Social Media Content Specialist',
+            'pmw_tier' => 'production',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'in-development',
+            'pmw_eta' => 'Phase 3',
+            'pmw_display_order' => 6,
+            'pmw_bio' => "Rio takes every article PMW publishes and gives it a second life across Twitter, LinkedIn, Facebook, and Instagram. He has a sharp instinct for what stops a scroll and what gets ignored, and he understands that the same insight needs to land completely differently depending on the platform and the audience's mood. He keeps one eye on the article and one on what the precious metals community is talking about right now.",
+            'pmw_personality' => "Rio has the cultural awareness of someone who lives online without being chronically online — he understands tone, timing, and the difference between what gets shared and what gets ignored. He is energetic and opinionated about hooks, believes the first three words are the whole game on Twitter, and has a healthy competitive streak when it comes to engagement metrics.",
+            'pmw_quirks' => wp_json_encode( [ "Believes the first three words of a tweet determine whether anyone reads the rest", "Keeps a running mental tab of what the r/Gold and r/silverbugs communities are discussing", "Has a documented preference for the fear hook over the greed hook — 'urgency converts better than excitement'", "Rewrites LinkedIn posts at least twice — 'the first version always sounds like a press release'" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Twitter / X', 'LinkedIn', 'Facebook', 'Instagram', 'Hook Writing', 'Engagement Strategy', 'Trending Topics', 'Community Listening' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+        [
+            'post_title' => 'Nadia Osei',
+            'pmw_slug' => 'performance-analyst',
+            'pmw_display_name' => 'Nadia Osei',
+            'pmw_title' => 'The Performance Analyst',
+            'pmw_role' => 'Analytics & Optimisation Specialist',
+            'pmw_tier' => 'intelligence',
+            'pmw_model_family' => 'Claude (Anthropic)',
+            'pmw_status' => 'in-development',
+            'pmw_eta' => 'Phase 2',
+            'pmw_display_order' => 7,
+            'pmw_bio' => "Nadia closes the loop. Every Monday she reviews the previous week's traffic, engagement, search rankings, and affiliate click data — and turns it into specific, actionable intelligence for the team. She identifies which articles are working and why, which ones are underperforming and what to do about it, and where the next content opportunities are hiding in the data. Without Nadia, the team would be publishing into a void. With her, everything compounds.",
+            'pmw_personality' => "Nadia has the methodical rigour of a data scientist and the commercial instincts of someone who cares about outcomes, not vanity metrics. She is deeply unimpressed by page views that don't convert and has a gift for finding the one number in a dashboard that actually explains what's happening. Her weekly reports are dense with insight and short on padding.",
+            'pmw_quirks' => wp_json_encode( [ "Filters every metric through one question: 'did this lead to a click on an affiliate link?'", "Has no patience for high-traffic articles with 0% affiliate CTR — she calls them 'pretty failures'", "Builds correlation tables recreationally — once mapped content score vs. conversion rate across 90 articles for fun", "Her weekly reports always end with exactly three prioritised recommendations, never two, never four" ] ),
+            'pmw_specialisms' => wp_json_encode( [ 'Google Analytics 4', 'Search Console', 'Microsoft Clarity', 'Heatmap Analysis', 'Conversion Optimisation', 'SEO Performance', 'Scoring Model Validation', 'Revenue Attribution' ] ),
+            'pmw_avatar_image_url' => '',
+            'pmw_avatar_video_url' => '',
+            'pmw_avatar_image_prompt' => '',
+            'pmw_avatar_video_prompt' => '',
+        ],
+    ];
 }
 
 
@@ -1419,13 +1749,82 @@ function pmw_rest_post_contact_submit( WP_REST_Request $request ) {
     return new WP_REST_Response( [ 'success' => true, 'message' => 'Your message has been sent. We\'ll be in touch shortly.' ], 200 );
 }
 
-// ── Agents API: GET /pmw/v1/agents (tier-grouped) ──
+// ── Agents API: GET /pmw/v1/agents, GET /pmw/v1/agents/{slug}, upload endpoints ──
 function pmw_register_agents_rest_route() {
     register_rest_route( 'pmw/v1', '/agents', [
         'methods'             => 'GET',
         'callback'            => 'pmw_rest_get_agents',
         'permission_callback' => '__return_true',
     ] );
+    register_rest_route( 'pmw/v1', '/agents/(?P<slug>[a-z0-9\-]+)', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_agent_by_slug',
+        'permission_callback' => '__return_true',
+        'args'                => [ 'slug' => [ 'required' => true, 'type' => 'string' ] ],
+    ] );
+    register_rest_route( 'pmw/v1', '/agents/(?P<slug>[a-z0-9\-]+)/upload-avatar-image', [
+        'methods'             => 'POST',
+        'callback'            => 'pmw_rest_upload_agent_avatar_image',
+        'permission_callback' => 'pmw_rest_agent_upload_permission',
+        'args'                => [ 'slug' => [ 'required' => true, 'type' => 'string' ] ],
+    ] );
+    register_rest_route( 'pmw/v1', '/agents/(?P<slug>[a-z0-9\-]+)/upload-avatar-video', [
+        'methods'             => 'POST',
+        'callback'            => 'pmw_rest_upload_agent_avatar_video',
+        'permission_callback' => 'pmw_rest_agent_upload_permission',
+        'args'                => [ 'slug' => [ 'required' => true, 'type' => 'string' ] ],
+    ] );
+}
+
+function pmw_rest_agent_upload_permission( $request ) {
+    return current_user_can( 'edit_posts' );
+}
+
+function pmw_agent_display_order( $post_id ) {
+    $v = get_post_meta( $post_id, 'pmw_display_order', true );
+    return ( $v !== '' && is_numeric( $v ) ) ? (int) $v : 999;
+}
+
+function pmw_build_agent_response( $post ) {
+    $id = $post->ID;
+    $slug = get_post_meta( $id, 'pmw_slug', true );
+    if ( $slug === '' ) {
+        $slug = sanitize_title( get_the_title( $post ) );
+    }
+    $quirks_raw = get_post_meta( $id, 'pmw_quirks', true );
+    $specialisms_raw = get_post_meta( $id, 'pmw_specialisms', true );
+    $quirks = is_string( $quirks_raw ) ? json_decode( $quirks_raw, true ) : [];
+    $specialisms = is_string( $specialisms_raw ) ? json_decode( $specialisms_raw, true ) : [];
+    if ( ! is_array( $quirks ) ) $quirks = [];
+    if ( ! is_array( $specialisms ) ) $specialisms = [];
+
+    $avatar_img = get_post_meta( $id, 'pmw_avatar_image_url', true );
+    $avatar_vid = get_post_meta( $id, 'pmw_avatar_video_url', true );
+    if ( $avatar_img === '' ) $avatar_img = null;
+    if ( $avatar_vid === '' ) $avatar_vid = null;
+    $eta = get_post_meta( $id, 'pmw_eta', true );
+    if ( $eta === '' ) $eta = null;
+
+    return [
+        'id'                 => (int) $id,
+        'slug'               => $slug,
+        'display_name'       => (string) ( get_post_meta( $id, 'pmw_display_name', true ) ?: get_the_title( $post ) ),
+        'title'              => (string) get_post_meta( $id, 'pmw_title', true ),
+        'role'               => (string) get_post_meta( $id, 'pmw_role', true ),
+        'tier'               => (string) get_post_meta( $id, 'pmw_tier', true ),
+        'model_family'       => (string) get_post_meta( $id, 'pmw_model_family', true ),
+        'bio'                => (string) get_post_meta( $id, 'pmw_bio', true ),
+        'personality'        => (string) get_post_meta( $id, 'pmw_personality', true ),
+        'quirks'             => $quirks,
+        'specialisms'        => $specialisms,
+        'status'             => (string) ( get_post_meta( $id, 'pmw_status', true ) ?: 'active' ),
+        'eta'                => $eta,
+        'display_order'      => pmw_agent_display_order( $id ),
+        'avatar_image_url'   => $avatar_img,
+        'avatar_video_url'   => $avatar_vid,
+        'avatar_image_prompt'=> (string) get_post_meta( $id, 'pmw_avatar_image_prompt', true ),
+        'avatar_video_prompt'=> (string) get_post_meta( $id, 'pmw_avatar_video_prompt', true ),
+    ];
 }
 
 function pmw_rest_get_agents( WP_REST_Request $request ) {
@@ -1434,49 +1833,132 @@ function pmw_rest_get_agents( WP_REST_Request $request ) {
         'post_type'      => 'pmw_agent',
         'post_status'    => 'publish',
         'posts_per_page' => 100,
-        'orderby'        => [ 'menu_order' => 'ASC', 'title' => 'ASC' ],
     ] );
 
     $agents = [];
     foreach ( $posts as $post ) {
-        if ( ! function_exists( 'get_field' ) ) {
-            continue;
-        }
-        $agent_status = get_field( 'status', $post->ID ) ?: 'active';
+        $agent_status = get_post_meta( $post->ID, 'pmw_status', true ) ?: 'active';
         if ( $status !== 'all' && $agent_status !== $status ) {
             continue;
         }
-        $tier = (int) ( get_field( 'tier', $post->ID ) ?: 1 );
-        $img  = get_the_post_thumbnail_url( $post->ID, 'medium' );
-        $agents[] = [
-            'id'         => (string) $post->ID,
-            'name'       => get_the_title( $post ),
-            'role'       => (string) ( get_field( 'role', $post->ID ) ?: '' ),
-            'tier'       => $tier,
-            'bio'        => (string) ( get_field( 'bio', $post->ID ) ?: '' ),
-            'agentRole'  => (string) ( get_field( 'agent_role', $post->ID ) ?: '' ),
-            'specialisms'=> (string) ( get_field( 'specialisms', $post->ID ) ?: '' ),
-            'status'     => $agent_status,
-            'avatar'     => $img ?: null,
-        ];
+        $agents[] = pmw_build_agent_response( $post );
     }
 
-    $by_tier = [];
-    foreach ( $agents as $a ) {
-        $t = $a['tier'];
-        if ( ! isset( $by_tier[ $t ] ) ) {
-            $by_tier[ $t ] = [];
-        }
-        $by_tier[ $t ][] = $a;
-    }
-    ksort( $by_tier );
+    usort( $agents, function ( $a, $b ) {
+        return $a['display_order'] - $b['display_order'];
+    } );
 
-    $response = new WP_REST_Response( [
-        'agents'   => $agents,
-        'byTier'   => array_values( $by_tier ),
-    ], 200 );
+    $response = new WP_REST_Response( $agents, 200 );
     $response->header( 'Cache-Control', 'public, max-age=300' );
     return $response;
+}
+
+function pmw_rest_get_agent_by_slug( WP_REST_Request $request ) {
+    $slug = $request->get_param( 'slug' );
+    $posts = get_posts( [
+        'post_type'      => 'pmw_agent',
+        'post_status'    => 'publish',
+        'posts_per_page' => 1,
+        'meta_key'       => 'pmw_slug',
+        'meta_value'     => $slug,
+    ] );
+    if ( empty( $posts ) ) {
+        return new WP_REST_Response( [ 'code' => 'agent_not_found', 'message' => 'No agent found with that slug.' ], 404 );
+    }
+    $response = new WP_REST_Response( pmw_build_agent_response( $posts[0] ), 200 );
+    $response->header( 'Cache-Control', 'public, max-age=300' );
+    return $response;
+}
+
+function pmw_rest_upload_agent_avatar_image( WP_REST_Request $request ) {
+    $slug = $request->get_param( 'slug' );
+    $posts = get_posts( [ 'post_type' => 'pmw_agent', 'post_status' => 'publish', 'posts_per_page' => 1, 'meta_key' => 'pmw_slug', 'meta_value' => $slug ] );
+    if ( empty( $posts ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'agent_not_found', 'message' => 'No agent found with that slug.' ], 404 );
+    }
+    $post_id = $posts[0]->ID;
+
+    $files = $request->get_file_params();
+    if ( empty( $files['file'] ) || ! is_uploaded_file( $files['file']['tmp_name'] ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'no_file', 'message' => 'No file uploaded.' ], 400 );
+    }
+    $file = $files['file'];
+    $allowed = [ 'image/jpeg', 'image/png', 'image/webp' ];
+    if ( ! in_array( $file['type'] ?? '', $allowed, true ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'unsupported_type', 'message' => 'Unsupported file type. Use JPEG, PNG, or WebP.' ], 415 );
+    }
+    if ( ( $file['size'] ?? 0 ) > 5 * 1024 * 1024 ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'file_too_large', 'message' => 'File exceeds 5MB limit.' ], 413 );
+    }
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    $overrides = [ 'test_form' => false, 'mimes' => [ 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp' ] ];
+    $upload = wp_handle_upload( $file, $overrides );
+    if ( isset( $upload['error'] ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'upload_failed', 'message' => $upload['error'] ], 500 );
+    }
+    $attachment = [
+        'post_mime_type' => $upload['type'],
+        'post_title'     => sanitize_file_name( pathinfo( $file['name'], PATHINFO_FILENAME ) ),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    ];
+    $attach_id = wp_insert_attachment( $attachment, $upload['file'], $post_id );
+    if ( is_wp_error( $attach_id ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'upload_failed', 'message' => $attach_id->get_error_message() ], 500 );
+    }
+    wp_generate_attachment_metadata( $attach_id, $upload['file'] );
+    update_post_meta( $post_id, 'pmw_avatar_image_url', $upload['url'] );
+
+    return new WP_REST_Response( [ 'success' => true, 'avatar_image_url' => $upload['url'], 'attachment_id' => $attach_id ], 200 );
+}
+
+function pmw_rest_upload_agent_avatar_video( WP_REST_Request $request ) {
+    $slug = $request->get_param( 'slug' );
+    $posts = get_posts( [ 'post_type' => 'pmw_agent', 'post_status' => 'publish', 'posts_per_page' => 1, 'meta_key' => 'pmw_slug', 'meta_value' => $slug ] );
+    if ( empty( $posts ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'agent_not_found', 'message' => 'No agent found with that slug.' ], 404 );
+    }
+    $post_id = $posts[0]->ID;
+
+    $files = $request->get_file_params();
+    if ( empty( $files['file'] ) || ! is_uploaded_file( $files['file']['tmp_name'] ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'no_file', 'message' => 'No file uploaded.' ], 400 );
+    }
+    $file = $files['file'];
+    if ( ( $file['type'] ?? '' ) !== 'video/mp4' ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'unsupported_type', 'message' => 'Unsupported file type. Use MP4.' ], 415 );
+    }
+    if ( ( $file['size'] ?? 0 ) > 50 * 1024 * 1024 ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'file_too_large', 'message' => 'File exceeds 50MB limit.' ], 413 );
+    }
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    $overrides = [ 'test_form' => false, 'mimes' => [ 'mp4' => 'video/mp4' ] ];
+    $upload = wp_handle_upload( $file, $overrides );
+    if ( isset( $upload['error'] ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'upload_failed', 'message' => $upload['error'] ], 500 );
+    }
+    $attachment = [
+        'post_mime_type' => $upload['type'],
+        'post_title'     => sanitize_file_name( pathinfo( $file['name'], PATHINFO_FILENAME ) ),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    ];
+    $attach_id = wp_insert_attachment( $attachment, $upload['file'], $post_id );
+    if ( is_wp_error( $attach_id ) ) {
+        return new WP_REST_Response( [ 'success' => false, 'code' => 'upload_failed', 'message' => $attach_id->get_error_message() ], 500 );
+    }
+    wp_generate_attachment_metadata( $attach_id, $upload['file'] );
+    update_post_meta( $post_id, 'pmw_avatar_video_url', $upload['url'] );
+
+    return new WP_REST_Response( [ 'success' => true, 'avatar_video_url' => $upload['url'], 'attachment_id' => $attach_id ], 200 );
 }
 
 // ── Site Settings Options Page ───────────────────────
