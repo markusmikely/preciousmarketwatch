@@ -205,8 +205,6 @@ function pmw_register_agent_meta() {
         [ 'pmw_eta', 'string', 'Optional. Only if status is in-development.' ],
         [ 'pmw_avatar_image_url', 'string', 'URL to uploaded image. Empty until uploaded.' ],
         [ 'pmw_avatar_video_url', 'string', 'URL to uploaded video. Empty until uploaded.' ],
-        [ 'pmw_avatar_image_prompt', 'string', 'Generation prompt for image.' ],
-        [ 'pmw_avatar_video_prompt', 'string', 'Generation prompt for video.' ],
         [ 'pmw_display_order', 'integer', 'Controls order on Team page. 1 = first.' ],
     ];
     foreach ( $meta_fields as $f ) {
@@ -358,8 +356,6 @@ function pmw_agent_profile_meta_box_cb( $post ) {
         'pmw_eta'              => [ 'label' => 'ETA (shown if in-development)', 'type' => 'text', 'group' => 'status' ],
         'pmw_avatar_image_url' => [ 'label' => 'Avatar image', 'type' => 'avatar_upload', 'group' => 'media' ],
         'pmw_avatar_video_url' => [ 'label' => 'Avatar video', 'type' => 'avatar_video_upload', 'group' => 'media' ],
-        'pmw_avatar_image_prompt' => [ 'label' => 'Avatar image prompt', 'type' => 'textarea', 'group' => 'media' ],
-        'pmw_avatar_video_prompt' => [ 'label' => 'Avatar video prompt', 'type' => 'textarea', 'group' => 'media' ],
     ];
 
     $groups = [ 'identity' => 'Identity', 'content' => 'Content', 'status' => 'Status', 'media' => 'Media' ];
@@ -417,11 +413,11 @@ function pmw_save_agent_profile_meta( $post_id, $post ) {
     if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
     if ( ! current_user_can( 'edit_post', $post_id ) ) return;
 
-    $text_keys = [ 'pmw_slug', 'pmw_display_name', 'pmw_title', 'pmw_role', 'pmw_tier', 'pmw_model_family', 'pmw_bio', 'pmw_personality', 'pmw_status', 'pmw_eta', 'pmw_avatar_image_url', 'pmw_avatar_video_url', 'pmw_avatar_image_prompt', 'pmw_avatar_video_prompt' ];
+    $text_keys = [ 'pmw_slug', 'pmw_display_name', 'pmw_title', 'pmw_role', 'pmw_tier', 'pmw_model_family', 'pmw_bio', 'pmw_personality', 'pmw_status', 'pmw_eta', 'pmw_avatar_image_url', 'pmw_avatar_video_url' ];
     foreach ( $text_keys as $key ) {
         if ( isset( $_POST[ $key ] ) ) {
             $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
-            if ( in_array( $key, [ 'pmw_bio', 'pmw_personality', 'pmw_avatar_image_prompt', 'pmw_avatar_video_prompt' ], true ) ) {
+            if ( in_array( $key, [ 'pmw_bio', 'pmw_personality' ], true ) ) {
                 $v = wp_strip_all_tags( $v );
             }
             update_post_meta( $post_id, $key, $v );
@@ -730,8 +726,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Gold', 'Silver', 'Platinum', 'Palladium', 'Live Price Data', 'News Aggregation', 'Market Trends', 'Source Verification' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Sophia Brennan',
@@ -750,8 +744,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Content Architecture', 'SEO Strategy', 'Affiliate Integration', 'Reader Journey Mapping', 'Conversion Optimisation', 'Editorial Planning' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Elliot Nash',
@@ -770,8 +762,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Article Writing', 'Precious Metals', 'Gemstones', 'Investment Copy', 'Factual Accuracy', 'Plain English', 'Affiliate Copywriting' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Dr. Imogen Hale',
@@ -790,8 +780,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Quality Assurance', 'Conversion Analysis', 'Factual Verification', 'Editorial Standards', 'Scoring & Evaluation', 'Feedback Frameworks' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Zara Okonkwo',
@@ -810,8 +798,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Featured Images', 'Infographics', 'Data Visualisation', 'Brand Consistency', 'Financial Photography Aesthetics', 'SVG Design' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Rio Castellano',
@@ -830,8 +816,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Twitter / X', 'LinkedIn', 'Facebook', 'Instagram', 'Hook Writing', 'Engagement Strategy', 'Trending Topics', 'Community Listening' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
         [
             'post_title' => 'Nadia Osei',
@@ -850,8 +834,6 @@ function pmw_get_agent_profiles_seed_data() {
             'pmw_specialisms' => wp_json_encode( [ 'Google Analytics 4', 'Search Console', 'Microsoft Clarity', 'Heatmap Analysis', 'Conversion Optimisation', 'SEO Performance', 'Scoring Model Validation', 'Revenue Attribution' ] ),
             'pmw_avatar_image_url' => '',
             'pmw_avatar_video_url' => '',
-            'pmw_avatar_image_prompt' => '',
-            'pmw_avatar_video_prompt' => '',
         ],
     ];
 }
@@ -1291,8 +1273,18 @@ function pmw_register_acf_fields() {
                                 [ 'key' => 'field_hero_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_hero_subheading', 'label' => 'Subheading', 'name' => 'subheading', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_hero_background_image', 'label' => 'Background Image', 'name' => 'background_image', 'type' => 'image', 'return_format' => 'array', 'show_in_graphql' => 1, 'graphql_field_name' => 'backgroundImage' ],
-                                [ 'key' => 'field_hero_cta_label', 'label' => 'CTA Label', 'name' => 'cta_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaLabel' ],
-                                [ 'key' => 'field_hero_cta_url', 'label' => 'CTA URL', 'name' => 'cta_url', 'type' => 'url', 'show_in_graphql' => 1, 'graphql_field_name' => 'ctaUrl' ],
+                                [ 'key' => 'field_hero_topic_pill', 'label' => 'Topic/Category Pill', 'name' => 'topic_pill', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'topicPill' ],
+                                [
+                                    'key'        => 'field_hero_bookmarks',
+                                    'label'      => 'Page Bookmarks',
+                                    'name'       => 'bookmarks',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_bookmark_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_bookmark_url', 'label' => 'URL', 'name' => 'url', 'type' => 'url', 'show_in_graphql' => 1 ],
+                                    ],
+                                ],
                             ],
                         ],
                         [
@@ -1356,11 +1348,52 @@ function pmw_register_acf_fields() {
                             ],
                         ],
                         [
+                            'key'        => 'layout_team_performance_stats',
+                            'name'       => 'team_performance_stats',
+                            'label'      => 'Team Performance Stats (AI Work)',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [
+                                    'key'        => 'field_team_performance_stats',
+                                    'label'      => 'Stats',
+                                    'name'       => 'stats',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'table',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_tps_label', 'label' => 'Label', 'name' => 'label', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_tps_value', 'label' => 'Value', 'name' => 'value', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
+                            'key'        => 'layout_our_values',
+                            'name'       => 'our_values',
+                            'label'      => 'Our Values',
+                            'display'    => 'block',
+                            'sub_fields' => [
+                                [ 'key' => 'field_our_values_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'default_value' => 'Our Values', 'show_in_graphql' => 1 ],
+                                [
+                                    'key'        => 'field_our_values_values',
+                                    'label'      => 'Values',
+                                    'name'       => 'values',
+                                    'type'       => 'repeater',
+                                    'layout'     => 'block',
+                                    'sub_fields' => [
+                                        [ 'key' => 'field_value_icon', 'label' => 'Icon (lucide name, e.g. shield, book-open, target, eye)', 'name' => 'icon', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_value_title', 'label' => 'Title', 'name' => 'title', 'type' => 'text', 'show_in_graphql' => 1 ],
+                                        [ 'key' => 'field_value_description', 'label' => 'Description', 'name' => 'description', 'type' => 'textarea', 'rows' => 2, 'show_in_graphql' => 1 ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
                             'key'        => 'layout_cta_block',
                             'name'       => 'cta_block',
                             'label'      => 'CTA Block',
                             'display'    => 'block',
                             'sub_fields' => [
+                                [ 'key' => 'field_cta_variant', 'label' => 'Variant', 'name' => 'variant', 'type' => 'select', 'choices' => [ 'dark' => 'Dark', 'light' => 'Light' ], 'default_value' => 'dark', 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_cta_heading', 'label' => 'Heading', 'name' => 'heading', 'type' => 'text', 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_cta_body', 'label' => 'Body', 'name' => 'body', 'type' => 'textarea', 'rows' => 3, 'show_in_graphql' => 1 ],
                                 [ 'key' => 'field_cta_button_label', 'label' => 'Button Label', 'name' => 'button_label', 'type' => 'text', 'show_in_graphql' => 1, 'graphql_field_name' => 'buttonLabel' ],
@@ -1484,6 +1517,8 @@ function pmw_register_page_sections_fallback() {
         'Page_PageSections_Sections_TeamGridLayout',
         'Page_PageSections_Sections_PipelineStepsLayout',
         'Page_PageSections_Sections_StatsBarLayout',
+        'Page_PageSections_Sections_TeamPerformanceStatsLayout',
+        'Page_PageSections_Sections_OurValuesLayout',
         'Page_PageSections_Sections_CtaBlockLayout',
         'Page_PageSections_Sections_LinkCardsLayout',
         'Page_PageSections_Sections_DataSourcesLayout',
@@ -1499,8 +1534,9 @@ function pmw_register_page_sections_fallback() {
                 'subheading'     => [ 'type' => 'String' ],
                 'content'        => [ 'type' => 'String' ],
                 'backgroundImage' => [ 'type' => $media_stub ],
-                'ctaLabel'       => [ 'type' => 'String' ],
-                'ctaUrl'         => [ 'type' => 'String' ],
+                'topicPill'      => [ 'type' => 'String' ],
+                'bookmarks'      => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Bookmark' ] ],
+                'variant'        => [ 'type' => 'String' ],
                 'showTiers'      => [ 'type' => 'Boolean' ],
                 'filterStatus'   => [ 'type' => 'String' ],
                 'steps'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Step' ] ],
@@ -1512,6 +1548,7 @@ function pmw_register_page_sections_fallback() {
                 'items'          => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Item' ] ],
                 'image'          => [ 'type' => $media_stub ],
                 'alignment'      => [ 'type' => 'String' ],
+                'values'         => [ 'type' => [ 'list_of' => 'Page_PageSections_Sections_Value' ] ],
             ],
         ] );
     }
@@ -1526,6 +1563,19 @@ function pmw_register_page_sections_fallback() {
         'fields' => [
             'label' => [ 'type' => 'String' ],
             'value' => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_object_type( 'Page_PageSections_Sections_Bookmark', [
+        'fields' => [
+            'label' => [ 'type' => 'String' ],
+            'url'   => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_object_type( 'Page_PageSections_Sections_Value', [
+        'fields' => [
+            'icon'        => [ 'type' => 'String' ],
+            'title'       => [ 'type' => 'String' ],
+            'description' => [ 'type' => 'String' ],
         ],
     ] );
     register_graphql_object_type( 'Page_PageSections_Sections_Card', [
@@ -1878,8 +1928,6 @@ function pmw_build_agent_response( $post ) {
         'display_order'      => pmw_agent_display_order( $id ),
         'avatar_image_url'   => $avatar_img,
         'avatar_video_url'   => $avatar_vid,
-        'avatar_image_prompt'=> (string) get_post_meta( $id, 'pmw_avatar_image_prompt', true ),
-        'avatar_video_prompt'=> (string) get_post_meta( $id, 'pmw_avatar_video_prompt', true ),
     ];
 }
 
@@ -2336,8 +2384,6 @@ function pmw_register_team_grid_agents_graphql() {
             'displayOrder'        => [ 'type' => 'Int' ],
             'avatarImageUrl'      => [ 'type' => 'String' ],
             'avatarVideoUrl'      => [ 'type' => 'String' ],
-            'avatarImagePrompt'   => [ 'type' => 'String' ],
-            'avatarVideoPrompt'   => [ 'type' => 'String' ],
         ],
     ] );
 
@@ -2405,8 +2451,6 @@ function pmw_graphql_agent_profile( $post ) {
         'displayOrder'      => (int) ( get_post_meta( $id, 'pmw_display_order', true ) ?: 999 ),
         'avatarImageUrl'    => $avatar_img,
         'avatarVideoUrl'    => $avatar_vid,
-        'avatarImagePrompt' => (string) get_post_meta( $id, 'pmw_avatar_image_prompt', true ),
-        'avatarVideoPrompt' => (string) get_post_meta( $id, 'pmw_avatar_video_prompt', true ),
     ];
 }
 

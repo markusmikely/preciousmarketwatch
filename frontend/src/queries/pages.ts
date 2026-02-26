@@ -21,8 +21,11 @@ export const GET_PAGE_QUERY = gql`
               sourceUrl
               altText
             }
-            ctaLabel
-            ctaUrl
+            topicPill
+            bookmarks {
+              label
+              url
+            }
           }
           ... on Page_Pagesections_PageSections_RichText {
             fieldGroupName
@@ -67,8 +70,25 @@ export const GET_PAGE_QUERY = gql`
               value
             }
           }
+          ... on Page_Pagesections_PageSections_TeamPerformanceStats {
+            fieldGroupName
+            stats {
+              label
+              value
+            }
+          }
+          ... on Page_Pagesections_PageSections_OurValues {
+            fieldGroupName
+            heading
+            values {
+              icon
+              title
+              description
+            }
+          }
           ... on Page_Pagesections_PageSections_CtaBlock {
             fieldGroupName
+            variant
             heading
             body
             buttonLabel

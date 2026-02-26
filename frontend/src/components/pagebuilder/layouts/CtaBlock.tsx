@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import type { PageSection } from "../PageBuilder";
 
 interface CtaBlockSectionData {
+  variant?: "light" | "dark" | string | null;
   heading?: string | null;
   body?: string | null;
   buttonLabel?: string | null;
@@ -11,21 +12,28 @@ interface CtaBlockSectionData {
 
 export function CtaBlock({ section }: { section: PageSection }) {
   const data = section as CtaBlockSectionData;
+  const isLight = data.variant === "light";
 
   return (
-    <section className="py-16 bg-gradient-hero">
+    <section
+      className={`py-16 ${isLight ? "bg-background text-foreground" : "bg-gradient-hero"}`}
+    >
       <div className="container mx-auto px-4 lg:px-8 text-center">
         {data.heading && (
-          <h2 className="font-display text-3xl font-bold text-silver-light mb-4">{data.heading}</h2>
+          <h2 className={`font-display text-3xl font-bold mb-4 ${isLight ? "text-foreground" : "text-silver-light"}`}>
+            {data.heading}
+          </h2>
         )}
-        {data.body && <p className="text-silver max-w-2xl mx-auto mb-8">{data.body}</p>}
+        {data.body && (
+          <p className={`max-w-2xl mx-auto mb-8 ${isLight ? "text-muted-foreground" : "text-silver"}`}>{data.body}</p>
+        )}
         {data.buttonLabel && data.buttonUrl && (
           data.buttonUrl.startsWith("/") ? (
-            <Button asChild size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold">
+            <Button asChild size="lg" className={isLight ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold"}>
               <Link to={data.buttonUrl}>{data.buttonLabel}</Link>
             </Button>
           ) : (
-            <Button asChild size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold">
+            <Button asChild size="lg" className={isLight ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-gold"}>
               <a href={data.buttonUrl} target="_blank" rel="noopener noreferrer">
                 {data.buttonLabel}
               </a>
