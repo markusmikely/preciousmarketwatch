@@ -1,7 +1,5 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { useEffect, useState } from "react";
-import { fetchMetalData } from "../../services/metalService";
-import { useMarket, MarketProvider } from "../../contexts/MarketContext";
+import { useMarket } from "../../contexts/MarketContext";
 
 const marketDataList = [
   { name: "Gold", symbol: "XAU", price: "$2,634.20", change: "+0.45%", isUp: true },

@@ -9,14 +9,37 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 register_activation_hook( __FILE__, 'pmw_metals_seed_on_activate' );
+register_deactivation_hook( __FILE__, 'pmw_metals_seed_on_deactivate' );
 add_action( 'admin_menu', 'pmw_metals_seed_admin_menu' );
 add_action( 'admin_init', 'pmw_metals_seed_handle_action' );
 add_action( 'rest_api_init', 'pmw_metals_seed_register_rest_routes' );
 add_action( 'wp_ajax_pmw_metals_seed_validate_key', 'pmw_metals_seed_ajax_validate_key' );
+add_action( 'pmw_metals_price_update_cron', 'pmw_metals_seed_run_cron_price_update' );
+add_filter( 'cron_schedules', 'pmw_metals_seed_add_cron_schedule' );
 
 function pmw_metals_seed_on_activate() {
 	pmw_metals_seed_create_table();
 	pmw_metals_seed_run();
+	if ( ! wp_next_scheduled( 'pmw_metals_price_update_cron' ) ) {
+		wp_schedule_event( time(), 'pmw_5min', 'pmw_metals_price_update_cron' );
+	}
+}
+
+function pmw_metals_seed_on_deactivate() {
+	wp_clear_scheduled_hook( 'pmw_metals_price_update_cron' );
+}
+
+function pmw_metals_seed_add_cron_schedule( $schedules ) {
+	$schedules['pmw_5min'] = [
+		'interval' => 300,
+		'display'  => __( 'Every 5 minutes', 'pmw-metals-seed' ),
+	];
+	return $schedules;
+}
+
+function pmw_metals_seed_run_cron_price_update() {
+	$req = new WP_REST_Request( 'POST' );
+	pmw_metals_seed_cron_price_update( $req );
 }
 
 function pmw_metals_seed_create_table() {

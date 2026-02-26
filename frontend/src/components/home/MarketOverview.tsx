@@ -56,9 +56,8 @@ const gemstoneIndices = [
 
 export function MarketOverview() {
 
-  const { marketData, loading, updateMarketData } = useMarket();
+  const { marketData, loading } = useMarket();
 
-  console.log("marketData", marketData);
   return (
     <section className="py-16 lg:py-24 bg-background">
       <div className="container mx-auto px-4 lg:px-8">
@@ -93,7 +92,7 @@ export function MarketOverview() {
                       <Info className="h-4 w-4 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Prices updated every 60 seconds during market hours</p>
+                      <p>Prices updated every 5 minutes from metal_prices seed</p>
                     </TooltipContent>
                   </Tooltip>
                 </CardTitle>

@@ -1192,7 +1192,9 @@ function pmw_register_page_sections_fallback() {
 add_action( 'rest_api_init', 'pmw_register_gems_rest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
+add_action( 'rest_api_init', 'pmw_register_prices_ticker_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
+add_action( 'graphql_register_types', 'pmw_register_metal_prices_graphql' );
 add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
 add_action( 'rest_api_init', 'pmw_register_agents_rest_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
@@ -1669,6 +1671,107 @@ function pmw_rest_get_prices_latest( WP_REST_Request $request ) {
     $response = new WP_REST_Response( $result, 200 );
     $response->header( 'Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=3600' );
     return $response;
+}
+
+// ── Metal prices ticker: latest + previous for daily change (MarketOverview, header) ──
+function pmw_register_prices_ticker_route() {
+    register_rest_route( 'pmw/v1', '/prices/ticker', [
+        'methods'             => 'GET',
+        'callback'            => 'pmw_rest_get_prices_ticker',
+        'permission_callback' => '__return_true',
+    ] );
+}
+
+function pmw_rest_get_prices_ticker( WP_REST_Request $request ) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'metal_prices';
+    $metals = [ 'gold', 'silver', 'platinum', 'palladium' ];
+    $symbol_map = [ 'gold' => 'XAU', 'silver' => 'XAG', 'platinum' => 'XPT', 'palladium' => 'XPD' ];
+    $result = [];
+
+    foreach ( $metals as $metal ) {
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT date, price_usd, price_gbp FROM $table WHERE metal = %s ORDER BY date DESC LIMIT 2",
+                $metal
+            ),
+            ARRAY_A
+        );
+        $latest = isset( $rows[0] ) ? (float) $rows[0]['price_usd'] : null;
+        $previous = isset( $rows[1] ) ? (float) $rows[1]['price_usd'] : null;
+        $change = null;
+        $change_percent = null;
+        $is_up = true;
+        if ( $latest !== null && $previous !== null && $previous > 0 ) {
+            $change = round( $latest - $previous, 4 );
+            $change_percent = round( ( $latest - $previous ) / $previous * 100, 2 );
+            $is_up = $change >= 0;
+        }
+        $result[] = [
+            'metal'          => $metal,
+            'name'           => ucfirst( $metal ),
+            'symbol'         => $symbol_map[ $metal ] ?? strtoupper( $metal ),
+            'price'          => $latest !== null ? round( $latest, 4 ) : 0,
+            'change'         => $change !== null ? $change : 0,
+            'change_percent' => $change_percent !== null ? $change_percent : 0,
+            'isUp'           => $is_up,
+            'high'           => $latest !== null && $previous !== null ? max( $latest, $previous ) : ( $latest ?? 0 ),
+            'low'            => $latest !== null && $previous !== null ? min( $latest, $previous ) : ( $previous ?? $latest ?? 0 ),
+            'date'           => isset( $rows[0]['date'] ) ? $rows[0]['date'] : null,
+        ];
+    }
+
+    $response = new WP_REST_Response( $result, 200 );
+    $response->header( 'Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=3600' );
+    return $response;
+}
+
+// ── GraphQL: metalPricesTicker (same data as /prices/ticker) ──
+function pmw_register_metal_prices_graphql() {
+    if ( ! function_exists( 'register_graphql_object_type' ) || ! function_exists( 'register_graphql_field' ) ) {
+        return;
+    }
+    register_graphql_object_type( 'MetalTicker', [
+        'description' => __( 'Metal price ticker with latest price and daily change', 'pmw-core' ),
+        'fields'      => [
+            'metal'          => [ 'type' => 'String' ],
+            'name'           => [ 'type' => 'String' ],
+            'symbol'         => [ 'type' => 'String' ],
+            'price'          => [ 'type' => 'Float' ],
+            'change'         => [ 'type' => 'Float' ],
+            'changePercent'  => [ 'type' => 'Float' ],
+            'isUp'           => [ 'type' => 'Boolean' ],
+            'high'           => [ 'type' => 'Float' ],
+            'low'            => [ 'type' => 'Float' ],
+            'date'           => [ 'type' => 'String' ],
+        ],
+    ] );
+    register_graphql_field( 'RootQuery', 'metalPricesTicker', [
+        'type'        => [ 'list_of' => 'MetalTicker' ],
+        'description' => __( 'Latest metal prices with daily change (from metal_prices seed)', 'pmw-core' ),
+        'resolve'     => function () {
+            $req  = new WP_REST_Request( 'GET' );
+            $resp = pmw_rest_get_prices_ticker( $req );
+            $data = $resp->get_data();
+            if ( ! is_array( $data ) ) {
+                return [];
+            }
+            return array_map( function ( $row ) {
+                return [
+                    'metal'         => $row['metal'] ?? '',
+                    'name'          => $row['name'] ?? '',
+                    'symbol'        => $row['symbol'] ?? '',
+                    'price'         => (float) ( $row['price'] ?? 0 ),
+                    'change'        => (float) ( $row['change'] ?? 0 ),
+                    'changePercent' => (float) ( $row['change_percent'] ?? 0 ),
+                    'isUp'          => ! empty( $row['isUp'] ),
+                    'high'          => (float) ( $row['high'] ?? 0 ),
+                    'low'           => (float) ( $row['low'] ?? 0 ),
+                    'date'          => $row['date'] ?? null,
+                ];
+            }, $data );
+        },
+    ] );
 }
 
 // ── METAL-05: Market Data ACF Options Page ───────────

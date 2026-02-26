@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { fetchLatestPrices, type LatestPricesByMetal } from "@/services/latestPrices";
 
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 export type Currency = "usd" | "gbp";
 
 export function useLatestMetalPrices() {
@@ -10,19 +12,26 @@ export function useLatestMetalPrices() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchLatestPrices()
-      .then((data) => {
-        if (!cancelled) setLatest(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err?.message ?? "Failed to load prices");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
+    function load() {
+      setLoading(true);
+      setError(null);
+      fetchLatestPrices()
+        .then((data) => {
+          if (!cancelled) setLatest(data);
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err?.message ?? "Failed to load prices");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }
+    load();
+    const interval = setInterval(load, REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   return { latest, loading, error };

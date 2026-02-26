@@ -184,7 +184,7 @@ export function PriceChart({
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Gold historical data: FreeGoldAPI.com (CC) | Silver, Platinum, Palladium & live prices: Metals.dev
+        Data from metal_prices (FreeGoldAPI, MetalPriceAPI). Prices refreshed every 5 min.
       </p>
     </div>
   );
