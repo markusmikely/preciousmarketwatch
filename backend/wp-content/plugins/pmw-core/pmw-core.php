@@ -54,11 +54,12 @@ add_action( 'rest_api_init', function() {
 
 add_action( 'init', 'pmw_register_post_types' );
 add_action( 'init', 'pmw_register_agent_meta', 20 );
+add_action( 'init', 'pmw_register_tool_meta', 20 );
 add_action( 'init', 'pmw_maybe_seed_agents', 20 );
 
 function pmw_register_post_types() {
 
-    // ── Market Insight ──────────────────────
+    // ── Market Insight (legacy; keep until migration complete) ──────────────────────
     register_post_type( 'market-insight', [
         'labels' => [
             'name'               => 'Market Insights',
@@ -76,10 +77,64 @@ function pmw_register_post_types() {
         'supports'            => [ 'title', 'editor', 'excerpt', 'thumbnail', 'author', 'custom-fields' ],
         'menu_icon'           => 'dashicons-chart-line',
         'show_in_rest'        => true,
-        // WPGraphQL
         'show_in_graphql'     => true,
         'graphql_single_name' => 'marketInsight',
         'graphql_plural_name' => 'marketInsights',
+    ] );
+
+    // ── News & Analysis (v2.0; replaces Market Insights after migration) ─────────
+    register_post_type( 'pmw_news_analysis', [
+        'labels'              => [
+            'name'               => 'News & Analysis',
+            'singular_name'      => 'Article',
+            'add_new'            => 'Add New Article',
+            'add_new_item'       => 'Add New Article',
+            'edit_item'          => 'Edit Article',
+            'new_item'           => 'New Article',
+            'view_item'          => 'View Article',
+            'search_items'       => 'Search Articles',
+            'not_found'          => 'No articles found',
+            'not_found_in_trash' => 'No articles found in trash',
+            'menu_name'          => 'News & Analysis',
+        ],
+        'public'              => true,
+        'has_archive'         => true,
+        'rewrite'             => [ 'slug' => 'news-analysis', 'with_front' => false ],
+        'supports'            => [ 'title', 'editor', 'thumbnail', 'excerpt', 'author', 'custom-fields', 'revisions' ],
+        'show_in_rest'        => true,
+        'show_in_graphql'     => true,
+        'graphql_single_name' => 'newsArticle',
+        'graphql_plural_name' => 'newsArticles',
+        'menu_icon'           => 'dashicons-analytics',
+        'menu_position'       => 5,
+        'show_in_nav_menus'   => true,
+    ] );
+
+    // ── Tools (v2.0; embed + custom React tools) ─────────────────────────────────
+    register_post_type( 'pmw_tools', [
+        'labels'              => [
+            'name'               => 'Tools',
+            'singular_name'      => 'Tool',
+            'add_new'            => 'Add New Tool',
+            'add_new_item'       => 'Add New Tool',
+            'edit_item'          => 'Edit Tool',
+            'view_item'          => 'View Tool',
+            'search_items'       => 'Search Tools',
+            'not_found'          => 'No tools found',
+            'not_found_in_trash' => 'No tools found in trash',
+            'menu_name'          => 'Tools',
+        ],
+        'public'              => true,
+        'has_archive'         => true,
+        'rewrite'             => [ 'slug' => 'tools', 'with_front' => false ],
+        'supports'            => [ 'title', 'editor', 'thumbnail', 'excerpt', 'custom-fields', 'revisions' ],
+        'show_in_rest'        => true,
+        'show_in_graphql'     => true,
+        'graphql_single_name' => 'tool',
+        'graphql_plural_name' => 'tools',
+        'menu_icon'           => 'dashicons-hammer',
+        'menu_position'       => 6,
+        'show_in_nav_menus'   => true,
     ] );
 
     // ── Dealer ──────────────────────────────
@@ -218,7 +273,9 @@ function pmw_register_agent_meta() {
 }
 
 add_action( 'add_meta_boxes', 'pmw_agent_profile_meta_box' );
+add_action( 'add_meta_boxes', 'pmw_tools_meta_box' );
 add_action( 'save_post_pmw_agent', 'pmw_save_agent_profile_meta', 10, 2 );
+add_action( 'save_post_pmw_tools', 'pmw_save_tool_meta', 10, 2 );
 add_filter( 'upload_mimes', 'pmw_allow_mp4_upload' );
 add_action( 'admin_enqueue_scripts', 'pmw_agent_profile_admin_scripts' );
 add_action( 'wp_ajax_pmw_agent_upload_avatar_image', 'pmw_agent_ajax_upload_avatar_image' );
@@ -434,6 +491,140 @@ function pmw_save_agent_profile_meta( $post_id, $post ) {
     }
 }
 
+// ── PMW Tools meta (v2.0 brief) ─────────────────────────────────────────────────
+function pmw_register_tool_meta() {
+    $meta = [
+        [ 'pmw_tool_type', 'string', 'calculator | comparison-table | portfolio-tracker | price-chart' ],
+        [ 'pmw_implementation', 'string', 'custom-react | embed | shortcode' ],
+        [ 'pmw_react_component', 'string', 'React component slug (Phase 2)' ],
+        [ 'pmw_embed_code', 'string', 'Raw HTML/JS for embed' ],
+        [ 'pmw_affiliate_partner', 'string', 'bullionvault | royal-mint | chards | hatton-garden | none' ],
+        [ 'pmw_affiliate_cta_text', 'string', 'Button label' ],
+        [ 'pmw_affiliate_cta_url', 'string', 'Affiliate URL' ],
+        [ 'pmw_affiliate_cta_position', 'string', 'after-result | inline | sidebar' ],
+        [ 'pmw_show_disclaimer', 'boolean', 'Show disclaimer' ],
+        [ 'pmw_disclaimer_text', 'string', 'Override disclaimer' ],
+        [ 'pmw_related_tools', 'string', 'JSON array of post IDs' ],
+        [ 'pmw_display_order', 'integer', 'Order on hub' ],
+        [ 'pmw_is_featured', 'boolean', 'Featured on hub' ],
+        [ 'pmw_metal_relevance', 'string', 'JSON array: gold, silver, etc.' ],
+        [ 'pmw_tool_status', 'string', 'live | coming-soon | draft' ],
+    ];
+    foreach ( $meta as $m ) {
+        register_post_meta( 'pmw_tools', $m[0], [
+            'show_in_rest' => true,
+            'single'       => true,
+            'type'         => $m[1],
+            'description'  => $m[2],
+        ] );
+    }
+}
+
+function pmw_tools_meta_box() {
+    add_meta_box( 'pmw_tool_details', __( 'Tool Details', 'pmw-core' ), 'pmw_tools_meta_box_cb', 'pmw_tools', 'normal' );
+}
+
+function pmw_tools_meta_box_cb( $post ) {
+    wp_nonce_field( 'pmw_tool_save', 'pmw_tool_nonce' );
+    $impl = get_post_meta( $post->ID, 'pmw_implementation', true ) ?: 'embed';
+    $tool_type = get_post_meta( $post->ID, 'pmw_tool_type', true );
+    $status = get_post_meta( $post->ID, 'pmw_tool_status', true );
+    $order = get_post_meta( $post->ID, 'pmw_display_order', true );
+    $featured = get_post_meta( $post->ID, 'pmw_is_featured', true );
+    $react = get_post_meta( $post->ID, 'pmw_react_component', true );
+    $embed = get_post_meta( $post->ID, 'pmw_embed_code', true );
+    $partner = get_post_meta( $post->ID, 'pmw_affiliate_partner', true );
+    $cta_text = get_post_meta( $post->ID, 'pmw_affiliate_cta_text', true );
+    $cta_url = get_post_meta( $post->ID, 'pmw_affiliate_cta_url', true );
+    $cta_pos = get_post_meta( $post->ID, 'pmw_affiliate_cta_position', true );
+    $show_disc = get_post_meta( $post->ID, 'pmw_show_disclaimer', true );
+    $disc_text = get_post_meta( $post->ID, 'pmw_disclaimer_text', true );
+    $metal_rel = get_post_meta( $post->ID, 'pmw_metal_relevance', true );
+    $metal_arr = is_string( $metal_rel ) ? json_decode( $metal_rel, true ) : [];
+    if ( ! is_array( $metal_arr ) ) $metal_arr = [];
+    $related_tools = get_post_meta( $post->ID, 'pmw_related_tools', true );
+    $metals = [ 'gold' => 'Gold', 'silver' => 'Silver', 'platinum' => 'Platinum', 'palladium' => 'Palladium', 'gemstones' => 'Gemstones', 'all' => 'All' ];
+
+    echo '<div class="pmw-tool-meta">';
+    echo '<h4 style="margin:1em 0 0.5em;">Tool identity</h4>';
+    echo '<table class="form-table"><tr><th>Tool type</th><td><select name="pmw_tool_type">';
+    foreach ( [ 'calculator' => 'Calculator', 'comparison-table' => 'Comparison Table', 'portfolio-tracker' => 'Portfolio Tracker', 'price-chart' => 'Price Chart' ] as $v => $l ) {
+        echo '<option value="' . esc_attr( $v ) . '" ' . selected( $tool_type, $v, false ) . '>' . esc_html( $l ) . '</option>';
+    }
+    echo '</select></td></tr>';
+    echo '<tr><th>Implementation</th><td><select name="pmw_implementation" id="pmw_implementation">';
+    foreach ( [ 'embed' => 'Embed', 'custom-react' => 'Custom React', 'shortcode' => 'Shortcode' ] as $v => $l ) {
+        echo '<option value="' . esc_attr( $v ) . '" ' . selected( $impl, $v, false ) . '>' . esc_html( $l ) . '</option>';
+    }
+    echo '</select></td></tr>';
+    echo '<tr id="pmw_react_row"><th>React component ID</th><td><input type="text" name="pmw_react_component" value="' . esc_attr( $react ) . '" class="regular-text" /></td></tr>';
+    echo '<tr id="pmw_embed_row"><th>Embed code</th><td><textarea name="pmw_embed_code" rows="6" class="large-text code">' . esc_textarea( $embed ) . '</textarea></td></tr>';
+    echo '<tr><th>Status</th><td><select name="pmw_tool_status">';
+    foreach ( [ 'live' => 'Live', 'coming-soon' => 'Coming Soon', 'draft' => 'Draft' ] as $v => $l ) {
+        echo '<option value="' . esc_attr( $v ) . '" ' . selected( $status, $v, false ) . '>' . esc_html( $l ) . '</option>';
+    }
+    echo '</select></td></tr>';
+    echo '<tr><th>Display order</th><td><input type="number" name="pmw_display_order" value="' . esc_attr( $order ) . '" /></td></tr>';
+    echo '<tr><th>Is featured</th><td><input type="checkbox" name="pmw_is_featured" value="1" ' . checked( $featured, '1', false ) . ' /></td></tr>';
+    echo '</table>';
+
+    echo '<h4 style="margin:1em 0 0.5em;">Affiliate CTA</h4>';
+    echo '<table class="form-table">';
+    echo '<tr><th>Affiliate partner</th><td><select name="pmw_affiliate_partner">';
+    foreach ( [ 'none' => 'None', 'bullionvault' => 'BullionVault', 'royal-mint' => 'Royal Mint', 'chards' => 'Chards', 'hatton-garden' => 'Hatton Garden' ] as $v => $l ) {
+        echo '<option value="' . esc_attr( $v ) . '" ' . selected( $partner, $v, false ) . '>' . esc_html( $l ) . '</option>';
+    }
+    echo '</select></td></tr>';
+    echo '<tr><th>CTA text</th><td><input type="text" name="pmw_affiliate_cta_text" value="' . esc_attr( $cta_text ) . '" class="regular-text" /></td></tr>';
+    echo '<tr><th>CTA URL</th><td><input type="url" name="pmw_affiliate_cta_url" value="' . esc_attr( $cta_url ) . '" class="regular-text" /></td></tr>';
+    echo '<tr><th>CTA position</th><td><select name="pmw_affiliate_cta_position">';
+    foreach ( [ 'after-result' => 'After result', 'inline' => 'Inline', 'sidebar' => 'Sidebar' ] as $v => $l ) {
+        echo '<option value="' . esc_attr( $v ) . '" ' . selected( $cta_pos, $v, false ) . '>' . esc_html( $l ) . '</option>';
+    }
+    echo '</select></td></tr>';
+    echo '<tr><th>Show disclaimer</th><td><input type="checkbox" name="pmw_show_disclaimer" value="1" ' . checked( $show_disc, '1', false ) . ' /></td></tr>';
+    echo '<tr><th>Disclaimer text</th><td><textarea name="pmw_disclaimer_text" rows="2" class="large-text">' . esc_textarea( $disc_text ) . '</textarea></td></tr>';
+    echo '</table>';
+
+    echo '<h4 style="margin:1em 0 0.5em;">Relationships</h4>';
+    echo '<table class="form-table"><tr><th>Metal relevance</th><td>';
+    foreach ( $metals as $v => $l ) {
+        $checked = in_array( $v, $metal_arr, true ) ? ' checked' : '';
+        echo '<label style="display:block;"><input type="checkbox" name="pmw_metal_relevance[]" value="' . esc_attr( $v ) . '"' . $checked . ' /> ' . esc_html( $l ) . '</label>';
+    }
+    echo '<tr><th>Related tools</th><td><input type="text" name="pmw_related_tools" value="' . esc_attr( is_string( $related_tools ) ? $related_tools : '' ) . '" class="regular-text" placeholder="JSON array of post IDs" /></td></tr></table>';
+    echo '</div>';
+}
+
+function pmw_save_tool_meta( $post_id, $post ) {
+    if ( ! isset( $_POST['pmw_tool_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_tool_nonce'], 'pmw_tool_save' ) ) return;
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! current_user_can( 'edit_post', $post_id ) ) return;
+    $keys = [ 'pmw_tool_type', 'pmw_implementation', 'pmw_react_component', 'pmw_embed_code', 'pmw_affiliate_partner', 'pmw_affiliate_cta_text', 'pmw_affiliate_cta_url', 'pmw_affiliate_cta_position', 'pmw_disclaimer_text', 'pmw_related_tools', 'pmw_tool_status' ];
+    foreach ( $keys as $key ) {
+        if ( isset( $_POST[ $key ] ) ) {
+            $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
+            if ( $key === 'pmw_embed_code' || $key === 'pmw_disclaimer_text' ) {
+                $v = wp_unslash( $_POST[ $key ] );
+            }
+            if ( $key === 'pmw_related_tools' ) {
+                $raw = wp_unslash( $_POST[ $key ] );
+                $dec = json_decode( $raw );
+                $v = is_array( $dec ) ? wp_json_encode( $dec ) : ( is_string( $raw ) ? $raw : '[]' );
+            }
+            update_post_meta( $post_id, $key, $v );
+        }
+    }
+    if ( isset( $_POST['pmw_metal_relevance'] ) && is_array( $_POST['pmw_metal_relevance'] ) ) {
+        update_post_meta( $post_id, 'pmw_metal_relevance', wp_json_encode( array_map( 'sanitize_text_field', wp_unslash( $_POST['pmw_metal_relevance'] ) ) ) );
+    }
+    if ( isset( $_POST['pmw_display_order'] ) && is_numeric( $_POST['pmw_display_order'] ) ) {
+        update_post_meta( $post_id, 'pmw_display_order', (int) $_POST['pmw_display_order'] );
+    }
+    update_post_meta( $post_id, 'pmw_show_disclaimer', isset( $_POST['pmw_show_disclaimer'] ) && $_POST['pmw_show_disclaimer'] === '1' ? '1' : '0' );
+    update_post_meta( $post_id, 'pmw_is_featured', isset( $_POST['pmw_is_featured'] ) && $_POST['pmw_is_featured'] === '1' ? '1' : '0' );
+}
+
 add_action( 'add_meta_boxes', 'pmw_form_submission_meta_box' );
 function pmw_form_submission_meta_box() {
     add_meta_box(
@@ -459,10 +650,178 @@ function pmw_form_submission_meta_box_cb( $post ) {
     echo '<p><strong>Message:</strong></p><p>' . nl2br( esc_html( $message ) ) . '</p>';
 }
 
+// ── v2.0: News & Analysis migration admin page ───────────────────────────────────
+add_action( 'admin_menu', 'pmw_news_migration_menu' );
+add_action( 'admin_menu', 'pmw_seed_tools_menu' );
+add_action( 'admin_init', 'pmw_news_migration_run' );
+add_action( 'template_redirect', 'pmw_news_redirects' );
 
-// ─────────────────────────────────────────────
-// 2. CUSTOM TAXONOMIES
-// ─────────────────────────────────────────────
+function pmw_news_migration_menu() {
+    add_submenu_page(
+        null,
+        'News & Analysis Migration',
+        'News Migration',
+        'manage_options',
+        'pmw-run-news-migration',
+        'pmw_news_migration_page'
+    );
+}
+
+function pmw_news_migration_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = get_option( 'pmw_news_migration_done', false );
+    global $wpdb;
+    $count = 0;
+    if ( ! $done ) {
+        $count = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s", 'market-insight' ) );
+    }
+    echo '<div class="wrap"><h1>News & Analysis Migration</h1>';
+    if ( $done ) {
+        echo '<p><strong>Migration already completed.</strong> No action needed.</p>';
+        echo '</div>';
+        return;
+    }
+    echo '<p>This will migrate all <strong>Market Insights</strong> posts to the new <strong>News & Analysis</strong> post type and assign news categories.</p>';
+    echo '<p>Posts to migrate: <strong>' . (int) $count . '</strong></p>';
+    if ( $count > 0 ) {
+        echo '<form method="post" onsubmit="return confirm(\'Run migration now? This cannot be undone.\');">';
+        wp_nonce_field( 'pmw_news_migration', 'pmw_news_migration_nonce' );
+        echo '<p><input type="submit" name="pmw_run_news_migration" class="button button-primary" value="Run migration" /></p>';
+        echo '</form>';
+    } else {
+        echo '<p>No market-insight posts found. Nothing to migrate.</p>';
+    }
+    echo '</div>';
+}
+
+function pmw_news_migration_run() {
+    if ( ! isset( $_POST['pmw_run_news_migration'] ) || ! isset( $_POST['pmw_news_migration_nonce'] ) ) return;
+    if ( ! current_user_can( 'manage_options' ) || ! wp_verify_nonce( $_POST['pmw_news_migration_nonce'], 'pmw_news_migration' ) ) return;
+    if ( get_option( 'pmw_news_migration_done', false ) ) return;
+
+    global $wpdb;
+    $updated = $wpdb->update( $wpdb->posts, [ 'post_type' => 'pmw_news_analysis' ], [ 'post_type' => 'market-insight' ] );
+    if ( $updated === false ) {
+        if ( function_exists( 'error_log' ) ) {
+            error_log( '[PMW News Migration] wpdb->update failed' );
+        }
+        return;
+    }
+    $post_ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s", 'pmw_news_analysis' ) );
+    $slug_map = [ 'market-news' => 'market-news', 'price-analysis' => 'price-analysis', 'investment-guides' => 'investment-guides', 'industry-trends' => 'industry-trends' ];
+    $default_term = get_term_by( 'slug', 'market-news', 'pmw_news_category' );
+    $default_id = $default_term ? $default_term->term_id : 0;
+    foreach ( (array) $post_ids as $post_id ) {
+        $terms = wp_get_object_terms( $post_id, 'pmw-topic' );
+        $news_term_slug = 'market-news';
+        if ( ! empty( $terms ) && ! is_wp_error( $terms ) ) {
+            $first = $terms[0];
+            $slug = isset( $slug_map[ $first->slug ] ) ? $first->slug : ( isset( $slug_map[ $first->name ] ) ? $slug_map[ $first->name ] : null );
+            if ( $slug ) $news_term_slug = $slug;
+        }
+        $term = get_term_by( 'slug', $news_term_slug, 'pmw_news_category' );
+        $tid = $term ? $term->term_id : $default_id;
+        if ( $tid ) wp_set_object_terms( $post_id, (int) $tid, 'pmw_news_category' );
+    }
+    flush_rewrite_rules();
+    update_option( 'pmw_news_migration_done', true );
+    if ( function_exists( 'error_log' ) ) {
+        error_log( '[PMW News Migration] Migrated ' . (int) $updated . ' posts to pmw_news_analysis' );
+    }
+    wp_safe_redirect( add_query_arg( 'page', 'pmw-run-news-migration', admin_url( 'admin.php' ) ) );
+    exit;
+}
+
+function pmw_seed_tools_menu() {
+    add_submenu_page(
+        null,
+        'Seed Tools',
+        'Seed Tools',
+        'manage_options',
+        'pmw-seed-tools',
+        'pmw_seed_tools_page'
+    );
+}
+
+function pmw_seed_tools_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = get_option( 'pmw_tools_seeded', false );
+    echo '<div class="wrap"><h1>Seed Tools</h1>';
+    if ( $done ) {
+        echo '<p><strong>Tools already seeded.</strong> You can create more from Tools → Add New.</p>';
+        echo '</div>';
+        return;
+    }
+    echo '<p>This will create the 7 tool posts from the v2.0 brief (Gold Value Calculator, Investment Return Calculator, etc.). Replace <code>YOUR_BULLIONVAULT_USERNAME</code> in the two BullionVault embed tools before going live.</p>';
+    echo '<form method="post">';
+    wp_nonce_field( 'pmw_seed_tools', 'pmw_seed_tools_nonce' );
+    echo '<p><input type="submit" name="pmw_run_seed_tools" class="button button-primary" value="Seed tools" /></p>';
+    echo '</form></div>';
+}
+
+add_action( 'admin_init', 'pmw_seed_tools_run' );
+function pmw_seed_tools_run() {
+    if ( ! isset( $_POST['pmw_run_seed_tools'] ) || ! isset( $_POST['pmw_seed_tools_nonce'] ) ) return;
+    if ( ! current_user_can( 'manage_options' ) || ! wp_verify_nonce( $_POST['pmw_seed_tools_nonce'], 'pmw_seed_tools' ) ) return;
+    if ( get_option( 'pmw_tools_seeded', false ) ) return;
+
+    $calculator_term = get_term_by( 'slug', 'calculator', 'pmw_tool_type' );
+    $comparison_term = get_term_by( 'slug', 'comparison-table', 'pmw_tool_type' );
+    $portfolio_term = get_term_by( 'slug', 'portfolio-tracker', 'pmw_tool_type' );
+    $chart_term = get_term_by( 'slug', 'price-chart', 'pmw_tool_type' );
+
+    $tools = [
+        [ 'title' => 'Gold Value Calculator', 'slug' => 'gold-value-calculator', 'type' => $calculator_term, 'impl' => 'custom-react', 'status' => 'live', 'order' => 1, 'featured' => true, 'cta' => 'Buy gold at today\'s spot price →', 'partner' => 'bullionvault', 'position' => 'after-result' ],
+        [ 'title' => 'Investment Return Calculator', 'slug' => 'investment-return-calculator', 'type' => $calculator_term, 'impl' => 'custom-react', 'status' => 'live', 'order' => 2, 'featured' => true, 'cta' => 'Start investing in gold from £25 →', 'partner' => 'bullionvault', 'position' => 'after-result' ],
+        [ 'title' => 'Dealer Comparison Table', 'slug' => 'dealer-comparison-table', 'type' => $comparison_term, 'impl' => 'custom-react', 'status' => 'live', 'order' => 3, 'featured' => true, 'cta' => '', 'partner' => 'none', 'position' => 'inline' ],
+        [ 'title' => 'Portfolio Tracker', 'slug' => 'portfolio-tracker', 'type' => $portfolio_term, 'impl' => 'custom-react', 'status' => 'live', 'order' => 4, 'featured' => false, 'cta' => 'Compare storage options at BullionVault →', 'partner' => 'bullionvault', 'position' => 'after-result' ],
+        [ 'title' => 'Scrap Gold Calculator', 'slug' => 'scrap-gold-calculator', 'type' => $calculator_term, 'impl' => 'custom-react', 'status' => 'live', 'order' => 5, 'featured' => false, 'cta' => 'Get your free valuation →', 'partner' => 'hatton-garden', 'position' => 'after-result' ],
+        [ 'title' => 'BullionVault Live Prices', 'slug' => 'bullionvault-live-price', 'type' => $chart_term, 'impl' => 'embed', 'status' => 'live', 'order' => 6, 'featured' => false, 'embed' => '<script src="https://www.bullionvault.com/banners/live_price_widget.js?v=1"></script><div id="bv-price-widget"></div><script>new BullionVaultPriceWidget("bv-price-widget",{currency:"GBP",bullion:"gold",weight:"oz",referrerID:"YOUR_BULLIONVAULT_USERNAME"});</script>', 'partner' => 'bullionvault', 'position' => 'inline' ],
+        [ 'title' => 'BullionVault Price Chart', 'slug' => 'bullionvault-price-chart', 'type' => $chart_term, 'impl' => 'embed', 'status' => 'live', 'order' => 7, 'featured' => false, 'embed' => '<script src="https://www.bullionvault.com/chart/bullionvaultchart.js"></script><div id="bv-chart" style="height:400px;width:100%;"></div><script>var options={bullion:"gold",currency:"GBP",timeframe:"1y",chartType:"line",referrerID:"YOUR_BULLIONVAULT_USERNAME",containerDefinedSize:true,switchBullion:true,switchCurrency:true,switchTimeframe:true,exportButton:true};new BullionVaultChart(options,"bv-chart");</script>', 'partner' => 'bullionvault', 'position' => 'inline' ],
+    ];
+
+    foreach ( $tools as $t ) {
+        if ( get_page_by_path( $t['slug'], OBJECT, 'pmw_tools' ) ) continue;
+        $post_id = wp_insert_post( [
+            'post_title'   => $t['title'],
+            'post_name'    => $t['slug'],
+            'post_type'    => 'pmw_tools',
+            'post_status'  => 'publish',
+            'post_content' => '',
+            'post_excerpt' => '',
+        ] );
+        if ( ! $post_id || is_wp_error( $post_id ) ) continue;
+        if ( $t['type'] && isset( $t['type']->term_id ) ) wp_set_object_terms( $post_id, $t['type']->term_id, 'pmw_tool_type' );
+        update_post_meta( $post_id, 'pmw_implementation', $t['impl'] );
+        update_post_meta( $post_id, 'pmw_tool_status', $t['status'] );
+        update_post_meta( $post_id, 'pmw_display_order', $t['order'] );
+        update_post_meta( $post_id, 'pmw_is_featured', $t['featured'] ? '1' : '0' );
+        update_post_meta( $post_id, 'pmw_affiliate_partner', $t['partner'] );
+        update_post_meta( $post_id, 'pmw_affiliate_cta_position', $t['position'] );
+        if ( ! empty( $t['cta'] ) ) update_post_meta( $post_id, 'pmw_affiliate_cta_text', $t['cta'] );
+        update_post_meta( $post_id, 'pmw_affiliate_cta_url', '[AFFILIATE_URL_TO_BE_ADDED]' );
+        if ( $t['impl'] === 'custom-react' ) update_post_meta( $post_id, 'pmw_react_component', $t['slug'] );
+        if ( ! empty( $t['embed'] ) ) update_post_meta( $post_id, 'pmw_embed_code', $t['embed'] );
+        update_post_meta( $post_id, 'pmw_metal_relevance', wp_json_encode( [ 'gold', 'silver', 'platinum', 'palladium' ] ) );
+    }
+
+    update_option( 'pmw_tools_seeded', true );
+    wp_safe_redirect( add_query_arg( 'page', 'pmw-seed-tools', admin_url( 'admin.php' ) ) );
+    exit;
+}
+
+function pmw_news_redirects() {
+    if ( empty( $_SERVER['REQUEST_URI'] ) ) return;
+    $uri = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+    if ( preg_match( '#^/market-insights/?$#', $uri ) ) {
+        wp_redirect( home_url( '/news-analysis/' ), 301 );
+        exit;
+    }
+    if ( preg_match( '#^/market-insights/([^/?]+)/?$#', $uri, $m ) ) {
+        wp_redirect( home_url( '/news-analysis/' . $m[1] . '/' ), 301 );
+        exit;
+    }
+}
 
 add_action( 'init', 'pmw_register_taxonomies' );
 
@@ -534,6 +893,38 @@ function pmw_register_taxonomies() {
         'graphql_single_name' => 'dealerCategory',
         'graphql_plural_name' => 'dealerCategories',
     ] );
+
+    // ── News & Analysis category (v2.0) ───────────────────────────────────────────
+    register_taxonomy( 'pmw_news_category', 'pmw_news_analysis', [
+        'labels'            => [
+            'name' => 'News Categories',
+            'singular_name' => 'News Category',
+        ],
+        'hierarchical'      => true,
+        'public'            => true,
+        'show_in_rest'      => true,
+        'show_in_graphql'   => true,
+        'graphql_single_name' => 'newsCategory',
+        'graphql_plural_name' => 'newsCategories',
+        'rewrite'           => [ 'slug' => 'news-analysis/category', 'with_front' => false ],
+        'show_admin_column' => true,
+    ] );
+
+    // ── Tool type (v2.0) ─────────────────────────────────────────────────────────
+    register_taxonomy( 'pmw_tool_type', 'pmw_tools', [
+        'labels'            => [
+            'name' => 'Tool Types',
+            'singular_name' => 'Tool Type',
+        ],
+        'hierarchical'      => true,
+        'public'            => true,
+        'show_in_rest'      => true,
+        'show_in_graphql'   => true,
+        'graphql_single_name' => 'toolType',
+        'graphql_plural_name' => 'toolTypes',
+        'rewrite'           => [ 'slug' => 'tool-type' ],
+        'show_admin_column' => true,
+    ] );
 }
 
 
@@ -546,6 +937,36 @@ register_activation_hook( __FILE__, 'pmw_on_activation' );
 function pmw_on_activation() {
     pmw_seed_terms();
     pmw_seed_agents();
+    pmw_seed_news_categories();
+    pmw_seed_tool_types();
+}
+
+function pmw_seed_news_categories() {
+    $terms = [
+        [ 'name' => 'Market News', 'slug' => 'market-news', 'description' => 'Breaking news and developments in precious metals markets' ],
+        [ 'name' => 'Price Analysis', 'slug' => 'price-analysis', 'description' => 'In-depth analysis of gold, silver, platinum and palladium prices' ],
+        [ 'name' => 'Investment Guides', 'slug' => 'investment-guides', 'description' => 'Guides and educational content for precious metals investors' ],
+        [ 'name' => 'Industry Trends', 'slug' => 'industry-trends', 'description' => 'Longer-form trends shaping the precious metals industry' ],
+    ];
+    foreach ( $terms as $t ) {
+        if ( ! term_exists( $t['slug'], 'pmw_news_category' ) ) {
+            wp_insert_term( $t['name'], 'pmw_news_category', [ 'slug' => $t['slug'], 'description' => $t['description'] ] );
+        }
+    }
+}
+
+function pmw_seed_tool_types() {
+    $terms = [
+        [ 'name' => 'Calculator', 'slug' => 'calculator' ],
+        [ 'name' => 'Comparison Table', 'slug' => 'comparison-table' ],
+        [ 'name' => 'Portfolio Tracker', 'slug' => 'portfolio-tracker' ],
+        [ 'name' => 'Price Chart', 'slug' => 'price-chart' ],
+    ];
+    foreach ( $terms as $t ) {
+        if ( ! term_exists( $t['slug'], 'pmw_tool_type' ) ) {
+            wp_insert_term( $t['name'], 'pmw_tool_type', [ 'slug' => $t['slug'] ] );
+        }
+    }
 }
 
 function pmw_seed_terms() {
@@ -1652,6 +2073,7 @@ add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_ticker_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
 add_action( 'graphql_register_types', 'pmw_register_page_breadcrumb_graphql' );
+add_action( 'graphql_register_types', 'pmw_register_tools_graphql', 15 );
 add_action( 'graphql_register_types', 'pmw_register_metal_prices_graphql' );
 add_action( 'graphql_register_types', 'pmw_register_team_grid_agents_graphql', 20 );
 
@@ -1669,10 +2091,127 @@ function pmw_register_page_breadcrumb_graphql() {
         },
     ] );
 }
+
+function pmw_register_tools_graphql() {
+    $tool_id = function( $source ) {
+        return isset( $source->databaseId ) ? (int) $source->databaseId : ( isset( $source->ID ) ? (int) $source->ID : 0 );
+    };
+    register_graphql_field( 'Tool', 'toolStatus', [
+        'type'        => 'String',
+        'description' => 'live | coming-soon | draft',
+        'resolve'     => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_tool_status', true ),
+    ] );
+    register_graphql_field( 'Tool', 'displayOrder', [
+        'type'    => 'Int',
+        'resolve' => fn( $post ) => (int) get_post_meta( $tool_id( $post ), 'pmw_display_order', true ),
+    ] );
+    register_graphql_field( 'Tool', 'implementation', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_implementation', true ),
+    ] );
+    register_graphql_field( 'Tool', 'embedCode', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_embed_code', true ),
+    ] );
+    register_graphql_field( 'Tool', 'reactComponent', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_react_component', true ),
+    ] );
+    register_graphql_field( 'Tool', 'affiliatePartner', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_affiliate_partner', true ),
+    ] );
+    register_graphql_field( 'Tool', 'affiliateCtaText', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_affiliate_cta_text', true ),
+    ] );
+    register_graphql_field( 'Tool', 'affiliateCtaUrl', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_affiliate_cta_url', true ),
+    ] );
+    register_graphql_field( 'Tool', 'affiliateCtaPosition', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_affiliate_cta_position', true ),
+    ] );
+    register_graphql_field( 'Tool', 'isFeatured', [
+        'type'    => 'Boolean',
+        'resolve' => fn( $post ) => (bool) get_post_meta( $tool_id( $post ), 'pmw_is_featured', true ),
+    ] );
+    register_graphql_field( 'Tool', 'metalRelevance', [
+        'type'    => [ 'list_of' => 'String' ],
+        'resolve' => function( $post ) {
+            $raw = get_post_meta( $tool_id( $post ), 'pmw_metal_relevance', true );
+            $arr = is_string( $raw ) ? json_decode( $raw, true ) : $raw;
+            return is_array( $arr ) ? $arr : [];
+        },
+    ] );
+    register_graphql_field( 'Tool', 'showDisclaimer', [
+        'type'    => 'Boolean',
+        'resolve' => fn( $post ) => (bool) get_post_meta( $tool_id( $post ), 'pmw_show_disclaimer', true ),
+    ] );
+    register_graphql_field( 'Tool', 'disclaimerText', [
+        'type'    => 'String',
+        'resolve' => fn( $post ) => get_post_meta( $tool_id( $post ), 'pmw_disclaimer_text', true ),
+    ] );
+
+    register_graphql_field( 'RootQuery', 'dealerComparison', [
+        'type'        => [ 'list_of' => 'String' ],
+        'description' => 'Returns JSON-encoded dealer comparison rows',
+        'resolve'     => function() {
+            $data    = get_option( 'pmw_dealer_comparison_data', '[]' );
+            $dealers = json_decode( $data, true );
+            if ( ! is_array( $dealers ) ) $dealers = [];
+            usort( $dealers, function( $a, $b ) {
+                return ( $a['display_order'] ?? 99 ) <=> ( $b['display_order'] ?? 99 );
+            } );
+            return array_map( 'wp_json_encode', $dealers );
+        },
+    ] );
+}
 add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
 add_action( 'rest_api_init', 'pmw_register_agents_rest_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
 add_action( 'acf/init', 'pmw_register_site_settings_options_page' );
+add_action( 'admin_menu', 'pmw_dealer_comparison_options_page' );
+add_action( 'admin_init', 'pmw_dealer_comparison_register_setting' );
+
+function pmw_dealer_comparison_options_page() {
+    add_options_page(
+        'Dealer Comparison Data',
+        'Dealer Comparison Data',
+        'manage_options',
+        'pmw-dealer-comparison',
+        'pmw_dealer_comparison_render'
+    );
+}
+
+function pmw_dealer_comparison_register_setting() {
+    register_setting( 'pmw_dealer_comparison', 'pmw_dealer_comparison_data', [
+        'type'              => 'string',
+        'sanitize_callback' => function( $v ) {
+            $dec = json_decode( $v );
+            return is_array( $dec ) ? wp_json_encode( $dec ) : '[]';
+        },
+    ] );
+}
+
+function pmw_dealer_comparison_render() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $val = get_option( 'pmw_dealer_comparison_data', '[]' );
+    if ( is_string( $val ) ) {
+        $dec = json_decode( $val );
+        if ( is_array( $dec ) ) $val = wp_json_encode( $dec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+    }
+    echo '<div class="wrap"><h1>Dealer Comparison Data</h1>';
+    echo '<form method="post" action="options.php">';
+    settings_fields( 'pmw_dealer_comparison' );
+    echo '<table class="form-table"><tr><th>JSON array</th><td>';
+    echo '<textarea name="pmw_dealer_comparison_data" rows="20" class="large-text code">' . esc_textarea( $val ) . '</textarea>';
+    echo '<p class="description">JSON array of dealer objects. Each object may include display_order, name, etc. Sorted by display_order in GraphQL.</p>';
+    echo '</td></tr></table>';
+    submit_button();
+    echo '</form></div>';
+}
 
 // ── HOME-02: Mailchimp newsletter subscribe (WordPress REST; frontend has no /api) ──
 function pmw_register_subscribe_route() {

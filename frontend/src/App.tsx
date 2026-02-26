@@ -21,6 +21,10 @@ import Sapphires from "./pages/gemstones/Sapphires";
 import Emeralds from "./pages/gemstones/Emeralds";
 import JewelryInvestment from "./pages/JewelryInvestment";
 import MarketInsights from "./pages/MarketInsights";
+import NewsAnalysis from "./pages/NewsAnalysis";
+import NewsArticle from "./pages/NewsArticle";
+import Tools from "./pages/Tools";
+import Tool from "./pages/Tool";
 import TopDealers from "./pages/TopDealers";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
@@ -58,6 +62,10 @@ const App = () => (
               <Route path="/gemstones/emeralds" element={<Emeralds />} />
               <Route path="/jewelry-investment" element={<JewelryInvestment />} />
               <Route path="/market-insights" element={<MarketInsights />} />
+              <Route path="/news-analysis" element={<NewsAnalysis />} />
+              <Route path="/news-analysis/:slug" element={<NewsArticle />} />
+              <Route path="/tools" element={<Tools />} />
+              <Route path="/tools/:slug" element={<Tool />} />
               <Route path="/top-dealers" element={<TopDealers />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />

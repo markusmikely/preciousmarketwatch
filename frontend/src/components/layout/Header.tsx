@@ -36,7 +36,7 @@ const navigation = [
   },
   { name: "Top Dealers", href: "/top-dealers" },
   { name: "Tools", href: "/tools" },
-  { name: "News & Analysis", href: "/news-and-analysis" }
+  { name: "News & Analysis", href: "/news-analysis" }
 ];
 
 const ListItem = ({
