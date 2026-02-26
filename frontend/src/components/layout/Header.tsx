@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { SubscribeModal } from "@/components/shared/SubscribeModal";
 
 const navigation = [
-  { name: "Home", href: "/" },
   {
     name: "Precious Metals",
     href: "/precious-metals",
@@ -35,9 +34,9 @@ const navigation = [
       { name: "Emeralds", href: "/gemstones/emeralds", description: "Emerald treatments and pricing" },
     ],
   },
-  { name: "Jewelry Investment", href: "/jewelry-investment" },
-  { name: "Market Insights", href: "/market-insights" },
   { name: "Top Dealers", href: "/top-dealers" },
+  { name: "Tools", href: "/tools" },
+  { name: "News & Analysis", href: "/news-and-analysis" }
 ];
 
 const ListItem = ({
