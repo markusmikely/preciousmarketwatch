@@ -222,10 +222,111 @@ function pmw_register_agent_meta() {
 add_action( 'add_meta_boxes', 'pmw_agent_profile_meta_box' );
 add_action( 'save_post_pmw_agent', 'pmw_save_agent_profile_meta', 10, 2 );
 add_filter( 'upload_mimes', 'pmw_allow_mp4_upload' );
+add_action( 'admin_enqueue_scripts', 'pmw_agent_profile_admin_scripts' );
+add_action( 'wp_ajax_pmw_agent_upload_avatar_image', 'pmw_agent_ajax_upload_avatar_image' );
+add_action( 'wp_ajax_pmw_agent_upload_avatar_video', 'pmw_agent_ajax_upload_avatar_video' );
 
 function pmw_allow_mp4_upload( $mimes ) {
     $mimes['mp4'] = 'video/mp4';
     return $mimes;
+}
+
+function pmw_agent_profile_admin_scripts( $hook ) {
+    global $post;
+    if ( $hook !== 'post.php' && $hook !== 'post-new.php' ) return;
+    if ( ! $post || $post->post_type !== 'pmw_agent' ) return;
+
+    wp_enqueue_script(
+        'pmw-agent-profile-upload',
+        plugins_url( 'pmw-agent-upload.js', __FILE__ ),
+        [ 'jquery' ],
+        '1.0',
+        true
+    );
+    wp_localize_script( 'pmw-agent-profile-upload', 'pmwAgentUpload', [
+        'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+        'nonce'   => wp_create_nonce( 'pmw_agent_upload_avatar' ),
+        'postId'  => $post->ID,
+    ] );
+}
+
+function pmw_agent_ajax_upload_avatar_image() {
+    check_ajax_referer( 'pmw_agent_upload_avatar', 'nonce' );
+    $post_id = isset( $_POST['post_id'] ) ? (int) $_POST['post_id'] : 0;
+    if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+        wp_send_json_error( [ 'message' => 'Unauthorized' ] );
+    }
+    if ( empty( $_FILES['file'] ) || ! is_uploaded_file( $_FILES['file']['tmp_name'] ) ) {
+        wp_send_json_error( [ 'message' => 'No file uploaded' ] );
+    }
+    $file = $_FILES['file'];
+    $allowed = [ 'image/jpeg', 'image/png', 'image/webp' ];
+    if ( ! in_array( $file['type'] ?? '', $allowed, true ) ) {
+        wp_send_json_error( [ 'message' => 'Unsupported file type. Use JPEG, PNG, or WebP.' ] );
+    }
+    if ( ( $file['size'] ?? 0 ) > 5 * 1024 * 1024 ) {
+        wp_send_json_error( [ 'message' => 'File exceeds 5MB limit.' ] );
+    }
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+    $overrides = [ 'test_form' => false, 'mimes' => [ 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp' ] ];
+    $upload = wp_handle_upload( $file, $overrides );
+    if ( isset( $upload['error'] ) ) {
+        wp_send_json_error( [ 'message' => $upload['error'] ] );
+    }
+    $attachment = [
+        'post_mime_type' => $upload['type'],
+        'post_title'     => sanitize_file_name( pathinfo( $file['name'], PATHINFO_FILENAME ) ),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    ];
+    $attach_id = wp_insert_attachment( $attachment, $upload['file'], $post_id );
+    if ( is_wp_error( $attach_id ) ) {
+        wp_send_json_error( [ 'message' => $attach_id->get_error_message() ] );
+    }
+    wp_generate_attachment_metadata( $attach_id, $upload['file'] );
+    update_post_meta( $post_id, 'pmw_avatar_image_url', $upload['url'] );
+    wp_send_json_success( [ 'avatar_image_url' => $upload['url'], 'attachment_id' => $attach_id ] );
+}
+
+function pmw_agent_ajax_upload_avatar_video() {
+    check_ajax_referer( 'pmw_agent_upload_avatar', 'nonce' );
+    $post_id = isset( $_POST['post_id'] ) ? (int) $_POST['post_id'] : 0;
+    if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+        wp_send_json_error( [ 'message' => 'Unauthorized' ] );
+    }
+    if ( empty( $_FILES['file'] ) || ! is_uploaded_file( $_FILES['file']['tmp_name'] ) ) {
+        wp_send_json_error( [ 'message' => 'No file uploaded' ] );
+    }
+    $file = $_FILES['file'];
+    if ( ( $file['type'] ?? '' ) !== 'video/mp4' ) {
+        wp_send_json_error( [ 'message' => 'Unsupported file type. Use MP4.' ] );
+    }
+    if ( ( $file['size'] ?? 0 ) > 50 * 1024 * 1024 ) {
+        wp_send_json_error( [ 'message' => 'File exceeds 50MB limit.' ] );
+    }
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+    $overrides = [ 'test_form' => false, 'mimes' => [ 'mp4' => 'video/mp4' ] ];
+    $upload = wp_handle_upload( $file, $overrides );
+    if ( isset( $upload['error'] ) ) {
+        wp_send_json_error( [ 'message' => $upload['error'] ] );
+    }
+    $attachment = [
+        'post_mime_type' => $upload['type'],
+        'post_title'     => sanitize_file_name( pathinfo( $file['name'], PATHINFO_FILENAME ) ),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    ];
+    $attach_id = wp_insert_attachment( $attachment, $upload['file'], $post_id );
+    if ( is_wp_error( $attach_id ) ) {
+        wp_send_json_error( [ 'message' => $attach_id->get_error_message() ] );
+    }
+    wp_generate_attachment_metadata( $attach_id, $upload['file'] );
+    update_post_meta( $post_id, 'pmw_avatar_video_url', $upload['url'] );
+    wp_send_json_success( [ 'avatar_video_url' => $upload['url'], 'attachment_id' => $attach_id ] );
 }
 
 function pmw_agent_profile_meta_box() {
@@ -255,8 +356,8 @@ function pmw_agent_profile_meta_box_cb( $post ) {
         'pmw_specialisms'      => [ 'label' => 'Specialisms (one per line)', 'type' => 'textarea', 'group' => 'content' ],
         'pmw_status'           => [ 'label' => 'Status', 'type' => 'select', 'choices' => [ 'active' => 'active', 'in-development' => 'in-development' ], 'group' => 'status' ],
         'pmw_eta'              => [ 'label' => 'ETA (shown if in-development)', 'type' => 'text', 'group' => 'status' ],
-        'pmw_avatar_image_url' => [ 'label' => 'Avatar image URL', 'type' => 'readonly', 'group' => 'media' ],
-        'pmw_avatar_video_url' => [ 'label' => 'Avatar video URL', 'type' => 'readonly', 'group' => 'media' ],
+        'pmw_avatar_image_url' => [ 'label' => 'Avatar image', 'type' => 'avatar_upload', 'group' => 'media' ],
+        'pmw_avatar_video_url' => [ 'label' => 'Avatar video', 'type' => 'avatar_video_upload', 'group' => 'media' ],
         'pmw_avatar_image_prompt' => [ 'label' => 'Avatar image prompt', 'type' => 'textarea', 'group' => 'media' ],
         'pmw_avatar_video_prompt' => [ 'label' => 'Avatar video prompt', 'type' => 'textarea', 'group' => 'media' ],
     ];
@@ -273,9 +374,27 @@ function pmw_agent_profile_meta_box_cb( $post ) {
                 $val = is_array( $arr ) ? implode( "\n", $arr ) : (string) $val;
             }
             echo '<tr><th scope="row"><label for="' . esc_attr( $key ) . '">' . esc_html( $f['label'] ) . '</label></th><td>';
-            if ( $f['type'] === 'readonly' ) {
-                echo '<input type="text" id="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" readonly class="regular-text" />';
-                echo '<p class="description">Populated automatically when media is uploaded via the API.</p>';
+            if ( $f['type'] === 'avatar_upload' ) {
+                echo '<div class="pmw-avatar-upload" data-meta="pmw_avatar_image_url" data-action="pmw_agent_upload_avatar_image">';
+                echo '<input type="hidden" name="' . esc_attr( $key ) . '" id="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" />';
+                if ( $val ) {
+                    echo '<p><img src="' . esc_url( $val ) . '" alt="" class="pmw-current-preview" style="max-width: 150px; height: auto; display: block; margin-bottom: 8px;" /></p>';
+                    echo '<p class="description pmw-current-url">Current: ' . esc_html( $val ) . '</p>';
+                }
+                echo '<p><input type="file" accept="image/jpeg,image/png,image/webp" class="pmw-avatar-file-input" />';
+                echo ' <button type="button" class="button pmw-avatar-upload-btn">Upload image</button>';
+                echo ' <span class="pmw-upload-status" style="margin-left: 8px;"></span></p>';
+                echo '<p class="description">JPEG, PNG or WebP. Max 5MB.</p></div>';
+            } elseif ( $f['type'] === 'avatar_video_upload' ) {
+                echo '<div class="pmw-avatar-upload" data-meta="pmw_avatar_video_url" data-action="pmw_agent_upload_avatar_video">';
+                echo '<input type="hidden" name="' . esc_attr( $key ) . '" id="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" />';
+                if ( $val ) {
+                    echo '<p class="description pmw-current-url">Current: ' . esc_html( $val ) . '</p>';
+                }
+                echo '<p><input type="file" accept="video/mp4" class="pmw-avatar-file-input" />';
+                echo ' <button type="button" class="button pmw-avatar-upload-btn">Upload video</button>';
+                echo ' <span class="pmw-upload-status" style="margin-left: 8px;"></span></p>';
+                echo '<p class="description">MP4 only. Max 50MB.</p></div>';
             } elseif ( $f['type'] === 'textarea' ) {
                 echo '<textarea id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" rows="4" class="large-text">' . esc_textarea( $val ) . '</textarea>';
             } elseif ( $f['type'] === 'select' ) {
@@ -1341,70 +1460,6 @@ function pmw_register_acf_fields() {
         ]);
     } // end ACF PRO check
 
-    // ── PMW Agent Fields ─────────────────────
-    acf_add_local_field_group( [
-        'key'    => 'group_pmw_agent',
-        'title'  => 'Agent Details',
-        'fields' => [
-            [
-                'key'              => 'field_agent_role',
-                'label'            => 'Role',
-                'name'             => 'role',
-                'type'             => 'text',
-                'instructions'     => 'e.g. Editor-in-Chief',
-                'show_in_graphql'  => 1,
-            ],
-            [
-                'key'              => 'field_agent_tier',
-                'label'            => 'Tier',
-                'name'             => 'tier',
-                'type'             => 'number',
-                'instructions'     => '1=Executive, 2=Intelligence, 3=Editorial, 4=Production, 5=Distribution',
-                'min'              => 1,
-                'max'              => 5,
-                'show_in_graphql'  => 1,
-            ],
-            [
-                'key'              => 'field_agent_bio',
-                'label'            => 'Bio',
-                'name'             => 'bio',
-                'type'             => 'textarea',
-                'rows'             => 3,
-                'show_in_graphql'  => 1,
-            ],
-            [
-                'key'              => 'field_agent_agent_role',
-                'label'            => 'Agent Role (for pipeline matching)',
-                'name'             => 'agent_role',
-                'type'             => 'text',
-                'instructions'     => 'Exact string to match pipeline steps, e.g. "The Director"',
-                'show_in_graphql'  => 1,
-                'graphql_field_name' => 'agentRole',
-            ],
-            [
-                'key'              => 'field_agent_specialisms',
-                'label'            => 'Specialisms',
-                'name'             => 'specialisms',
-                'type'             => 'text',
-                'instructions'     => 'Comma-separated',
-                'show_in_graphql'  => 1,
-            ],
-            [
-                'key'              => 'field_agent_status',
-                'label'            => 'Status',
-                'name'             => 'status',
-                'type'             => 'select',
-                'choices'          => [ 'active' => 'Active', 'inactive' => 'Inactive' ],
-                'default_value'    => 'active',
-                'show_in_graphql'  => 1,
-            ],
-        ],
-        'location' => [
-            [ [ 'param' => 'post_type', 'operator' => '==', 'value' => 'pmw_agent' ] ],
-        ],
-        'show_in_graphql'    => 1,
-        'graphql_field_name' => 'agentDetails',
-    ] );
 }
 
 /**
