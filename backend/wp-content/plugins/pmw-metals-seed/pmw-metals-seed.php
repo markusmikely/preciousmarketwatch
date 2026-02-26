@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: PMW Metals Seed
- * Description: One-time migration: creates metal_prices table and loads historical gold (FreeGoldAPI), optionally silver/platinum/palladium. Run once, then deactivate.
+ * Description: Creates metal_prices table and loads historical data. Gold: FreeGoldAPI. Silver/platinum/palladium: MetalPriceAPI Historical (base=USD, rates.USDXAG/USDXPT/USDXPD). Run once, then deactivate.
  * Version:     1.0.0
  * Author:      Markus Mikely
  */
@@ -54,12 +54,18 @@ function pmw_metals_seed_run( $source = 'free' ) {
 		$results['platinum']  = pmw_metals_seed_load_metals_dev( 'platinum' );
 		$results['palladium'] = pmw_metals_seed_load_metals_dev( 'palladium' );
 	} else {
-		$silver_url   = pmw_metals_seed_get_metalpriceapi_url( 'silver' );
-		$platinum_url = pmw_metals_seed_get_metalpriceapi_url( 'platinum' );
-		$palladium_url= pmw_metals_seed_get_metalpriceapi_url( 'palladium' );
-		$results['silver']   = $silver_url   ? pmw_metals_seed_load_from_url( 'silver',   $silver_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_SILVER_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
-		$results['platinum'] = $platinum_url ? pmw_metals_seed_load_from_url( 'platinum', $platinum_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_PLATINUM_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
-		$results['palladium']= $palladium_url? pmw_metals_seed_load_from_url( 'palladium',$palladium_url ) : [ 'error' => 'Set PMW_METALPRICEAPI_KEY or PMW_PALLADIUM_API_URL in .env', 'inserted' => 0, 'skipped' => 0 ];
+		$key = defined( 'PMW_METALPRICEAPI_KEY' ) ? trim( (string) PMW_METALPRICEAPI_KEY ) : '';
+		$has_key = $key !== '' && strpos( $key, '•' ) === false && strpos( $key, "\xE2\x80\xA2" ) === false;
+		if ( $has_key ) {
+			$hist = pmw_metals_seed_load_metalpriceapi_historical( 90 );
+			$results['silver']   = $hist['silver'];
+			$results['platinum'] = $hist['platinum'];
+			$results['palladium']= $hist['palladium'];
+		} else {
+			$results['silver']   = [ 'error' => 'Set PMW_METALPRICEAPI_KEY in .env for silver/platinum/palladium', 'inserted' => 0, 'skipped' => 0 ];
+			$results['platinum'] = [ 'error' => 'Set PMW_METALPRICEAPI_KEY in .env', 'inserted' => 0, 'skipped' => 0 ];
+			$results['palladium']= [ 'error' => 'Set PMW_METALPRICEAPI_KEY in .env', 'inserted' => 0, 'skipped' => 0 ];
+		}
 	}
 
 	$source_label = $source === 'metalsdev' ? 'Metals.dev' : 'Free APIs (FreeGoldAPI + MetalPriceAPI)';
@@ -93,6 +99,150 @@ function pmw_metals_seed_get_metalpriceapi_url( $metal ) {
 		return '';
 	}
 	return $url;
+}
+
+/**
+ * Load silver, platinum, and palladium from MetalPriceAPI Historical Rates.
+ * Uses base=USD and rates.USDXAG, rates.USDXPT, rates.USDXPD (USD per troy oz).
+ * URL: https://api.metalpriceapi.com/v1/{YYYY-MM-DD}?api_key=KEY&base=USD&currencies=XAU,XAG,XPT,XPD
+ * Fetches last N days (default 90). Throttles 1 request/sec to avoid rate limits.
+ */
+function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
+	if ( function_exists( 'set_time_limit' ) ) {
+		set_time_limit( max( 300, $days + 120 ) );
+	}
+	$key = defined( 'PMW_METALPRICEAPI_KEY' ) ? trim( (string) PMW_METALPRICEAPI_KEY ) : '';
+	if ( $key === '' || strpos( $key, '•' ) !== false || strpos( $key, "\xE2\x80\xA2" ) !== false ) {
+		return [
+			'silver'   => [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+			'platinum' => [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+			'palladium'=> [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+		];
+	}
+
+	$end_date   = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
+	$start_date = gmdate( 'Y-m-d', strtotime( $end_date . " -{$days} days" ) );
+	$cutoff     = '1990-01-01';
+	if ( $start_date < $cutoff ) {
+		$start_date = $cutoff;
+	}
+
+	$metal_symbols = [ 'silver' => 'USDXAG', 'platinum' => 'USDXPT', 'palladium' => 'USDXPD' ];
+	$records       = [ 'silver' => [], 'platinum' => [], 'palladium' => [] ];
+	$source        = 'metalpriceapi_historical';
+
+	for ( $date = $start_date; $date <= $end_date; ) {
+		$url = add_query_arg( [
+			'api_key'    => $key,
+			'base'       => 'USD',
+			'currencies' => 'XAU,XAG,XPT,XPD,GBP',
+		], 'https://api.metalpriceapi.com/v1/' . $date );
+
+		$resp = wp_remote_get( $url, [ 'timeout' => 30 ] );
+		if ( is_wp_error( $resp ) ) {
+			$err = $resp->get_error_message();
+			return [
+				'silver'   => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+				'platinum' => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+				'palladium'=> [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+			];
+		}
+		if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
+			$err = 'HTTP ' . wp_remote_retrieve_response_code( $resp );
+			return [
+				'silver'   => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+				'platinum' => [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+				'palladium'=> [ 'error' => $err, 'inserted' => 0, 'skipped' => 0 ],
+			];
+		}
+
+		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+		if ( empty( $data['success'] ) || empty( $data['rates'] ) ) {
+			$msg = $data['error']['info'] ?? ( $data['message'] ?? 'Invalid MetalPriceAPI response' );
+			return [
+				'silver'   => [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
+				'platinum' => [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
+				'palladium'=> [ 'error' => $msg, 'inserted' => 0, 'skipped' => 0 ],
+			];
+		}
+
+		// rates.USDXAG = USD per 1 oz silver; rates.USDXPT, rates.USDXPD same for pt/pd
+		$usd_to_gbp = 0.79;
+		if ( ! empty( $data['rates']['GBP'] ) && (float) $data['rates']['GBP'] > 0 ) {
+			$usd_to_gbp = (float) $data['rates']['GBP'];
+		}
+
+		foreach ( $metal_symbols as $metal => $rate_key ) {
+			$price_usd = isset( $data['rates'][ $rate_key ] ) ? (float) $data['rates'][ $rate_key ] : null;
+			if ( $price_usd !== null && $price_usd > 0 ) {
+				$records[ $metal ][] = [
+					'date'      => $date,
+					'price'     => $price_usd,
+					'price_gbp' => round( $price_usd * $usd_to_gbp, 4 ),
+					'source'    => $source,
+				];
+			}
+		}
+
+		$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+		sleep( 1 );
+	}
+
+	$results = [];
+	foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
+		$results[ $metal ] = ! empty( $records[ $metal ] )
+			? pmw_metals_seed_insert_records_with_gbp( $metal, $records[ $metal ], $source )
+			: [ 'inserted' => 0, 'skipped' => 0, 'message' => 'No rates for ' . $metal ];
+	}
+	return $results;
+}
+
+/**
+ * Fetch silver, platinum, palladium for a single date from MetalPriceAPI Historical.
+ * Returns [ 'silver' => [usd, gbp], 'platinum' => [...], 'palladium' => [...] ] or WP_Error.
+ * $date: YYYY-MM-DD or 'yesterday'.
+ */
+function pmw_metals_seed_fetch_metalpriceapi_historical_single( $date = 'yesterday' ) {
+	$key = defined( 'PMW_METALPRICEAPI_KEY' ) ? trim( (string) PMW_METALPRICEAPI_KEY ) : '';
+	if ( $key === '' || strpos( $key, '•' ) !== false || strpos( $key, "\xE2\x80\xA2" ) !== false ) {
+		return new WP_Error( 'no_key', 'PMW_METALPRICEAPI_KEY not set' );
+	}
+	$url = add_query_arg( [
+		'api_key'    => $key,
+		'base'       => 'USD',
+		'currencies' => 'XAU,XAG,XPT,XPD,GBP',
+	], 'https://api.metalpriceapi.com/v1/' . $date );
+
+	$resp = wp_remote_get( $url, [ 'timeout' => 15 ] );
+	if ( is_wp_error( $resp ) ) {
+		return $resp;
+	}
+	if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
+		return new WP_Error( 'metalpriceapi_http', 'HTTP ' . wp_remote_retrieve_response_code( $resp ) );
+	}
+
+	$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+	if ( empty( $data['success'] ) || empty( $data['rates'] ) ) {
+		$msg = $data['error']['info'] ?? ( $data['message'] ?? 'Invalid MetalPriceAPI response' );
+		return new WP_Error( 'metalpriceapi_parse', $msg );
+	}
+
+	$usd_to_gbp = 0.79;
+	if ( ! empty( $data['rates']['GBP'] ) && (float) $data['rates']['GBP'] > 0 ) {
+		$usd_to_gbp = (float) $data['rates']['GBP'];
+	}
+
+	$result = [];
+	foreach ( [ 'silver' => 'USDXAG', 'platinum' => 'USDXPT', 'palladium' => 'USDXPD' ] as $metal => $rate_key ) {
+		$usd = isset( $data['rates'][ $rate_key ] ) ? (float) $data['rates'][ $rate_key ] : null;
+		if ( $usd !== null && $usd > 0 ) {
+			$result[ $metal ] = [
+				'price_usd' => round( $usd, 4 ),
+				'price_gbp' => round( $usd * $usd_to_gbp, 4 ),
+			];
+		}
+	}
+	return $result;
 }
 
 /**
@@ -576,7 +726,7 @@ function pmw_metals_seed_admin_page() {
 		<?php endif; ?>
 
 		<h2>Configuration</h2>
-		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code>; for Silver/Platinum/Palladium either set <code>PMW_METALPRICEAPI_KEY</code> (recommended — one secret, URLs built in code) or the full <code>PMW_SILVER_API_URL</code>, <code>PMW_PLATINUM_API_URL</code>, <code>PMW_PALLADIUM_API_URL</code>. <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries).</p>
+		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code> for gold; <code>PMW_METALPRICEAPI_KEY</code> for silver/platinum/palladium (uses Historical API: base=USD, rates.USDXAG/USDXPT/USDXPD). <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries from 1990).</p>
 
 		<?php if ( $metals_dev_key_set ) : ?>
 		<script>
@@ -836,44 +986,31 @@ function pmw_metals_seed_cron_price_update( $request ) {
 	}
 
 	// -------------------------------------------------------------------------
-	// 2. Silver, Platinum, Palladium — MetalPriceAPI (uses PMW_METALPRICEAPI_KEY or full URL constants)
-	//    Requires gold_usd to be available for the cross-rate conversion.
+	// 2. Silver, Platinum, Palladium — MetalPriceAPI Historical (base=USD)
+	//    Uses Historical API for yesterday; no gold cross-rate needed.
 	// -------------------------------------------------------------------------
-	$non_gold = [
-		'silver'    => [ 'symbol' => 'XAG' ],
-		'platinum'  => [ 'symbol' => 'XPT' ],
-		'palladium' => [ 'symbol' => 'XPD' ],
-	];
-
-	if ( ! is_wp_error( $gold_usd ) ) {
-		foreach ( $non_gold as $metal => $cfg ) {
-			$api_url = pmw_metals_seed_get_metalpriceapi_url( $metal );
-
-			if ( $api_url === '' ) {
-				$errors[ $metal ] = 'Set PMW_METALPRICEAPI_KEY or ' . [ 'silver' => 'PMW_SILVER_API_URL', 'platinum' => 'PMW_PLATINUM_API_URL', 'palladium' => 'PMW_PALLADIUM_API_URL' ][ $metal ] . ' in .env';
-				continue;
-			}
-
-			$fetched = pmw_metals_seed_fetch_metalpriceapi( $api_url, $cfg['symbol'], $gold_usd );
-			if ( is_wp_error( $fetched ) ) {
-				$errors[ $metal ] = $fetched->get_error_message();
-				continue;
-			}
-
+	$yesterday = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
+	$hist      = pmw_metals_seed_fetch_metalpriceapi_historical_single( 'yesterday' );
+	if ( is_wp_error( $hist ) ) {
+		foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
+			$errors[ $metal ] = $hist->get_error_message();
+		}
+	} elseif ( ! empty( $hist ) ) {
+		foreach ( $hist as $metal => $prices ) {
 			$wpdb->replace( $table, [
 				'metal'       => $metal,
-				'date'        => $today,
-				'price_usd'   => $fetched['price_usd'],
-				'price_gbp'   => $fetched['price_gbp'],
-				'source'      => 'metalpriceapi',
+				'date'        => $yesterday,
+				'price_usd'   => $prices['price_usd'],
+				'price_gbp'   => $prices['price_gbp'],
+				'source'      => 'metalpriceapi_historical',
 				'granularity' => 'daily',
 			], [ '%s', '%s', '%f', '%f', '%s', '%s' ] );
-			$results[ $metal ] = [ 'usd' => $fetched['price_usd'], 'gbp' => $fetched['price_gbp'] ];
+			$results[ $metal ] = [ 'usd' => $prices['price_usd'], 'gbp' => $prices['price_gbp'] ];
 		}
-	} else {
-		// Gold fetch failed — cannot derive non-gold prices, record errors.
-		foreach ( array_keys( $non_gold ) as $metal ) {
-			$errors[ $metal ] = 'Skipped: gold price unavailable (required for cross-rate conversion)';
+		foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
+			if ( empty( $results[ $metal ] ) ) {
+				$errors[ $metal ] = 'No rate returned for ' . $metal;
+			}
 		}
 	}
 
