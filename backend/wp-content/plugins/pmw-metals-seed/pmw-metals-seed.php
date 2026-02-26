@@ -228,6 +228,100 @@ function pmw_metals_seed_load_metalpriceapi_historical( $days = 90 ) {
 }
 
 /**
+ * Load MetalPriceAPI Historical for a single chunk (date range). Max ~10 days per chunk.
+ * Uses sleep(0.25) for faster throughput. Returns [ silver, platinum, palladium ] results.
+ */
+function pmw_metals_seed_load_metalpriceapi_chunk( $start_date, $end_date ) {
+	$key = defined( 'PMW_METALPRICEAPI_KEY' ) ? trim( (string) PMW_METALPRICEAPI_KEY ) : '';
+	if ( $key === '' || strpos( $key, '•' ) !== false || strpos( $key, "\xE2\x80\xA2" ) !== false ) {
+		return [
+			'silver'   => [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+			'platinum' => [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+			'palladium'=> [ 'error' => 'PMW_METALPRICEAPI_KEY not set', 'inserted' => 0, 'skipped' => 0 ],
+		];
+	}
+
+	$metal_config = [
+		'silver'   => [ 'usd_key' => 'USDXAG', 'quote_key' => 'XAG' ],
+		'platinum' => [ 'usd_key' => 'USDXPT', 'quote_key' => 'XPT' ],
+		'palladium'=> [ 'usd_key' => 'USDXPD', 'quote_key' => 'XPD' ],
+	];
+	$records    = [ 'silver' => [], 'platinum' => [], 'palladium' => [] ];
+	$source     = 'metalpriceapi_historical';
+	$last_error = null;
+
+	for ( $date = $start_date; $date <= $end_date; ) {
+		$url = add_query_arg( [
+			'api_key'    => $key,
+			'base'       => 'USD',
+			'currencies' => 'XAU,XAG,XPT,XPD,GBP',
+		], 'https://api.metalpriceapi.com/v1/' . $date );
+
+		$resp = wp_remote_get( $url, [ 'timeout' => 30 ] );
+		if ( is_wp_error( $resp ) ) {
+			$last_error = $resp->get_error_message() . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			usleep( 250000 );
+			continue;
+		}
+		if ( wp_remote_retrieve_response_code( $resp ) !== 200 ) {
+			$last_error = 'HTTP ' . wp_remote_retrieve_response_code( $resp ) . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			usleep( 250000 );
+			continue;
+		}
+
+		$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+		if ( empty( $data['success'] ) || empty( $data['rates'] ) ) {
+			$msg = isset( $data['error']['info'] ) ? $data['error']['info'] : ( isset( $data['message'] ) ? $data['message'] : 'Invalid response' );
+			$last_error = $msg . ' (' . $date . ')';
+			$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+			usleep( 250000 );
+			continue;
+		}
+
+		$usd_to_gbp = 0.79;
+		if ( ! empty( $data['rates']['GBP'] ) && (float) $data['rates']['GBP'] > 0 ) {
+			$usd_to_gbp = (float) $data['rates']['GBP'];
+		}
+
+		foreach ( $metal_config as $metal => $cfg ) {
+			$price_usd = null;
+			if ( ! empty( $data['rates'][ $cfg['usd_key'] ] ) && (float) $data['rates'][ $cfg['usd_key'] ] > 0 ) {
+				$price_usd = (float) $data['rates'][ $cfg['usd_key'] ];
+			} elseif ( ! empty( $data['rates'][ $cfg['quote_key'] ] ) && (float) $data['rates'][ $cfg['quote_key'] ] > 0 ) {
+				$price_usd = 1.0 / (float) $data['rates'][ $cfg['quote_key'] ];
+			}
+			if ( $price_usd !== null && $price_usd > 0 ) {
+				$records[ $metal ][] = [
+					'date'      => $date,
+					'price'     => $price_usd,
+					'price_gbp' => round( $price_usd * $usd_to_gbp, 4 ),
+					'source'    => $source,
+				];
+			}
+		}
+
+		$date = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+		usleep( 250000 );
+	}
+
+	$results = [];
+	foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
+		if ( ! empty( $records[ $metal ] ) ) {
+			$results[ $metal ] = pmw_metals_seed_insert_records_with_gbp( $metal, $records[ $metal ], $source );
+		} else {
+			$results[ $metal ] = [
+				'inserted' => 0,
+				'skipped'  => 0,
+				'error'    => $last_error ?: 'No rates returned for ' . $metal,
+			];
+		}
+	}
+	return $results;
+}
+
+/**
  * Fetch silver, platinum, palladium for a single date from MetalPriceAPI Historical.
  * Returns [ 'silver' => [usd, gbp], 'platinum' => [...], 'palladium' => [...] ] or WP_Error.
  * $date: YYYY-MM-DD or 'yesterday'.
@@ -282,10 +376,11 @@ function pmw_metals_seed_fetch_metalpriceapi_historical_single( $date = 'yesterd
 function pmw_metals_seed_load_metals_dev( $metal ) {
 	$key = defined( 'PMW_METALS_DEV_API_KEY' ) ? PMW_METALS_DEV_API_KEY : '';
 	if ( empty( $key ) ) {
-		return [ 'skipped' => true, 'message' => 'PMW_METALS_DEV_API_KEY not set', 'inserted' => 0, 'skipped' => 0 ];
+		return [ 'message' => 'PMW_METALS_DEV_API_KEY not set', 'inserted' => 0, 'skipped' => 0 ];
 	}
 
-	$cutoff   = '1990-01-01';
+	// Metals.dev timeseries may not have data before ~2020 for silver/platinum/palladium.
+	$cutoff   = '2020-01-01';
 	$end_date = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
 	$records  = [];
 	$source   = 'metalsdev';
@@ -385,7 +480,7 @@ function pmw_metals_seed_load_gold() {
 function pmw_metals_seed_load_from_url( $metal, $url ) {
 	$url = is_string( $url ) ? trim( $url ) : '';
 	if ( $url === '' ) {
-		return [ 'skipped' => true, 'message' => 'No API URL configured', 'inserted' => 0, 'skipped' => 0 ];
+		return [ 'message' => 'No API URL configured', 'inserted' => 0, 'skipped' => 0 ];
 	}
 	// Do not use a URL that contains the masked placeholder (admin display only)
 	if ( strpos( $url, '••••••••' ) !== false || strpos( $url, "\xE2\x80\xA2" ) !== false ) {
@@ -674,7 +769,7 @@ function pmw_metals_seed_admin_page() {
 						<span id="pmw-metalsdev-badge"></span>
 					<?php endif; ?>
 				</p>
-				<p class="description" style="margin-left: 1.5em;">Fetches daily data from 1990-01-01 via Metals.dev API. Slower — use once for initial historical backfill.</p>
+				<p class="description" style="margin-left: 1.5em;">Fetches daily data from 2020-01-01 via Metals.dev API. Slower — use once for initial historical backfill.</p>
 				<?php if ( ! $metals_dev_key_set ) : ?>
 					<p class="description" style="margin-left: 1.5em; color: #646970;">Set <code>PMW_METALS_DEV_API_KEY</code> in .env or wp-config.php to enable.</p>
 				<?php endif; ?>
@@ -682,9 +777,16 @@ function pmw_metals_seed_admin_page() {
 
 			<p>
 				<button type="submit" name="pmw_seed_source" value="1" class="button button-primary" id="pmw-seed-btn">Run Seed Now</button>
-				<button type="submit" name="pmw_daily_update" value="1" class="button button-secondary" title="Always uses free API sources. Same as the daily cron job.">Run Daily Update Now</button>
+				<button type="submit" name="pmw_daily_update" value="1" class="button button-secondary" id="pmw-daily-btn" title="Always uses free API sources. Same as the daily cron job.">Run Daily Update Now</button>
 			</p>
-			<p class="description">Run Daily Update Now always uses free API sources (same as the daily cron job).</p>
+			<div id="pmw-seed-progress" style="display:none; margin: 1em 0; padding: 1em; background: #f0f0f1; border-radius: 4px; max-width: 500px;">
+				<p><strong>Running seed in chunks…</strong></p>
+				<p id="pmw-seed-progress-text">Starting…</p>
+				<div style="background: #fff; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 8px;">
+					<div id="pmw-seed-progress-bar" style="background: #2271b1; height: 100%; width: 0%; transition: width 0.2s;"></div>
+				</div>
+			</div>
+			<p class="description">Run Daily Update Now always uses free API sources (same as the daily cron job). Free APIs seed runs in chunks to avoid timeout.</p>
 		</form>
 
 		<h2>Current prices (latest in database)</h2>
@@ -748,7 +850,7 @@ function pmw_metals_seed_admin_page() {
 						<?php
 						if ( ! empty( $r['error'] ) ) {
 							echo '<span style="color:red">Error: ' . esc_html( $r['error'] ) . '</span>';
-						} elseif ( ! empty( $r['skipped'] ) && ! empty( $r['message'] ) ) {
+						} elseif ( ! empty( $r['message'] ) ) {
 							echo esc_html( $r['message'] );
 						} else {
 							echo 'Inserted: ' . (int) ( $r['inserted'] ?? 0 ) . ', Skipped: ' . (int) ( $r['skipped'] ?? 0 );
@@ -763,7 +865,7 @@ function pmw_metals_seed_admin_page() {
 		<?php endif; ?>
 
 		<h2>Configuration</h2>
-		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code> for gold; <code>PMW_METALPRICEAPI_KEY</code> for silver/platinum/palladium (uses Historical API: base=USD, rates.USDXAG/USDXPT/USDXPD). <code>PMW_METALS_DEV_API_KEY</code> enables Metals.dev (full historical timeseries from 1990).</p>
+		<p>Set in <code>.env</code> or wp-config: <code>PMW_FREEGOLDAPI_URL</code> for gold (may have gaps — API dependent); <code>PMW_METALPRICEAPI_KEY</code> for silver/platinum/palladium (Historical API, chunked to avoid timeout); <code>PMW_METALS_DEV_API_KEY</code> for Metals.dev (timeseries from 2020).</p>
 
 		<?php if ( $metals_dev_key_set ) : ?>
 		<script>
@@ -825,6 +927,98 @@ function pmw_metals_seed_admin_page() {
 		})();
 		</script>
 		<?php endif; ?>
+
+		<?php if ( $free_apis_ready ) : ?>
+		<script>
+		(function() {
+			var form = document.getElementById('pmw-metals-seed-form');
+			var seedBtn = document.getElementById('pmw-seed-btn');
+			var progressDiv = document.getElementById('pmw-seed-progress');
+			var progressText = document.getElementById('pmw-seed-progress-text');
+			var progressBar = document.getElementById('pmw-seed-progress-bar');
+			var restUrl = <?php echo wp_json_encode( rest_url( 'pmw/v1/seed-step' ) ); ?>;
+			var restNonce = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
+
+			function postStep(body) {
+				return fetch(restUrl, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce
+					},
+					body: JSON.stringify(body),
+					credentials: 'same-origin'
+				}).then(function(r) {
+					if (!r.ok) throw new Error('Request failed: ' + r.status);
+					return r.json();
+				});
+			}
+
+			form.addEventListener('submit', function(e) {
+				var btn = document.activeElement;
+				if (!btn || btn.name !== 'pmw_seed_source' || btn.value !== '1') return;
+				var choice = form.querySelector('input[name="pmw_seed_source_choice"]:checked');
+				if (!choice || choice.value !== 'free') return;
+
+				e.preventDefault();
+				seedBtn.disabled = true;
+				progressDiv.style.display = 'block';
+				progressText.textContent = 'Gold…';
+				progressBar.style.width = '5%';
+
+				postStep({ step: 'gold' }).then(function(res) {
+					progressText.textContent = 'Gold done. MetalPriceAPI chunks…';
+					progressBar.style.width = '10%';
+
+					var endDate = new Date();
+					endDate.setDate(endDate.getDate() - 1);
+					var startDate = new Date(endDate);
+					startDate.setDate(startDate.getDate() - 90);
+					var chunkDays = 10;
+					var chunks = [];
+					var s = new Date(startDate);
+					while (s <= endDate) {
+						var e = new Date(s);
+						e.setDate(e.getDate() + chunkDays - 1);
+						if (e > endDate) e = new Date(endDate);
+						chunks.push({
+							start: s.toISOString().slice(0, 10),
+							end: e.toISOString().slice(0, 10)
+						});
+						s.setDate(s.getDate() + chunkDays);
+					}
+
+					var total = chunks.length;
+					var done = 0;
+					function runChunk(i) {
+						if (i >= total) {
+							progressBar.style.width = '100%';
+							progressText.textContent = 'Done. Reloading…';
+							location.reload();
+							return;
+						}
+						var c = chunks[i];
+						progressText.textContent = 'MetalPriceAPI chunk ' + (i + 1) + '/' + total + ' (' + c.start + ' … ' + c.end + ')';
+						progressBar.style.width = (10 + (80 * (i + 1) / total)) + '%';
+
+						return postStep({
+							step: 'metalpriceapi_chunk',
+							start_date: c.start,
+							end_date: c.end,
+							is_last: i === total - 1
+						}).then(function() {
+							return runChunk(i + 1);
+						});
+					}
+					return runChunk(0);
+				}).catch(function(err) {
+					progressText.textContent = 'Error: ' + (err.message || 'Unknown');
+					seedBtn.disabled = false;
+				});
+			});
+		})();
+		</script>
+		<?php endif; ?>
 	</div>
 	<?php
 }
@@ -851,6 +1045,12 @@ function pmw_metals_seed_register_rest_routes() {
 		'callback'            => 'pmw_metals_seed_cron_price_update',
 		'permission_callback' => 'pmw_metals_seed_cron_permission',
 	] );
+
+	register_rest_route( 'pmw/v1', '/seed-step', [
+		'methods'             => 'POST',
+		'callback'            => 'pmw_metals_seed_rest_seed_step',
+		'permission_callback' => function () { return current_user_can( 'manage_options' ); },
+	] );
 }
 
 function pmw_metals_seed_cron_permission( $request ) {
@@ -864,6 +1064,68 @@ function pmw_metals_seed_cron_permission( $request ) {
 		return new WP_Error( 'unauthorized', 'Invalid or missing token', [ 'status' => 401 ] );
 	}
 	return true;
+}
+
+/**
+ * REST POST /pmw/v1/seed-step — chunked seed flow for Free APIs (avoids timeout).
+ * Body: { step: 'gold' | 'metalpriceapi_chunk' | 'finalize', start_date?, end_date?, is_last? }
+ */
+function pmw_metals_seed_rest_seed_step( $request ) {
+	$params = $request->get_json_params() ?: $request->get_params();
+	$step   = isset( $params['step'] ) ? sanitize_text_field( $params['step'] ) : '';
+	$start  = isset( $params['start_date'] ) ? sanitize_text_field( $params['start_date'] ) : '';
+	$end    = isset( $params['end_date'] ) ? sanitize_text_field( $params['end_date'] ) : '';
+	$is_last = ! empty( $params['is_last'] );
+
+	if ( $step === 'gold' ) {
+		pmw_metals_seed_create_table();
+		$gold = pmw_metals_seed_load_gold();
+		$partial = [
+			'gold'     => $gold,
+			'silver'   => [ 'inserted' => 0, 'skipped' => 0 ],
+			'platinum' => [ 'inserted' => 0, 'skipped' => 0 ],
+			'palladium'=> [ 'inserted' => 0, 'skipped' => 0 ],
+			'_source'  => 'Free APIs (FreeGoldAPI + MetalPriceAPI)',
+		];
+		set_transient( 'pmw_metals_seed_partial', $partial, 600 );
+		return rest_ensure_response( [ 'gold' => $gold ] );
+	}
+
+	if ( $step === 'metalpriceapi_chunk' && $start && $end ) {
+		$chunk = pmw_metals_seed_load_metalpriceapi_chunk( $start, $end );
+		$partial = get_transient( 'pmw_metals_seed_partial' );
+		if ( ! is_array( $partial ) ) {
+			$partial = [ 'gold' => [ 'inserted' => 0, 'skipped' => 0 ], 'silver' => [ 'inserted' => 0, 'skipped' => 0 ], 'platinum' => [ 'inserted' => 0, 'skipped' => 0 ], 'palladium' => [ 'inserted' => 0, 'skipped' => 0 ], '_source' => 'Free APIs (FreeGoldAPI + MetalPriceAPI)' ];
+		}
+		foreach ( [ 'silver', 'platinum', 'palladium' ] as $metal ) {
+			if ( isset( $chunk[ $metal ]['inserted'] ) ) {
+				$partial[ $metal ]['inserted'] = ( $partial[ $metal ]['inserted'] ?? 0 ) + (int) $chunk[ $metal ]['inserted'];
+				$partial[ $metal ]['skipped']  = ( $partial[ $metal ]['skipped'] ?? 0 ) + (int) ( $chunk[ $metal ]['skipped'] ?? 0 );
+			}
+			if ( ! empty( $chunk[ $metal ]['error'] ) ) {
+				$partial[ $metal ]['error'] = $chunk[ $metal ]['error'];
+			}
+		}
+		set_transient( 'pmw_metals_seed_partial', $partial, 600 );
+		if ( $is_last ) {
+			update_option( 'pmw_metals_seed_last_run', $partial );
+			update_option( 'pmw_metals_seed_just_ran', true );
+			delete_transient( 'pmw_metals_seed_partial' );
+		}
+		return rest_ensure_response( [ 'chunk' => $chunk, 'partial' => $partial ] );
+	}
+
+	if ( $step === 'finalize' ) {
+		$partial = get_transient( 'pmw_metals_seed_partial' );
+		if ( is_array( $partial ) ) {
+			update_option( 'pmw_metals_seed_last_run', $partial );
+			update_option( 'pmw_metals_seed_just_ran', true );
+			delete_transient( 'pmw_metals_seed_partial' );
+		}
+		return rest_ensure_response( [ 'done' => true ] );
+	}
+
+	return new WP_Error( 'invalid_step', 'Invalid step or missing params', [ 'status' => 400 ] );
 }
 
 /**
