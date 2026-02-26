@@ -1651,8 +1651,24 @@ add_action( 'rest_api_init', 'pmw_register_prices_history_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_latest_route' );
 add_action( 'rest_api_init', 'pmw_register_prices_ticker_route' );
 add_action( 'rest_api_init', 'pmw_register_subscribe_route' );
+add_action( 'graphql_register_types', 'pmw_register_page_breadcrumb_graphql' );
 add_action( 'graphql_register_types', 'pmw_register_metal_prices_graphql' );
 add_action( 'graphql_register_types', 'pmw_register_team_grid_agents_graphql', 20 );
+
+function pmw_register_page_breadcrumb_graphql() {
+    register_graphql_field( 'Page', 'breadcrumbLabel', [
+        'type'        => 'String',
+        'description' => 'Short name for breadcrumbs (e.g. About, Gold). Falls back to page title.',
+        'resolve'     => function( $source ) {
+            $id = isset( $source->databaseId ) ? (int) $source->databaseId : ( isset( $source->ID ) ? (int) $source->ID : 0 );
+            if ( ! $id ) return null;
+            $val = function_exists( 'get_field' ) ? get_field( 'breadcrumb_label', $id ) : null;
+            if ( is_string( $val ) && $val !== '' ) return $val;
+            $post = get_post( $id );
+            return $post && isset( $post->post_title ) ? $post->post_title : null;
+        },
+    ] );
+}
 add_action( 'rest_api_init', 'pmw_register_contact_submit_route' );
 add_action( 'rest_api_init', 'pmw_register_agents_rest_route' );
 add_action( 'acf/init', 'pmw_register_market_data_options_page' );
