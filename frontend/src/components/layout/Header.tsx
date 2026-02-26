@@ -102,7 +102,7 @@ export function Header() {
                 {navigation.map((item) =>
                   item.children ? (
                     <NavigationMenuItem key={item.name}>
-                      <NavigationMenuTrigger className="bg-transparent text-sm font-medium text-foreground hover:text-primary">
+                      <NavigationMenuTrigger  className="bg-transparent text-sm font-medium text-foreground hover:text-primary">
                         {item.name}
                       </NavigationMenuTrigger>
                       <NavigationMenuContent>
