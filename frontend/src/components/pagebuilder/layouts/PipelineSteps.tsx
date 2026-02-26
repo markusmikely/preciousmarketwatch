@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react";
-import { getWordPressRestBaseUrl } from "@/lib/wordPressRestUrl";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { fetchAgents, type Agent } from "@/services/agents";
 import type { PageSection } from "../PageBuilder";
 
 interface Step {
   label?: string | null;
   description?: string | null;
   agentRole?: string | null;
-}
-
-interface Agent {
-  id: string;
-  name: string;
-  agentRole?: string;
-  avatar?: string | null;
 }
 
 interface PipelineStepsSectionData {
@@ -27,15 +20,18 @@ export function PipelineSteps({ section }: { section: PageSection }) {
   const [agents, setAgents] = useState<Agent[]>([]);
 
   useEffect(() => {
-    getWordPressRestBaseUrl();
-    fetch(`${getWordPressRestBaseUrl()}/pmw/v1/agents`)
-      .then((r) => r.json())
-      .then((d) => setAgents(d.agents ?? []))
-      .catch(() => {});
+    fetchAgents("all")
+      .then(setAgents)
+      .catch(() => setAgents([]));
   }, []);
 
   const getAgentForRole = (role: string | null | undefined) =>
-    agents.find((a) => a.agentRole && role && a.agentRole.toLowerCase() === role.toLowerCase());
+    agents.find(
+      (a) =>
+        role &&
+        (a.title?.toLowerCase() === role.toLowerCase() ||
+          a.display_name?.toLowerCase() === role.toLowerCase())
+    );
 
   if (steps.length === 0) return null;
 
@@ -61,10 +57,18 @@ export function PipelineSteps({ section }: { section: PageSection }) {
                     {agent && (
                       <div className="flex items-center gap-2">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={agent.avatar ?? undefined} />
-                          <AvatarFallback className="text-xs">{agent.name.charAt(0)}</AvatarFallback>
+                          <AvatarImage
+                            src={
+                              agent.avatar_image_url ?? agent.avatar_video_url ?? undefined
+                            }
+                          />
+                          <AvatarFallback className="text-xs">
+                            {agent.display_name.charAt(0)}
+                          </AvatarFallback>
                         </Avatar>
-                        <span className="text-sm text-muted-foreground">{agent.name}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {agent.display_name}
+                        </span>
                       </div>
                     )}
                   </div>
