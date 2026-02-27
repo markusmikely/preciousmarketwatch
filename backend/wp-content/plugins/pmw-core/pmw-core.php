@@ -301,8 +301,62 @@ add_action( 'save_post_pmw_topic', 'pmw_save_topic_meta', 10, 2 );
 add_action( 'save_post', 'pmw_save_article_topic_link', 10, 2 );
 add_filter( 'upload_mimes', 'pmw_allow_mp4_upload' );
 add_action( 'admin_enqueue_scripts', 'pmw_agent_profile_admin_scripts' );
+add_action( 'admin_enqueue_scripts', 'pmw_topic_schedule_scripts' );
 add_action( 'wp_ajax_pmw_agent_upload_avatar_image', 'pmw_agent_ajax_upload_avatar_image' );
+add_action( 'wp_ajax_pmw_topic_run_now', 'pmw_topic_run_now_ajax' );
 add_action( 'wp_ajax_pmw_agent_upload_avatar_video', 'pmw_agent_ajax_upload_avatar_video' );
+
+function pmw_topic_schedule_scripts( $hook ) {
+    global $post;
+    if ( ( $hook !== 'post.php' && $hook !== 'post-new.php' ) || ! $post || $post->post_type !== 'pmw_topic' ) return;
+    wp_add_inline_script( 'jquery', "
+jQuery(function($){
+    $('#pmw_run_now_btn').on('click', function(){
+        var btn = $(this);
+        var postId = btn.data('post-id');
+        var nonce = btn.data('nonce');
+        if (!postId || !nonce) return;
+        btn.prop('disabled', true).text('Updating…');
+        $.post(ajaxurl, {
+            action: 'pmw_topic_run_now',
+            post_id: postId,
+            nonce: nonce
+        }, function(res){
+            btn.prop('disabled', false).text('Run now');
+            if (res && res.success && res.data && res.data.datetime_local) {
+                $('#pmw_schedule_cron').val(res.data.datetime_local);
+                var orig = btn.text();
+                btn.text('Updated').delay(1500).queue(function(){ $(this).text(orig); $(this).dequeue(); });
+            } else {
+                alert(res && res.data ? res.data : 'Error updating schedule');
+            }
+        }).fail(function(){
+            btn.prop('disabled', false).text('Run now');
+            alert('Request failed');
+        });
+    });
+});
+", 'after' );
+}
+
+function pmw_topic_run_now_ajax() {
+    $post_id = isset( $_POST['post_id'] ) ? (int) $_POST['post_id'] : 0;
+    if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+        wp_send_json_error( [ 'message' => 'Unauthorized' ] );
+    }
+    if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'pmw_topic_run_now' ) ) {
+        wp_send_json_error( [ 'message' => 'Invalid nonce' ] );
+    }
+    $post = get_post( $post_id );
+    if ( ! $post || $post->post_type !== 'pmw_topic' ) {
+        wp_send_json_error( [ 'message' => 'Invalid topic' ] );
+    }
+    $now = new DateTime( 'now', wp_timezone() );
+    $iso = $now->format( 'c' );
+    $datetime_local = $now->format( 'Y-m-d\TH:i' );
+    update_post_meta( $post_id, 'pmw_schedule_cron', $iso );
+    wp_send_json_success( [ 'datetime_local' => $datetime_local ] );
+}
 
 function pmw_allow_mp4_upload( $mimes ) {
     $mimes['mp4'] = 'video/mp4';
@@ -698,8 +752,14 @@ function pmw_topic_meta_box() {
 
 function pmw_topic_meta_box_cb( $post ) {
     wp_nonce_field( 'pmw_topic_save', 'pmw_topic_nonce' );
-    $editable = [ 'pmw_target_keyword', 'pmw_summary', 'pmw_include_keywords', 'pmw_exclude_keywords', 'pmw_asset_class', 'pmw_product_type', 'pmw_geography', 'pmw_is_buy_side', 'pmw_intent_stage', 'pmw_priority', 'pmw_schedule_cron' ];
+    $editable = [ 'pmw_target_keyword', 'pmw_summary', 'pmw_include_keywords', 'pmw_exclude_keywords', 'pmw_asset_class', 'pmw_product_type', 'pmw_geography', 'pmw_is_buy_side', 'pmw_intent_stage', 'pmw_priority' ];
     $readonly = [ 'pmw_agent_status', 'pmw_last_run_at', 'pmw_run_count', 'pmw_last_run_id', 'pmw_last_wp_post_id', 'pmw_wp_category_id', 'pmw_affiliate_page_id' ];
+    $schedule_val = get_post_meta( $post->ID, 'pmw_schedule_cron', true );
+    $schedule_for_input = '';
+    if ( ! empty( $schedule_val ) && preg_match( '/^\d{4}-\d{2}-\d{2}/', $schedule_val ) ) {
+        $dt = new DateTime( $schedule_val );
+        $schedule_for_input = $dt->format( 'Y-m-d\TH:i' );
+    }
     echo '<table class="form-table">';
     foreach ( $editable as $key ) {
         $v = get_post_meta( $post->ID, $key, true );
@@ -713,6 +773,11 @@ function pmw_topic_meta_box_cb( $post ) {
             echo '<tr><th>' . esc_html( $label ) . '</th><td><input type="text" name="' . esc_attr( $key ) . '" value="' . esc_attr( $v ) . '" class="regular-text" /></td></tr>';
         }
     }
+    echo '<tr><th>Schedule</th><td>';
+    echo '<input type="datetime-local" name="pmw_schedule_cron" id="pmw_schedule_cron" value="' . esc_attr( $schedule_for_input ) . '" class="regular-text" /> ';
+    echo '<button type="button" id="pmw_run_now_btn" class="button" data-post-id="' . (int) $post->ID . '" data-nonce="' . esc_attr( wp_create_nonce( 'pmw_topic_run_now' ) ) . '">Run now</button>';
+    echo '<p class="description">Leave empty for manual only. Pick a date/time to schedule, or click Run now to set to current time (saves immediately).</p>';
+    echo '</td></tr>';
     echo '<tr><td colspan="2"><em style="color:#666;">Display-only (agent-managed):</em></td></tr>';
     foreach ( $readonly as $key ) {
         $v = get_post_meta( $post->ID, $key, true );
@@ -732,6 +797,10 @@ function pmw_save_topic_meta( $post_id, $post ) {
         if ( isset( $_POST[ $key ] ) ) {
             $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
             if ( $key === 'pmw_summary' ) $v = sanitize_textarea_field( wp_unslash( $_POST[ $key ] ) );
+            if ( $key === 'pmw_schedule_cron' && ! empty( $v ) ) {
+                $dt = DateTime::createFromFormat( 'Y-m-d\TH:i', $v );
+                $v = $dt ? $dt->format( 'c' ) : $v;
+            }
             update_post_meta( $post_id, $key, $v );
         }
     }
