@@ -15,5 +15,8 @@ apscheduler==3.10.4
 google-analytics-data==0.18.0
 google-search-console==0.1.0
 cairosvg==2.7.1
+sqlalchemy
+psycopg2-binary
+alembic
 
 

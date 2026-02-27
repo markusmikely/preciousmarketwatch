@@ -1,21 +1,58 @@
 """
-PMW Agents entry point.
+PMW Agents — background worker service.
 
-Delegates to root main.py when run from agents/.
-Run via: python main.py (from pmw-agents root)
+On container start:
+  1. Run Alembic migrations
+  2. Enter infinite loop with heartbeat
 """
-import sys
 import os
+import subprocess
+import sys
+import time
 
-# Ensure repo root is on path when run from agents/
-_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _root not in sys.path:
-    sys.path.insert(0, _root)
+
+def run_migrations() -> None:
+    """
+    Run Alembic migrations.
+    Safe to call on every container start.
+    """
+    print("Running database migrations...")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr or result.stdout)
+        print("Migrations complete.")
+    except Exception as e:
+        print("Migration failed:", str(e))
+        raise
+
+
+def worker_loop() -> None:
+    """
+    Placeholder worker loop.
+    Eventually this will:
+      - Poll DB for pending topics
+      - Execute workflow
+      - Update workflow_runs
+    """
+    print("Entering worker loop...")
+
+    while True:
+        print("PMW Agents heartbeat: waiting for work...")
+        time.sleep(30)
+
 
 if __name__ == "__main__":
-    import main as root_main
-
     print("PMW Agents starting...")
-    root_main.run_migrations()
+
+    run_migrations()
+
     print("PMW Agents started successfully.")
-    root_main.worker_loop()
+
+    worker_loop()
