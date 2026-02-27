@@ -13,10 +13,6 @@ psycopg2-binary==2.9.9
 langsmith==0.1.140
 apscheduler==3.10.4
 google-analytics-data==0.18.0
-google-search-console==0.1.0
+# google-search-console not on PyPI; use google-api-python-client when implementing GSC
 cairosvg==2.7.1
 sqlalchemy
-psycopg2-binary
-alembic
-
-
