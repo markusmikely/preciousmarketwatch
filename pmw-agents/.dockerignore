@@ -1,0 +1,14 @@
+# Exclude from Docker build context
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.env
+.env.*
+!.env.sample
+docs
+*.md
+!agents/db/README.md

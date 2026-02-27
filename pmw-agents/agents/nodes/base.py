@@ -229,6 +229,19 @@ class _DBPool:
     @classmethod
     async def get(cls):
         if cls._pool is None:
+            # Run Alembic migrations before first DB connection
+            if os.environ.get("DATABASE_URL"):
+                try:
+                    try:
+                        from agents.db.run_migrations import run_migrations
+                    except ImportError:
+                        from ..db.run_migrations import run_migrations
+                    run_migrations()
+                except RuntimeError:
+                    raise  # Migration failed — surface to caller
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning("Migration check (non-fatal): %s", e)
             try:
                 import asyncpg
             except ImportError:

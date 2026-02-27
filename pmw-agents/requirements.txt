@@ -1,0 +1,5 @@
+# PMW Agents — minimum for worker + migrations
+# Add langgraph, anthropic, etc. when implementing workflow
+sqlalchemy
+psycopg2-binary
+alembic
