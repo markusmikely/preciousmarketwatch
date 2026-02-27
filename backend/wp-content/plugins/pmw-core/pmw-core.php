@@ -55,6 +55,8 @@ add_action( 'rest_api_init', function() {
 add_action( 'init', 'pmw_register_post_types' );
 add_action( 'init', 'pmw_register_agent_meta', 20 );
 add_action( 'init', 'pmw_register_tool_meta', 20 );
+add_action( 'init', 'pmw_register_topic_meta', 20 );
+add_action( 'init', 'pmw_register_article_topic_link_meta', 20 );
 add_action( 'init', 'pmw_maybe_seed_agents', 20 );
 
 function pmw_register_post_types() {
@@ -241,6 +243,23 @@ function pmw_register_post_types() {
         'graphql_single_name' => 'pmwAgent',
         'graphql_plural_name' => 'pmwAgents',
     ] );
+
+    // ── Content Topics (pmw_topic CPT; agent workflow source of truth) ─────────────
+    register_post_type( 'pmw_topic', [
+        'label'        => 'Content Topics',
+        'public'       => false,
+        'show_ui'      => true,
+        'show_in_rest' => true,
+        'rest_base'    => 'pmw-topics',
+        'supports'     => [ 'title', 'editor', 'custom-fields' ],
+        'menu_icon'    => 'dashicons-calendar-alt',
+        'labels'       => [
+            'name'          => 'Content Topics',
+            'singular_name' => 'Topic',
+            'add_new_item'  => 'Add New Topic',
+            'edit_item'     => 'Edit Topic',
+        ],
+    ] );
 }
 
 // ── PMW Agent Profile Meta (schema from brief) ──
@@ -274,8 +293,12 @@ function pmw_register_agent_meta() {
 
 add_action( 'add_meta_boxes', 'pmw_agent_profile_meta_box' );
 add_action( 'add_meta_boxes', 'pmw_tools_meta_box' );
+add_action( 'add_meta_boxes', 'pmw_topic_meta_box' );
+add_action( 'add_meta_boxes', 'pmw_article_topic_link_meta_box' );
 add_action( 'save_post_pmw_agent', 'pmw_save_agent_profile_meta', 10, 2 );
 add_action( 'save_post_pmw_tools', 'pmw_save_tool_meta', 10, 2 );
+add_action( 'save_post_pmw_topic', 'pmw_save_topic_meta', 10, 2 );
+add_action( 'save_post', 'pmw_save_article_topic_link', 10, 2 );
 add_filter( 'upload_mimes', 'pmw_allow_mp4_upload' );
 add_action( 'admin_enqueue_scripts', 'pmw_agent_profile_admin_scripts' );
 add_action( 'wp_ajax_pmw_agent_upload_avatar_image', 'pmw_agent_ajax_upload_avatar_image' );
@@ -520,6 +543,50 @@ function pmw_register_tool_meta() {
     }
 }
 
+// ── Content Topics (pmw_topic) meta ──────────────────────────────────────────────
+function pmw_register_topic_meta() {
+    $fields = [
+        'pmw_target_keyword'    => [ 'type' => 'string'  ],
+        'pmw_summary'           => [ 'type' => 'string'  ],
+        'pmw_include_keywords'  => [ 'type' => 'string'  ],
+        'pmw_exclude_keywords'  => [ 'type' => 'string'  ],
+        'pmw_asset_class'       => [ 'type' => 'string'  ],
+        'pmw_product_type'      => [ 'type' => 'string'  ],
+        'pmw_geography'         => [ 'type' => 'string'  ],
+        'pmw_is_buy_side'       => [ 'type' => 'boolean' ],
+        'pmw_intent_stage'      => [ 'type' => 'string'  ],
+        'pmw_priority'          => [ 'type' => 'integer' ],
+        'pmw_schedule_cron'     => [ 'type' => 'string'  ],
+        'pmw_agent_status'      => [ 'type' => 'string'  ],
+        'pmw_last_run_at'       => [ 'type' => 'string'  ],
+        'pmw_run_count'         => [ 'type' => 'integer' ],
+        'pmw_last_run_id'       => [ 'type' => 'integer' ],
+        'pmw_last_wp_post_id'   => [ 'type' => 'integer' ],
+        'pmw_wp_category_id'    => [ 'type' => 'integer' ],
+        'pmw_affiliate_page_id' => [ 'type' => 'integer' ],
+    ];
+    foreach ( $fields as $key => $config ) {
+        register_post_meta( 'pmw_topic', $key, [
+            'type'         => $config['type'],
+            'single'       => true,
+            'show_in_rest' => true,
+            'default'      => $config['type'] === 'integer' ? 0 : ( $config['type'] === 'boolean' ? false : '' ),
+        ] );
+    }
+}
+
+// ── Article → Topic link (post ID of pmw_topic) ───────────────────────────────────
+function pmw_register_article_topic_link_meta() {
+    foreach ( [ 'post', 'pmw_news_analysis' ] as $pt ) {
+        register_post_meta( $pt, 'pmw_topic_id', [
+            'type'         => 'integer',
+            'single'       => true,
+            'show_in_rest' => true,
+            'default'      => 0,
+        ] );
+    }
+}
+
 function pmw_tools_meta_box() {
     add_meta_box( 'pmw_tool_details', __( 'Tool Details', 'pmw-core' ), 'pmw_tools_meta_box_cb', 'pmw_tools', 'normal' );
 }
@@ -625,6 +692,83 @@ function pmw_save_tool_meta( $post_id, $post ) {
     update_post_meta( $post_id, 'pmw_is_featured', isset( $_POST['pmw_is_featured'] ) && $_POST['pmw_is_featured'] === '1' ? '1' : '0' );
 }
 
+function pmw_topic_meta_box() {
+    add_meta_box( 'pmw_topic_details', __( 'Topic Details', 'pmw-core' ), 'pmw_topic_meta_box_cb', 'pmw_topic', 'normal' );
+}
+
+function pmw_topic_meta_box_cb( $post ) {
+    wp_nonce_field( 'pmw_topic_save', 'pmw_topic_nonce' );
+    $editable = [ 'pmw_target_keyword', 'pmw_summary', 'pmw_include_keywords', 'pmw_exclude_keywords', 'pmw_asset_class', 'pmw_product_type', 'pmw_geography', 'pmw_is_buy_side', 'pmw_intent_stage', 'pmw_priority', 'pmw_schedule_cron' ];
+    $readonly = [ 'pmw_agent_status', 'pmw_last_run_at', 'pmw_run_count', 'pmw_last_run_id', 'pmw_last_wp_post_id', 'pmw_wp_category_id', 'pmw_affiliate_page_id' ];
+    echo '<table class="form-table">';
+    foreach ( $editable as $key ) {
+        $v = get_post_meta( $post->ID, $key, true );
+        $label = str_replace( 'pmw_', '', $key );
+        $label = ucwords( str_replace( '_', ' ', $label ) );
+        if ( $key === 'pmw_is_buy_side' ) {
+            echo '<tr><th>' . esc_html( $label ) . '</th><td><input type="checkbox" name="' . esc_attr( $key ) . '" value="1" ' . checked( $v, '1', false ) . ' /></td></tr>';
+        } elseif ( $key === 'pmw_summary' ) {
+            echo '<tr><th>' . esc_html( $label ) . '</th><td><textarea name="' . esc_attr( $key ) . '" rows="3" class="large-text">' . esc_textarea( $v ) . '</textarea></td></tr>';
+        } else {
+            echo '<tr><th>' . esc_html( $label ) . '</th><td><input type="text" name="' . esc_attr( $key ) . '" value="' . esc_attr( $v ) . '" class="regular-text" /></td></tr>';
+        }
+    }
+    echo '<tr><td colspan="2"><em style="color:#666;">Display-only (agent-managed):</em></td></tr>';
+    foreach ( $readonly as $key ) {
+        $v = get_post_meta( $post->ID, $key, true );
+        $label = str_replace( 'pmw_', '', $key );
+        $label = ucwords( str_replace( '_', ' ', $label ) );
+        echo '<tr><th>' . esc_html( $label ) . '</th><td><code>' . esc_html( (string) $v ) . '</code></td></tr>';
+    }
+    echo '</table>';
+}
+
+function pmw_save_topic_meta( $post_id, $post ) {
+    if ( ! isset( $_POST['pmw_topic_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_topic_nonce'], 'pmw_topic_save' ) ) return;
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! current_user_can( 'edit_post', $post_id ) ) return;
+    $keys = [ 'pmw_target_keyword', 'pmw_summary', 'pmw_include_keywords', 'pmw_exclude_keywords', 'pmw_asset_class', 'pmw_product_type', 'pmw_geography', 'pmw_intent_stage', 'pmw_priority', 'pmw_schedule_cron' ];
+    foreach ( $keys as $key ) {
+        if ( isset( $_POST[ $key ] ) ) {
+            $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
+            if ( $key === 'pmw_summary' ) $v = sanitize_textarea_field( wp_unslash( $_POST[ $key ] ) );
+            update_post_meta( $post_id, $key, $v );
+        }
+    }
+    if ( isset( $_POST['pmw_is_buy_side'] ) ) {
+        update_post_meta( $post_id, 'pmw_is_buy_side', $_POST['pmw_is_buy_side'] === '1' ? '1' : '0' );
+    }
+    if ( isset( $_POST['pmw_priority'] ) && is_numeric( $_POST['pmw_priority'] ) ) {
+        update_post_meta( $post_id, 'pmw_priority', (int) $_POST['pmw_priority'] );
+    }
+}
+
+function pmw_article_topic_link_meta_box() {
+    add_meta_box( 'pmw_article_topic', __( 'Content Topic', 'pmw-core' ), 'pmw_article_topic_link_meta_box_cb', [ 'post', 'pmw_news_analysis' ], 'side' );
+}
+
+function pmw_article_topic_link_meta_box_cb( $post ) {
+    $topic_id = (int) get_post_meta( $post->ID, 'pmw_topic_id', true );
+    wp_nonce_field( 'pmw_article_topic_save', 'pmw_article_topic_nonce' );
+    $topics = get_posts( [ 'post_type' => 'pmw_topic', 'post_status' => 'publish', 'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC' ] );
+    echo '<select name="pmw_topic_id" class="widefat">';
+    echo '<option value="0">— None —</option>';
+    foreach ( $topics as $t ) {
+        echo '<option value="' . (int) $t->ID . '" ' . selected( $topic_id, $t->ID, false ) . '>' . esc_html( $t->post_title ) . '</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Link this article to a Content Topic. Used by the agent workflow.</p>';
+}
+
+function pmw_save_article_topic_link( $post_id, $post ) {
+    if ( ! $post || ! in_array( $post->post_type ?? '', [ 'post', 'pmw_news_analysis' ], true ) ) return;
+    if ( ! isset( $_POST['pmw_article_topic_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_article_topic_nonce'], 'pmw_article_topic_save' ) ) return;
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! current_user_can( 'edit_post', $post_id ) ) return;
+    $tid = isset( $_POST['pmw_topic_id'] ) ? (int) $_POST['pmw_topic_id'] : 0;
+    update_post_meta( $post_id, 'pmw_topic_id', $tid );
+}
+
 add_action( 'add_meta_boxes', 'pmw_form_submission_meta_box' );
 function pmw_form_submission_meta_box() {
     add_meta_box(
@@ -653,7 +797,9 @@ function pmw_form_submission_meta_box_cb( $post ) {
 // ── v2.0: News & Analysis migration admin page ───────────────────────────────────
 add_action( 'admin_menu', 'pmw_news_migration_menu' );
 add_action( 'admin_menu', 'pmw_seed_tools_menu' );
+add_action( 'admin_menu', 'pmw_topics_admin_menu' );
 add_action( 'admin_init', 'pmw_news_migration_run' );
+add_action( 'admin_init', 'pmw_topics_admin_actions' );
 add_action( 'template_redirect', 'pmw_news_redirects' );
 
 function pmw_news_migration_menu() {
@@ -808,6 +954,180 @@ function pmw_seed_tools_run() {
     update_option( 'pmw_tools_seeded', true );
     wp_safe_redirect( add_query_arg( 'page', 'pmw-seed-tools', admin_url( 'admin.php' ) ) );
     exit;
+}
+
+// ── Content Topics: Seed, Reset, Unlink ───────────────────────────────────────────
+function pmw_topics_admin_menu() {
+    add_submenu_page(
+        'edit.php?post_type=pmw_topic',
+        'Seed & Reset Topics',
+        'Seed & Reset',
+        'manage_options',
+        'pmw-topics-seed-reset',
+        'pmw_topics_seed_reset_page'
+    );
+}
+
+function pmw_topics_seed_reset_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = isset( $_GET['done'] ) ? sanitize_text_field( wp_unslash( $_GET['done'] ) ) : '';
+    if ( $done === 'seed' ) echo '<div class="notice notice-success"><p>Topics seeded from JSON.</p></div>';
+    if ( $done === 'reset' ) echo '<div class="notice notice-success"><p>All topics reset to seed state.</p></div>';
+    if ( $done === 'unlink' ) echo '<div class="notice notice-success"><p>All articles unlinked from topics.</p></div>';
+    $seed_path = apply_filters( 'pmw_topics_seed_json_path', plugin_dir_path( __FILE__ ) . 'data/pmw_topics_seed_100.json' );
+    $seed_exists = file_exists( $seed_path );
+    $topic_count = (int) wp_count_posts( 'pmw_topic' )->publish;
+    $linked_count = pmw_count_articles_linked_to_topics();
+    echo '<div class="wrap"><h1>Seed & Reset Content Topics</h1>';
+    echo '<p>Topics: <strong>' . (int) $topic_count . '</strong> | Articles linked to topics: <strong>' . (int) $linked_count . '</strong></p>';
+    echo '<div style="display:flex;gap:1em;flex-wrap:wrap;margin:1em 0;">';
+    echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Seed topics from JSON? Existing topics are preserved; new ones are added.\');">';
+    wp_nonce_field( 'pmw_topics_seed', 'pmw_topics_seed_nonce' );
+    echo '<input type="hidden" name="pmw_topics_action" value="seed" />';
+    echo '<input type="submit" class="button button-primary" value="Seed topics from JSON" ' . ( $seed_exists ? '' : 'disabled' ) . ' />';
+    echo '</form>';
+    echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Reset ALL topics to seed state? This deletes all existing topics and recreates from JSON.\');">';
+    wp_nonce_field( 'pmw_topics_seed', 'pmw_topics_seed_nonce' );
+    echo '<input type="hidden" name="pmw_topics_action" value="reset" />';
+    echo '<input type="submit" class="button" value="Reset all topics to seed state" ' . ( $seed_exists ? '' : 'disabled' ) . ' />';
+    echo '</form>';
+    echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Unlink all articles from topics? This clears pmw_topic_id from posts and News & Analysis. Articles are NOT deleted.\');">';
+    wp_nonce_field( 'pmw_topics_seed', 'pmw_topics_seed_nonce' );
+    echo '<input type="hidden" name="pmw_topics_action" value="unlink" />';
+    echo '<input type="submit" class="button" value="Unlink all articles from topics" />';
+    echo '</form>';
+    echo '</div>';
+    if ( ! $seed_exists ) {
+        echo '<p class="notice notice-warning"><strong>Seed file not found:</strong> <code>' . esc_html( $seed_path ) . '</code></p>';
+    }
+    echo '</div>';
+}
+
+function pmw_count_articles_linked_to_topics() {
+    global $wpdb;
+    $posts = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = 'pmw_topic_id' AND m.meta_value != '0' AND m.meta_value != '' AND p.post_type = 'post'" );
+    $news = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = 'pmw_topic_id' AND m.meta_value != '0' AND m.meta_value != '' AND p.post_type = 'pmw_news_analysis'" );
+    return $posts + $news;
+}
+
+function pmw_topics_admin_actions() {
+    if ( ! isset( $_POST['pmw_topics_action'] ) || ! isset( $_POST['pmw_topics_seed_nonce'] ) ) return;
+    if ( ! current_user_can( 'manage_options' ) || ! wp_verify_nonce( $_POST['pmw_topics_seed_nonce'], 'pmw_topics_seed' ) ) return;
+    $action = sanitize_text_field( wp_unslash( $_POST['pmw_topics_action'] ) );
+    $seed_path = apply_filters( 'pmw_topics_seed_json_path', plugin_dir_path( __FILE__ ) . 'data/pmw_topics_seed_100.json' );
+    if ( $action === 'reset' || $action === 'seed' ) {
+        if ( ! file_exists( $seed_path ) ) {
+            wp_die( esc_html__( 'Seed file not found.', 'pmw-core' ) );
+        }
+        $json = file_get_contents( $seed_path );
+        $items = json_decode( $json, true );
+        if ( ! is_array( $items ) ) {
+            wp_die( esc_html__( 'Invalid seed JSON.', 'pmw-core' ) );
+        }
+        if ( $action === 'reset' ) {
+            $ids = get_posts( [ 'post_type' => 'pmw_topic', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ] );
+            foreach ( $ids as $id ) {
+                wp_delete_post( $id, true );
+            }
+        }
+        pmw_seed_topics_from_json( $items );
+    } elseif ( $action === 'unlink' ) {
+        pmw_unlink_all_articles_from_topics();
+    }
+    wp_safe_redirect( add_query_arg( [ 'post_type' => 'pmw_topic', 'page' => 'pmw-topics-seed-reset', 'done' => $action ], admin_url( 'edit.php' ) ) );
+    exit;
+}
+
+function pmw_seed_topics_from_json( array $items ) {
+    foreach ( $items as $item ) {
+        $title = isset( $item['title'] ) ? sanitize_text_field( $item['title'] ) : '';
+        if ( empty( $title ) ) continue;
+        $meta = isset( $item['meta'] ) && is_array( $item['meta'] ) ? $item['meta'] : [];
+        $status = isset( $item['status'] ) ? sanitize_text_field( $item['status'] ) : 'publish';
+        $existing = get_page_by_title( $title, OBJECT, 'pmw_topic' );
+        if ( $existing ) continue;
+        $post_id = wp_insert_post( [
+            'post_title'   => $title,
+            'post_type'    => 'pmw_topic',
+            'post_status'  => $status,
+            'post_content' => '',
+        ] );
+        if ( ! $post_id || is_wp_error( $post_id ) ) continue;
+        foreach ( $meta as $key => $val ) {
+            if ( strpos( $key, 'pmw_' ) !== 0 ) continue;
+            if ( is_bool( $val ) ) {
+                update_post_meta( $post_id, $key, $val ? '1' : '0' );
+            } elseif ( is_int( $val ) ) {
+                update_post_meta( $post_id, $key, $val );
+            } else {
+                update_post_meta( $post_id, $key, (string) $val );
+            }
+        }
+    }
+}
+
+function pmw_unlink_all_articles_from_topics() {
+    global $wpdb;
+    $wpdb->query( "DELETE m FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id WHERE m.meta_key = 'pmw_topic_id' AND p.post_type IN ('post','pmw_news_analysis')" );
+}
+
+add_filter( 'manage_pmw_topic_posts_columns', 'pmw_topic_columns' );
+add_action( 'manage_pmw_topic_posts_custom_column', 'pmw_topic_column_cb', 10, 2 );
+add_filter( 'manage_post_posts_columns', 'pmw_article_topic_column' );
+add_action( 'manage_post_posts_custom_column', 'pmw_article_topic_column_cb', 10, 2 );
+add_filter( 'manage_pmw_news_analysis_posts_columns', 'pmw_article_topic_column' );
+add_action( 'manage_pmw_news_analysis_posts_custom_column', 'pmw_article_topic_column_cb', 10, 2 );
+
+function pmw_topic_columns( $columns ) {
+    $new = [];
+    foreach ( $columns as $k => $v ) {
+        $new[ $k ] = $v;
+        if ( $k === 'title' ) {
+            $new['pmw_target_keyword'] = 'Target Keyword';
+            $new['pmw_agent_status'] = 'Status';
+        }
+    }
+    return $new;
+}
+
+function pmw_topic_column_cb( $column, $post_id ) {
+    if ( $column === 'pmw_target_keyword' ) {
+        echo esc_html( get_post_meta( $post_id, 'pmw_target_keyword', true ) ?: '—' );
+    }
+    if ( $column === 'pmw_agent_status' ) {
+        echo esc_html( get_post_meta( $post_id, 'pmw_agent_status', true ) ?: 'idle' );
+    }
+}
+
+function pmw_article_topic_column( $columns ) {
+    $new = [];
+    foreach ( $columns as $k => $v ) {
+        $new[ $k ] = $v;
+        if ( $k === 'title' ) $new['pmw_topic'] = 'Content Topic';
+    }
+    return $new;
+}
+
+function pmw_article_topic_column_cb( $column, $post_id ) {
+    if ( $column === 'pmw_topic' ) {
+        $tid = (int) get_post_meta( $post_id, 'pmw_topic_id', true );
+        if ( $tid ) {
+            $t = get_post( $tid );
+            echo $t ? '<a href="' . esc_url( get_edit_post_link( $tid ) ) . '">' . esc_html( $t->post_title ) . '</a>' : '—';
+        } else {
+            echo '—';
+        }
+    }
+}
+
+add_action( 'load-edit.php', 'pmw_topics_list_buttons' );
+function pmw_topics_list_buttons() {
+    global $pagenow, $typenow;
+    if ( $pagenow !== 'edit.php' || $typenow !== 'pmw_topic' ) return;
+    add_action( 'all_admin_notices', function() {
+        $url = add_query_arg( 'page', 'pmw-topics-seed-reset', admin_url( 'edit.php?post_type=pmw_topic' ) );
+        echo '<div class="notice notice-info" style="margin:15px 0;"><p><a href="' . esc_url( $url ) . '" class="button">Seed & Reset Topics</a> — Seed from JSON, reset to seed state, or unlink all articles from topics.</p></div>';
+    } );
 }
 
 function pmw_news_redirects() {
