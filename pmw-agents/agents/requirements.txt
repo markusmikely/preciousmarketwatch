@@ -1,7 +1,6 @@
-# LangChain stack — langgraph 0.2.50 excludes langchain-core 0.3.x; use 0.2.x
 langgraph==0.2.50
-langchain-core>=0.2.43,<0.3.0
-langchain-anthropic>=0.2.0,<0.3.0
+langchain-core==0.2.43
+langchain-anthropic==0.1.21  # Last version compatible with langchain-core 0.2.x
 anthropic>=0.40.0
 openai>=1.55.0
 asyncpg>=0.30.0
@@ -14,6 +13,5 @@ psycopg2-binary>=2.9.9
 langsmith>=0.1.140
 apscheduler>=3.10.4
 google-analytics-data>=0.18.0
-# google-search-console not on PyPI; use google-api-python-client when implementing GSC
 cairosvg>=2.7.1
 sqlalchemy>=2.0
