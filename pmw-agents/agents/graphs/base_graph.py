@@ -38,10 +38,11 @@ class BaseGraph(ABC):
     # Declare in subclass: _state_schema = MyStateType
     _state_schema: Type = None
 
-    def __init__(self, checkpointer: AsyncPostgresSaver):
+    def __init__(self, checkpointer: AsyncPostgresSaver, workflow_id: int | str | None):
         assert self._state_schema is not None, (
             f"{self.__class__.__name__} must declare _state_schema"
         )
+        self._workflow_id = workflow_id
         self._builder      = StateGraph(self._state_schema)
         self._checkpointer = checkpointer
         self._compiled: CompiledStateGraph | None = None
