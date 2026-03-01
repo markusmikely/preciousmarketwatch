@@ -43,26 +43,26 @@ class MainGraph(BaseGraph):
         self._planning:   PlanningGraph   | None = None
         self._generation: GenerationGraph | None = None
 
-    @classmethod
-    async def create_with_checkpointer(
-        cls, checkpointer: AsyncPostgresSaver
-    ) -> "MainGraph":
-        """
-        Build MainGraph and all phase subgraphs using an existing checkpointer.
-        Use this when the checkpointer is provided by a context manager
-        (e.g. AsyncPostgresSaver.from_conn_string).
-        """
-        instance = cls(checkpointer)
-        instance._research = await ResearchGraph.create_with_checkpointer(checkpointer)
-        instance._planning = await PlanningGraph.create_with_checkpointer(checkpointer)
-        instance._generation = await GenerationGraph.create_with_checkpointer(checkpointer)
+    # @classmethod
+    # async def create_with_checkpointer(
+    #     cls, checkpointer: AsyncPostgresSaver
+    # ) -> "MainGraph":
+    #     """
+    #     Build MainGraph and all phase subgraphs using an existing checkpointer.
+    #     Use this when the checkpointer is provided by a context manager
+    #     (e.g. AsyncPostgresSaver.from_conn_string).
+    #     """
+    #     instance = cls(checkpointer)
+    #     instance._research = await ResearchGraph.create_with_checkpointer(checkpointer)
+    #     instance._planning = await PlanningGraph.create_with_checkpointer(checkpointer)
+    #     instance._generation = await GenerationGraph.create_with_checkpointer(checkpointer)
 
-        instance._build_nodes()
-        instance._build_edges()
-        instance._compiled = instance._builder.compile(checkpointer=checkpointer)
+    #     instance._build_nodes()
+    #     instance._build_edges()
+    #     instance._compiled = instance._builder.compile(checkpointer=checkpointer)
 
-        log.info("MainGraph compiled and ready")
-        return instance
+    #     log.info("MainGraph compiled and ready")
+    #     return instance
 
     @classmethod
     async def create(cls) -> "MainGraph":
