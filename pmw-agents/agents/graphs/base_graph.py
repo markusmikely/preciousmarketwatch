@@ -167,6 +167,7 @@ class BaseGraph(ABC):
         Override if you need different scoping.
         """
         workflow_id = input_data.get("workflow_id", "unknown")
+        print(f"test workflow_id: {workflow_id}")
         phase_name  = self.__class__.__name__.lower().replace("graph", "")
         return f"{workflow_id}:{phase_name}"
 
