@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver

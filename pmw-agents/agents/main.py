@@ -23,7 +23,6 @@ log = logging.getLogger("pmw.main")
 # How long to wait between workflow ticks (seconds)
 WORKER_INTERVAL = int(os.getenv("WORKER_INTERVAL", "30"))
 
-
 # ── Migrations ────────────────────────────────────────────────────────
 
 def run_migrations() -> None:
