@@ -65,10 +65,14 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    section = config.get_section(config.config_ini_section) or {}
     url = database_url if database_url else config.get_main_option("sqlalchemy.url")
-    if url:
-        section["sqlalchemy.url"] = url
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is required for migrations. "
+            "Set it in Railway (Variables) or in alembic.ini (sqlalchemy.url) for local dev."
+        )
+    section = config.get_section(config.config_ini_section) or {}
+    section["sqlalchemy.url"] = url
     connectable = engine_from_config(
         section,
         prefix="sqlalchemy.",
