@@ -137,22 +137,38 @@ async def main() -> None:
     # 1. Migrations — synchronous, must complete before anything else
     run_migrations()
 
-    # 2. Build the graph inside the checkpointer's async context.
-    #    AsyncPostgresSaver.from_conn_string() returns a context manager;
-    #    the entire app lifecycle must run inside it.
+    # 2. Build the graph using a connection pool (avoids from_conn_string context
+    #    manager issues with some langgraph-checkpoint-postgres versions).
     log.info("Building workflow graph...")
     try:
+        from psycopg_pool import AsyncConnectionPool
+        from psycopg.rows import dict_row
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from graphs.main_graph import MainGraph
 
         db_url = _db_url()
-        async with AsyncPostgresSaver.from_conn_string(db_url) as checkpointer:
-            await checkpointer.setup()
-            graph = await MainGraph.create_with_checkpointer(checkpointer)
-            log.info("Workflow graph ready.")
+        connection_kwargs = {"autocommit": True, "row_factory": dict_row}
+        pool = AsyncConnectionPool(
+            conninfo=db_url,
+            max_size=20,
+            kwargs=connection_kwargs,
+            open=False,
+        )
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(pool)
+        setup_result = checkpointer.setup()
+        # In langgraph-checkpoint-postgres v3+, setup() returns an async context manager
+        if setup_result is not None and hasattr(setup_result, "__aenter__"):
+            async with setup_result:
+                pass  # Tables created on enter
+        elif asyncio.iscoroutine(setup_result):
+            await setup_result
 
-            # 3. Run the worker loop — never returns until shutdown signal
-            await worker_loop(graph)
+        graph = await MainGraph.create_with_checkpointer(checkpointer)
+        log.info("Workflow graph ready.")
+
+        # 3. Run the worker loop — never returns until shutdown signal
+        await worker_loop(graph)
     except Exception as e:
         log.error(f"Failed to build workflow graph: {e}")
         raise

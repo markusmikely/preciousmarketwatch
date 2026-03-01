@@ -82,7 +82,12 @@ class BaseGraph(ABC):
         )
         await pool.open()
         checkpointer = AsyncPostgresSaver(pool)
-        await checkpointer.setup()
+        setup_result = checkpointer.setup()
+        if setup_result is not None and hasattr(setup_result, "__aenter__"):
+            async with setup_result:
+                pass
+        elif asyncio.iscoroutine(setup_result):
+            await setup_result
         return await cls.create_with_checkpointer(checkpointer)
 
     # ── Public run interface ──────────────────────────────────────────
