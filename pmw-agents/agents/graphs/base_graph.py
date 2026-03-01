@@ -120,6 +120,7 @@ class BaseGraph(ABC):
         except Exception as exc:
             log.exception(f"{self.__class__.__name__} raised unexpectedly")
             result = PhaseResult(
+                workflow_id = input_data.get("workflow_id"),
                 status   = "failed",
                 output   = None,
                 cost_usd = 0.0,
