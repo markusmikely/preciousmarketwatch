@@ -45,7 +45,7 @@ class PlanningGraph(BaseGraph):
         log.info(f"[STUB] Planning | run_id={state.get('run_id')}")
         return {
             "run_id": state.get("run_id"),
-            "content_plan": None, 
+            "content_plan": {},  # Stub: empty dict so result.succeeded is True 
             "status": "complete",
             "errors": [], 
             "model_usage": []

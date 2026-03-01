@@ -125,7 +125,6 @@ class MainGraph(BaseGraph):
             run_id   = final_state.get("run_id"),
             status   = final_state.get("status", "failed"),
             output   = {
-                "run_id":            final_state.get("run_id"),
                 "research_bundle":   final_state.get("research_bundle"),
                 "content_plan":      final_state.get("content_plan"),
                 "generation_result": final_state.get("generation_result"),
@@ -135,7 +134,6 @@ class MainGraph(BaseGraph):
             cost_usd = final_state.get("total_cost_usd", 0.0),
             errors   = final_state.get("errors", []),
             meta     = {
-                "run_id":      final_state.get("run_id"),
                 "topic_title": final_state.get("topic_title"),
                 "topic_wp_id": final_state.get("topic_wp_id"),
             },

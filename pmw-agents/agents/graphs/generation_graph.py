@@ -46,7 +46,7 @@ class GenerationGraph(BaseGraph):
         log.info(f"[STUB] Generation | run_id={state.get('run_id')}")
         return {
             "run_id": state.get("run_id"),
-            "generation_result": None, 
+            "generation_result": {},  # Stub: empty dict so result.succeeded is True 
             "status": "complete",
             "errors": [], 
             "model_usage": []
