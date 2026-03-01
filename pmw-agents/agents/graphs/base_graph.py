@@ -51,27 +51,39 @@ class BaseGraph(ABC):
     # ── Async factory ─────────────────────────────────────────────────
 
     @classmethod
-    async def create(cls) -> "BaseGraph":
-        """
-        Build, compile, and return a ready-to-run graph.
-
-        Handles async checkpointer setup. Call once at startup and
-        reuse the returned instance for every invocation.
-        """
-        checkpointer = await AsyncPostgresSaver.from_conn_string(
-            os.environ["DATABASE_URL"]
-        )
-        await checkpointer.setup()
-
+    async def create_with_checkpointer(
+        cls, checkpointer: AsyncPostgresSaver
+    ) -> "BaseGraph":
+        """Build and compile graph using an existing checkpointer."""
         instance = cls(checkpointer)
         instance._build_nodes()
         instance._build_edges()
-        instance._compiled = instance._builder.compile(
-            checkpointer=checkpointer
-        )
-
+        instance._compiled = instance._builder.compile(checkpointer=checkpointer)
         log.info(f"{cls.__name__} compiled and ready")
         return instance
+
+    @classmethod
+    async def create(cls) -> "BaseGraph":
+        """
+        Build, compile, and return a ready-to-run graph using a new connection pool.
+        For production, prefer create_with_checkpointer when the caller provides
+        a checkpointer (e.g. from AsyncPostgresSaver.from_conn_string context).
+        """
+        from psycopg_pool import AsyncConnectionPool
+        from psycopg.rows import dict_row
+
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+        connection_kwargs = {"autocommit": True, "row_factory": dict_row}
+        pool = AsyncConnectionPool(
+            conninfo=db_url, max_size=20, kwargs=connection_kwargs, open=False
+        )
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        return await cls.create_with_checkpointer(checkpointer)
 
     # ── Public run interface ──────────────────────────────────────────
 

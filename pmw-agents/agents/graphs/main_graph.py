@@ -43,48 +43,45 @@ class MainGraph(BaseGraph):
         self._generation: GenerationGraph | None = None
 
     @classmethod
-    async def create(cls) -> "MainGraph":
+    async def create_with_checkpointer(
+        cls, checkpointer: AsyncPostgresSaver
+    ) -> "MainGraph":
         """
-        Build MainGraph and all phase subgraphs.
-        Subgraphs are built once here and reused for every run.
+        Build MainGraph and all phase subgraphs using an existing checkpointer.
+        Use this when the checkpointer is provided by a context manager
+        (e.g. AsyncPostgresSaver.from_conn_string).
         """
-        # Create the checkpointer using connection pool (same as in BaseGraph)
-        import os
-        from psycopg_pool import AsyncConnectionPool
-        from psycopg.rows import dict_row
-        
-        connection_kwargs = {
-            "autocommit": True,
-            "row_factory": dict_row
-        }
-        
-        pool = AsyncConnectionPool(
-            conninfo=os.environ["DATABASE_URL"],
-            max_size=20,
-            kwargs=connection_kwargs,
-            open=False
-        )
-        
-        await pool.open()
-        checkpointer = AsyncPostgresSaver(pool)
-        await checkpointer.setup()
-
         instance = cls(checkpointer)
-        
-        # Create phase subgraphs - they will create their own checkpointer instances
-        # This is okay because they'll use separate connection pools
-        instance._research   = await ResearchGraph.create()
-        instance._planning   = await PlanningGraph.create()
-        instance._generation = await GenerationGraph.create()
+        instance._research = await ResearchGraph.create_with_checkpointer(checkpointer)
+        instance._planning = await PlanningGraph.create_with_checkpointer(checkpointer)
+        instance._generation = await GenerationGraph.create_with_checkpointer(checkpointer)
 
         instance._build_nodes()
         instance._build_edges()
-        instance._compiled = instance._builder.compile(
-            checkpointer=checkpointer
-        )
+        instance._compiled = instance._builder.compile(checkpointer=checkpointer)
 
         log.info("MainGraph compiled and ready")
         return instance
+
+    @classmethod
+    async def create(cls) -> "MainGraph":
+        """Create MainGraph with a new checkpointer (for tests)."""
+        import os
+        from psycopg_pool import AsyncConnectionPool
+        from psycopg.rows import dict_row
+
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+        connection_kwargs = {"autocommit": True, "row_factory": dict_row}
+        pool = AsyncConnectionPool(
+            conninfo=db_url, max_size=20, kwargs=connection_kwargs, open=False
+        )
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        return await cls.create_with_checkpointer(checkpointer)
 
     # ── Graph construction ────────────────────────────────────────────
 

@@ -123,26 +123,39 @@ async def worker_loop(graph) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────
 
+def _db_url() -> str:
+    """Return DATABASE_URL with postgres:// -> postgresql:// for psycopg."""
+    url = os.environ.get("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
 async def main() -> None:
     log.info("PMW Agents starting...")
 
     # 1. Migrations — synchronous, must complete before anything else
     run_migrations()
 
-    # 2. Build the graph once — this establishes the DB connection pool,
-    #    sets up the checkpointer, and compiles all subgraphs.
-    #    Reused for every tick in the worker loop.
+    # 2. Build the graph inside the checkpointer's async context.
+    #    AsyncPostgresSaver.from_conn_string() returns a context manager;
+    #    the entire app lifecycle must run inside it.
     log.info("Building workflow graph...")
     try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from graphs.main_graph import MainGraph
-        graph = await MainGraph.create()
-        log.info("Workflow graph ready.")
+
+        db_url = _db_url()
+        async with AsyncPostgresSaver.from_conn_string(db_url) as checkpointer:
+            await checkpointer.setup()
+            graph = await MainGraph.create_with_checkpointer(checkpointer)
+            log.info("Workflow graph ready.")
+
+            # 3. Run the worker loop — never returns until shutdown signal
+            await worker_loop(graph)
     except Exception as e:
         log.error(f"Failed to build workflow graph: {e}")
         raise
-
-    # 3. Run the worker loop — never returns until shutdown signal
-    await worker_loop(graph)
 
     log.info("PMW Agents shut down.")
 
