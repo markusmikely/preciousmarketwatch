@@ -37,8 +37,8 @@ class MainGraph(BaseGraph):
 
     _state_schema = PipelineState
 
-    def __init__(self, checkpointer: AsyncPostgresSaver):
-        super().__init__(checkpointer)
+    def __init__(self, checkpointer: AsyncPostgresSaver, workflow_id: int | str | None):
+        super().__init__(checkpointer, workflow_id)
         self._research:   ResearchGraph   | None = None
         self._planning:   PlanningGraph   | None = None
         self._generation: GenerationGraph | None = None
