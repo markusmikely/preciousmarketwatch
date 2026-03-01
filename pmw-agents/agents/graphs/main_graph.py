@@ -47,13 +47,31 @@ class MainGraph(BaseGraph):
         Build MainGraph and all phase subgraphs.
         Subgraphs are built once here and reused for every run.
         """
+        # Create the checkpointer using connection pool (same as in BaseGraph)
         import os
-        checkpointer = await AsyncPostgresSaver.from_conn_string(
-            os.environ["DATABASE_URL"]
+        from psycopg_pool import AsyncConnectionPool
+        from psycopg.rows import dict_row
+        
+        connection_kwargs = {
+            "autocommit": True,
+            "row_factory": dict_row
+        }
+        
+        pool = AsyncConnectionPool(
+            conninfo=os.environ["DATABASE_URL"],
+            max_size=20,
+            kwargs=connection_kwargs,
+            open=False
         )
+        
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(pool)
         await checkpointer.setup()
 
         instance = cls(checkpointer)
+        
+        # Create phase subgraphs - they will create their own checkpointer instances
+        # This is okay because they'll use separate connection pools
         instance._research   = await ResearchGraph.create()
         instance._planning   = await PlanningGraph.create()
         instance._generation = await GenerationGraph.create()
