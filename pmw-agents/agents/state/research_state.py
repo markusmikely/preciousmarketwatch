@@ -1,9 +1,9 @@
 # agents/state/research_state.py
 from typing import TypedDict, Optional, Annotated
 from langgraph.graph.message import add_messages
-from langchain_core.messages import MessageState
+from langgraph.graph import MessagesState
 
-class ResearchState(MessageState):
+class ResearchState(MessagesState):
     """
     State for the research subgraph.
     Every field is Optional because LangGraph initialises state incrementally —

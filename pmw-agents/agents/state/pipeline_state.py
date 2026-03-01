@@ -1,8 +1,8 @@
 # agents/state/types.py
 from typing import TypedDict, Optional, List
-from langchain_core.messages import MessageState
+from langgraph.graph import MessagesState
 
-class PipelineState(MessageState):
+class PipelineState(MessagesState):
     # Identity
     run_id:           int
     topic_id:         int
