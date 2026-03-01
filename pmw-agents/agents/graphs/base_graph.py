@@ -51,16 +51,16 @@ class BaseGraph(ABC):
     # ── Async factory ─────────────────────────────────────────────────
 
     # @classmethod
-    # async def create_with_checkpointer(
-    #     cls, checkpointer: AsyncPostgresSaver
-    # ) -> "BaseGraph":
-    #     """Build and compile graph using an existing checkpointer."""
-    #     instance = cls(checkpointer)
-    #     instance._build_nodes()
-    #     instance._build_edges()
-    #     instance._compiled = instance._builder.compile(checkpointer=checkpointer)
-    #     log.info(f"{cls.__name__} compiled and ready")
-    #     return instance
+    async def create_with_checkpointer(
+        cls, checkpointer: AsyncPostgresSaver
+    ) -> "BaseGraph":
+        """Build and compile graph using an existing checkpointer."""
+        instance = cls(checkpointer)
+        instance._build_nodes()
+        instance._build_edges()
+        instance._compiled = instance._builder.compile(checkpointer=checkpointer)
+        log.info(f"{cls.__name__} compiled and ready")
+        return instance
 
     @classmethod
     async def create(cls) -> "BaseGraph":
