@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import logging
 from abc import ABC, abstractmethod
@@ -38,11 +39,10 @@ class BaseGraph(ABC):
     # Declare in subclass: _state_schema = MyStateType
     _state_schema: Type = None
 
-    def __init__(self, checkpointer: AsyncPostgresSaver, workflow_id: int | str | None):
+    def __init__(self, checkpointer: AsyncPostgresSaver):
         assert self._state_schema is not None, (
             f"{self.__class__.__name__} must declare _state_schema"
         )
-        self._workflow_id = workflow_id
         self._builder      = StateGraph(self._state_schema)
         self._checkpointer = checkpointer
         self._compiled: CompiledStateGraph | None = None
@@ -121,7 +121,7 @@ class BaseGraph(ABC):
         except Exception as exc:
             log.exception(f"{self.__class__.__name__} raised unexpectedly")
             result = PhaseResult(
-                workflow_id = input_data.get("workflow_id"),
+                run_id   = input_data.get("run_id", 0),
                 status   = "failed",
                 output   = None,
                 cost_usd = 0.0,
@@ -165,13 +165,12 @@ class BaseGraph(ABC):
 
     def _make_thread_id(self, input_data: dict) -> str:
         """
-        Stable thread_id for checkpointing, scoped to workflow + phase.
-        Override if you need different scoping.
+        Stable thread_id for checkpointing. Uses run_id (workflow_runs.id)
+        plus phase name so each subgraph has its own checkpoint namespace.
         """
-        workflow_id = input_data.get("workflow_id", "unknown")
-        print(f"test workflow_id: {workflow_id}")
-        phase_name  = self.__class__.__name__.lower().replace("graph", "")
-        return f"{workflow_id}:{phase_name}"
+        run_id     = input_data.get("run_id", 0)
+        phase_name = self.__class__.__name__.lower().replace("graph", "")
+        return f"{run_id}:{phase_name}"
 
     # ── Builder proxies — cleaner than self._builder.add_node() ───────
 

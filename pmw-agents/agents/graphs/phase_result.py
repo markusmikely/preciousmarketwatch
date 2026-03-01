@@ -20,7 +20,7 @@ class PhaseResult:
                (topic title, topic ID) without coupling to internal
                state field names.
     """
-    workflow_id: int | str | None
+    run_id:   int         # workflow_runs.id
     status:   str
     output:   dict | None
     cost_usd: float = 0.0

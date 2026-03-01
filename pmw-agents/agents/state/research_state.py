@@ -15,9 +15,8 @@ class ResearchState(MessagesState):
     """
 
     # ── Run identity ─────────────────────────────────────────────────
-    run_id:        int
-    workflow_id:   int | str | None
-    triggered_by:  str    # "scheduler" | "manual" | "api"
+    run_id:       int     # workflow_runs.id — single identifier for this pipeline run
+    triggered_by: str     # "scheduler" | "manual" | "api"
 
     # ── Stage 1 ──────────────────────────────────────────────────────
     candidate_topics:     Optional[list[dict]]

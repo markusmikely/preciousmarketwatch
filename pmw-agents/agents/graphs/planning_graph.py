@@ -25,7 +25,7 @@ class PlanningGraph(BaseGraph):
 
     def _make_input(self, input_data: dict) -> dict:
         return {
-            "workflow_id":     input_data["workflow_id"],
+            "run_id":          input_data["run_id"],
             "research_bundle": input_data.get("research_bundle"),
             "status":          "running",
             "errors":          [],
@@ -34,7 +34,7 @@ class PlanningGraph(BaseGraph):
 
     def _make_result(self, final_state: dict) -> PhaseResult:
         return PhaseResult(
-            workflow_id = final_state.get("workflow_id"),
+            run_id   = final_state.get("run_id", 0),
             status   = final_state.get("status", "failed"),
             output   = final_state.get("content_plan"),
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),
@@ -42,8 +42,9 @@ class PlanningGraph(BaseGraph):
         )
 
     async def _planning_stub(self, state: dict) -> dict:
-        log.info(f"[STUB] Planning | workflow={state.get('workflow_id')}")
+        log.info(f"[STUB] Planning | run_id={state.get('run_id')}")
         return {
+            "run_id": state.get("run_id"),
             "content_plan": None, 
             "status": "complete",
             "errors": [], 

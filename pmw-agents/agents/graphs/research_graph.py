@@ -13,9 +13,9 @@ class ResearchGraph(BaseGraph):
     Phase 1 — Research subgraph.
 
     Internal state: ResearchState (20+ fields, never seen by MainGraph)
-    Public contract: run({"workflow_id", "triggered_by"}) -> PhaseResult
+    Public contract: run({"run_id", "triggered_by"}) -> PhaseResult
 
-    _make_input  : two parent fields in -> full ResearchState out
+    _make_input  : run_id + triggered_by in -> full ResearchState out
     _make_result : full ResearchState in -> PhaseResult out (only boundary)
     """
 
@@ -39,13 +39,12 @@ class ResearchGraph(BaseGraph):
 
     def _make_input(self, input_data: dict) -> dict:
         """
-        The parent passes only workflow_id and triggered_by.
-        Everything else is initialised here as ResearchState defaults.
+        The parent passes run_id and triggered_by.
+        run_id = workflow_runs.id, same value throughout the pipeline.
         """
         return {
-            "workflow_id":         input_data["workflow_id"],
+            "run_id":              input_data["run_id"],
             "triggered_by":        input_data.get("triggered_by", "scheduler"),
-            "run_id":              None,
             "candidate_topics":    None,
             "selected_topic":      None,
             "topic_lock_acquired": None,
@@ -72,7 +71,7 @@ class ResearchGraph(BaseGraph):
         """
         selected_topic = final_state.get("selected_topic") or {}
         return PhaseResult(
-            workflow_id = final_state.get("workflow_id"),
+            run_id   = final_state.get("run_id", 0),
             status   = final_state.get("status", "failed"),
             output   = final_state.get("research_bundle"),
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),
@@ -84,8 +83,9 @@ class ResearchGraph(BaseGraph):
         )
 
     async def _research_stub(self, state: dict) -> dict:
-        log.info(f"[STUB] Research | workflow={state.get('workflow_id')}")
+        log.info(f"[STUB] Research | run_id={state.get('run_id')}")
         return {
+            "run_id": state.get("run_id"),
             "research_bundle": {
                 "topic":            {"id": 1, "title": "Stub Topic"},
                 "prompt_variables": {},

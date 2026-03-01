@@ -37,8 +37,8 @@ class MainGraph(BaseGraph):
 
     _state_schema = PipelineState
 
-    def __init__(self, checkpointer: AsyncPostgresSaver, workflow_id: int | str | None):
-        super().__init__(checkpointer, workflow_id)
+    def __init__(self, checkpointer: AsyncPostgresSaver):
+        super().__init__(checkpointer)
         self._research:   ResearchGraph   | None = None
         self._planning:   PlanningGraph   | None = None
         self._generation: GenerationGraph | None = None
@@ -106,7 +106,7 @@ class MainGraph(BaseGraph):
 
     def _make_input(self, input_data: dict) -> dict:
         return {
-            "workflow_id":       input_data["workflow_id"],
+            "run_id":            input_data["run_id"],
             "triggered_by":      input_data.get("triggered_by", "scheduler"),
             "topic_wp_id":       None,
             "topic_title":       None,
@@ -124,7 +124,7 @@ class MainGraph(BaseGraph):
         return PhaseResult(
             status   = final_state.get("status", "failed"),
             output   = {
-                "workflow_id":       final_state.get("workflow_id"),
+                "run_id":            final_state.get("run_id"),
                 "research_bundle":   final_state.get("research_bundle"),
                 "content_plan":      final_state.get("content_plan"),
                 "generation_result": final_state.get("generation_result"),
@@ -134,6 +134,7 @@ class MainGraph(BaseGraph):
             cost_usd = final_state.get("total_cost_usd", 0.0),
             errors   = final_state.get("errors", []),
             meta     = {
+                "run_id":      final_state.get("run_id"),
                 "topic_title": final_state.get("topic_title"),
                 "topic_wp_id": final_state.get("topic_wp_id"),
             },
@@ -152,9 +153,8 @@ class MainGraph(BaseGraph):
     #   - How the subgraph handles retries or HITL internally
 
     async def _research_node(self, state: PipelineState) -> dict:
-        print(f"Research node called with state: {state}")
         result: PhaseResult = await self._research.run({
-            "workflow_id":  state["workflow_id"],
+            "run_id":       state["run_id"],
             "triggered_by": state.get("triggered_by", "scheduler"),
         })
 
@@ -162,7 +162,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "research", result)
 
         return {
-            "workflow_id":  state["workflow_id"],
+            "run_id": state["run_id"],
             "research_bundle": result.output,
             "topic_wp_id":     result.meta.get("topic_wp_id"),
             "topic_title":     result.meta.get("topic_title"),
@@ -173,7 +173,7 @@ class MainGraph(BaseGraph):
 
     async def _planning_node(self, state: PipelineState) -> dict:
         result: PhaseResult = await self._planning.run({
-            "workflow_id":     state["workflow_id"],
+            "run_id":         state["run_id"],
             "research_bundle": state.get("research_bundle"),
         })
 
@@ -181,7 +181,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "planning", result)
 
         return {
-            "workflow_id":  state["workflow_id"],
+            "run_id": state["run_id"],
             "content_plan":   result.output,
             "phase_statuses": {**state.get("phase_statuses", {}), "planning": "complete"},
             "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
@@ -190,7 +190,7 @@ class MainGraph(BaseGraph):
 
     async def _generation_node(self, state: PipelineState) -> dict:
         result: PhaseResult = await self._generation.run({
-            "workflow_id":     state["workflow_id"],
+            "run_id":          state["run_id"],
             "research_bundle": state.get("research_bundle"),
             "content_plan":    state.get("content_plan"),
         })
@@ -199,7 +199,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "generation", result)
 
         return {
-            "workflow_id":  state["workflow_id"],
+            "run_id": state["run_id"],
             "generation_result": result.output,
             "wp_post_id":        (result.output or {}).get("wp_post_id"),
             "phase_statuses":    {**state.get("phase_statuses", {}), "generation": "complete"},
@@ -214,7 +214,7 @@ class MainGraph(BaseGraph):
     def _phase_failure(state: PipelineState, phase: str, result: PhaseResult) -> dict:
         log.error(f"Phase '{phase}' failed | status={result.status}")
         return {
-            "workflow_id":  state["workflow_id"],
+            "run_id": state["run_id"],
             "phase_statuses": {**state.get("phase_statuses", {}), phase: result.status},
             "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
             "errors":         state.get("errors", []) + result.errors,

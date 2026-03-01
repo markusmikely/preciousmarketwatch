@@ -3,10 +3,9 @@ from typing import TypedDict, Optional, List
 from langgraph.graph import MessagesState
 
 class PipelineState(MessagesState):
-    # Identity
+    # Identity — run_id = workflow_runs.id, single canonical identifier
     run_id:           int
-    workflow_id:   int | str | None
-    topic_id:         int
+    topic_id:         Optional[int]
     topic:            dict
 
     # Reader intent (set by Research, used by Planning + Content)

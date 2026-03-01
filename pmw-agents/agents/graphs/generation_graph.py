@@ -25,7 +25,7 @@ class GenerationGraph(BaseGraph):
 
     def _make_input(self, input_data: dict) -> dict:
         return {
-            "workflow_id":     input_data["workflow_id"],
+            "run_id":          input_data["run_id"],
             "research_bundle": input_data.get("research_bundle"),
             "content_plan":    input_data.get("content_plan"),
             "status":          "running",
@@ -35,7 +35,7 @@ class GenerationGraph(BaseGraph):
 
     def _make_result(self, final_state: dict) -> PhaseResult:
         return PhaseResult(
-            workflow_id = final_state.get("workflow_id"),
+            run_id   = final_state.get("run_id", 0),
             status   = final_state.get("status", "failed"),
             output   = final_state.get("generation_result"),
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),
@@ -43,8 +43,9 @@ class GenerationGraph(BaseGraph):
         )
 
     async def _generation_stub(self, state: dict) -> dict:
-        log.info(f"[STUB] Generation | workflow={state.get('workflow_id')}")
+        log.info(f"[STUB] Generation | run_id={state.get('run_id')}")
         return {
+            "run_id": state.get("run_id"),
             "generation_result": None, 
             "status": "complete",
             "errors": [], 

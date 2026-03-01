@@ -4,10 +4,10 @@ Orchestrator for running workflows.
 Can be used by main.py or run manually for testing.
 """
 import asyncio
-import uuid
 import logging
 import argparse
 from graphs.main_graph import MainGraph
+from db.run import create_workflow_run
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pmw.orchestrator")
@@ -23,12 +23,16 @@ async def run_workflow(triggered_by: str = "manual") -> None:
     log.info(f"Starting workflow (triggered_by={triggered_by})...")
     
     try:
+        # Create workflow_runs row — run_id = workflow_runs.id
+        run_id = create_workflow_run(triggered_by=triggered_by)
+        log.info(f"Created workflow run | run_id={run_id}")
+
         # Build the graph
         graph = await MainGraph.create()
         
         # Run the workflow
         result = await graph.run({
-            "workflow_id": str(uuid.uuid4()),
+            "run_id": run_id,
             "triggered_by": triggered_by,
         })
         
@@ -36,6 +40,7 @@ async def run_workflow(triggered_by: str = "manual") -> None:
         print("\n" + "="*50)
         print(f"Workflow {'✅ SUCCEEDED' if result.succeeded else '❌ FAILED'}")
         print("="*50)
+        print(f"Run ID:  {result.run_id}")
         print(f"Status:  {result.status}")
         print(f"Topic:   {result.meta.get('topic_title', 'none')}")
         print(f"Phases:  {(result.output or {}).get('phase_statuses', {})}")
