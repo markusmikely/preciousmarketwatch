@@ -16,6 +16,7 @@ class ResearchState(MessagesState):
 
     # ── Run identity ─────────────────────────────────────────────────
     run_id:        int
+    workflow_id:   int | str | None
     triggered_by:  str    # "scheduler" | "manual" | "api"
 
     # ── Stage 1 ──────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ from langgraph.graph import MessagesState
 class PipelineState(MessagesState):
     # Identity
     run_id:           int
+    workflow_id:   int | str | None
     topic_id:         int
     topic:            dict
 
