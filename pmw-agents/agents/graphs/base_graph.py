@@ -50,7 +50,7 @@ class BaseGraph(ABC):
 
     # ── Async factory ─────────────────────────────────────────────────
 
-    # @classmethod
+    @classmethod
     async def create_with_checkpointer(
         cls, checkpointer: AsyncPostgresSaver
     ) -> "BaseGraph":
