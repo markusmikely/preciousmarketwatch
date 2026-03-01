@@ -124,6 +124,7 @@ class MainGraph(BaseGraph):
         return PhaseResult(
             status   = final_state.get("status", "failed"),
             output   = {
+                "workflow_id":       final_state.get("workflow_id"),
                 "research_bundle":   final_state.get("research_bundle"),
                 "content_plan":      final_state.get("content_plan"),
                 "generation_result": final_state.get("generation_result"),
@@ -161,6 +162,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "research", result)
 
         return {
+            "workflow_id":  state["workflow_id"],
             "research_bundle": result.output,
             "topic_wp_id":     result.meta.get("topic_wp_id"),
             "topic_title":     result.meta.get("topic_title"),
