@@ -151,6 +151,7 @@ class MainGraph(BaseGraph):
     #   - How the subgraph handles retries or HITL internally
 
     async def _research_node(self, state: PipelineState) -> dict:
+        print(f"Research node called with state: {state}")
         result: PhaseResult = await self._research.run({
             "workflow_id":  state["workflow_id"],
             "triggered_by": state.get("triggered_by", "scheduler"),
