@@ -43,7 +43,7 @@ class MainGraph(BaseGraph):
         self._planning:   PlanningGraph   | None = None
         self._generation: GenerationGraph | None = None
 
-    # @classmethod
+    @classmethod
     async def create_with_checkpointer(
         cls, checkpointer: AsyncPostgresSaver
     ) -> "MainGraph":
