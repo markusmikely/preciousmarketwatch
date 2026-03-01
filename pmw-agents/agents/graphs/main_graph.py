@@ -181,6 +181,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "planning", result)
 
         return {
+            "workflow_id":  state["workflow_id"],
             "content_plan":   result.output,
             "phase_statuses": {**state.get("phase_statuses", {}), "planning": "complete"},
             "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
@@ -198,6 +199,7 @@ class MainGraph(BaseGraph):
             return self._phase_failure(state, "generation", result)
 
         return {
+            "workflow_id":  state["workflow_id"],
             "generation_result": result.output,
             "wp_post_id":        (result.output or {}).get("wp_post_id"),
             "phase_statuses":    {**state.get("phase_statuses", {}), "generation": "complete"},
@@ -212,6 +214,7 @@ class MainGraph(BaseGraph):
     def _phase_failure(state: PipelineState, phase: str, result: PhaseResult) -> dict:
         log.error(f"Phase '{phase}' failed | status={result.status}")
         return {
+            "workflow_id":  state["workflow_id"],
             "phase_statuses": {**state.get("phase_statuses", {}), phase: result.status},
             "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
             "errors":         state.get("errors", []) + result.errors,

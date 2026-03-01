@@ -72,6 +72,7 @@ class ResearchGraph(BaseGraph):
         """
         selected_topic = final_state.get("selected_topic") or {}
         return PhaseResult(
+            workflow_id = final_state.get("workflow_id"),
             status   = final_state.get("status", "failed"),
             output   = final_state.get("research_bundle"),
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),

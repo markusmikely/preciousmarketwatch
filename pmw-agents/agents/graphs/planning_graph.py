@@ -34,6 +34,7 @@ class PlanningGraph(BaseGraph):
 
     def _make_result(self, final_state: dict) -> PhaseResult:
         return PhaseResult(
+            workflow_id = final_state.get("workflow_id"),
             status   = final_state.get("status", "failed"),
             output   = final_state.get("content_plan"),
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),
