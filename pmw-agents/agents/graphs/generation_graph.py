@@ -8,6 +8,14 @@ log = logging.getLogger(__name__)
 class GenerationGraph(BaseGraph):
     _state_schema = dict  # replace with GenerationState when designed
 
+    @classmethod
+    async def create(cls) -> "GenerationGraph":
+        """Create GenerationGraph instance with proper connection pool."""
+        log.info("Creating GenerationGraph...")
+        instance = await super().create()
+        log.info("GenerationGraph created successfully")
+        return instance
+
     def _build_nodes(self):
         self.add_node("generation_stub", self._generation_stub)
 
@@ -35,5 +43,9 @@ class GenerationGraph(BaseGraph):
 
     async def _generation_stub(self, state: dict) -> dict:
         log.info(f"[STUB] Generation | workflow={state.get('workflow_id')}")
-        return {"generation_result": None, "status": "complete",
-                "errors": [], "model_usage": []}
+        return {
+            "generation_result": None, 
+            "status": "complete",
+            "errors": [], 
+            "model_usage": []
+        }

@@ -21,6 +21,14 @@ class ResearchGraph(BaseGraph):
 
     _state_schema = ResearchState
 
+    @classmethod
+    async def create(cls) -> "ResearchGraph":
+        """Create ResearchGraph instance with proper connection pool."""
+        log.info("Creating ResearchGraph...")
+        instance = await super().create()
+        log.info("ResearchGraph created successfully")
+        return instance
+
     def _build_nodes(self):
         # TODAY: stub. Replace with full 9-stage research implementation.
         self.add_node("research_stub", self._research_stub)

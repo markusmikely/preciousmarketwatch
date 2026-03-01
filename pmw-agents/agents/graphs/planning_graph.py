@@ -8,6 +8,14 @@ log = logging.getLogger(__name__)
 class PlanningGraph(BaseGraph):
     _state_schema = dict  # replace with PlanningState when designed
 
+    @classmethod
+    async def create(cls) -> "PlanningGraph":
+        """Create PlanningGraph instance with proper connection pool."""
+        log.info("Creating PlanningGraph...")
+        instance = await super().create()
+        log.info("PlanningGraph created successfully")
+        return instance
+
     def _build_nodes(self):
         self.add_node("planning_stub", self._planning_stub)
 
@@ -34,5 +42,9 @@ class PlanningGraph(BaseGraph):
 
     async def _planning_stub(self, state: dict) -> dict:
         log.info(f"[STUB] Planning | workflow={state.get('workflow_id')}")
-        return {"content_plan": None, "status": "complete",
-                "errors": [], "model_usage": []}
+        return {
+            "content_plan": None, 
+            "status": "complete",
+            "errors": [], 
+            "model_usage": []
+        }
