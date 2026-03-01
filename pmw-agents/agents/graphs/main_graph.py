@@ -122,6 +122,7 @@ class MainGraph(BaseGraph):
 
     def _make_result(self, final_state: dict) -> PhaseResult:
         return PhaseResult(
+            run_id   = final_state.get("run_id"),
             status   = final_state.get("status", "failed"),
             output   = {
                 "run_id":            final_state.get("run_id"),

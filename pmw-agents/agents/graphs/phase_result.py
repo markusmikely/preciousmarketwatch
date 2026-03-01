@@ -27,6 +27,14 @@ class PhaseResult:
     errors:   list = field(default_factory=list)
     meta:     dict = field(default_factory=dict)
 
+    # def __iniit__(self, run_id: int, status: str, output: dict | None, cost_usd: float = 0.0, errors: list = field(default_factory=list), meta: dict = field(default_factory=dict)):
+    #     self.run_id = run_id
+    #     self.status = status
+    #     self.output = output
+    #     self.cost_usd = cost_usd
+    #     self.errors = errors
+    #     self.meta = meta
+
     @property
     def succeeded(self) -> bool:
         return self.status == "complete" and self.output is not None
