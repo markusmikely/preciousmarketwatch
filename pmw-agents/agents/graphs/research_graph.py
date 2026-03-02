@@ -6,30 +6,30 @@ from graphs.phase_result import PhaseResult
 from state.research_state import ResearchState  # internal — never seen by parent
 
 # Stage 1 nodes
-from nodes.research.stage1.affiliate_loader import affiliate_loader
-from nodes.research.stage1.affiliate_scorer import affiliate_scorer
-from nodes.research.stage1.topic_loader import topic_loader
-from nodes.research.stage1.topic_selector import topic_selector
-from nodes.research.stage1.brief_locker import brief_locker
+from nodes.research.stage1.affiliate_loader import AffiliateLoader
+from nodes.research.stage1.affiliate_scorer import AffiliateScorer
+from nodes.research.stage1.topic_loader import TopicLoader
+from nodes.research.stage1.topic_selector import TopicSelector
+from nodes.research.stage1.brief_locker import BriefLocker
 # Stage 2 nodes 
-from nodes.research.stage2.keyword_research import keyword_research
+from nodes.research.stage2.keyword_research import KeywordResearch
 # Stage 3 nodes
-from nodes.research.stage3.market_context import market_context
+from nodes.research.stage3.market_context import MarketContext
 # Stage 4 nodes
-from nodes.research.stage4.top_factors import top_factors
+from nodes.research.stage4.top_factors import TopFactors
 # Stage 5 nodes
-from nodes.research.stage5.competitor_analysis import competitor_analysis
+from nodes.research.stage5.competitor_analysis import CompetitorAnalysis
 # Stage 6 nodes
-from nodes.research.stage6.data_fetcher import data_fetcher
-from nodes.research.stage6.psychology_synthesis import psychology_synthesis
+from nodes.research.stage6.data_fetcher import DataFetcher
+from nodes.research.stage6.psychology_synthesis import PsychologySynthesis
 # Stage 7 nodes
-from nodes.research.stage7.tool_loader import tool_loader
-from nodes.research.stage7.tool_mapping import tool_mapping
+from nodes.research.stage7.tool_loader import ToolLoader
+from nodes.research.stage7.tool_mapping import ToolMapping
 # Stage 8 nodes
-from nodes.research.stage8.arc_coherence import arc_coherence
-from nodes.research.stage8.bundle_assembler import bundle_assembler
+from nodes.research.stage8.arc_coherence import ArcCoherence
+from nodes.research.stage8.bundle_assembler import BundleAssembler
 # Stage 9 nodes
-from nodes.research.stage9.intelligence_aggregation import intelligence_aggregation 
+from nodes.research.stage9.intelligence_aggregation import IntelligenceAggregation 
 
 log = logging.getLogger(__name__)
 
@@ -56,17 +56,32 @@ class ResearchGraph(BaseGraph):
         return instance
 
     def _build_nodes(self):
+        topic_loader = TopicLoader()
+        topic_selector = TopicSelector()
+        affiliate_loader = AffiliateLoader()
+        affiliate_scorer = AffiliateScorer()
+        brief_locker = BriefLocker()
+        keyword_research = KeywordResearch()
+        market_context = MarketContext()
+        competitor_analysis = CompetitorAnalysis()
+        data_fetcher = DataFetcher()
+        top_factors = TopFactors()
+        psychology_synthesis = PsychologySynthesis()
+        tool_loader = ToolLoader()
+        tool_mapping = ToolMapping()
+        arc_coherence = ArcCoherence()
+        bundle_assembler = BundleAssembler()
         # Stage 1
-        self.add_node("stage1.topic_loader",       topic_loader)
-        self.add_node("stage1.topic_selector",     topic_selector)
-        self.add_node("stage1.affiliate_loader",   affiliate_loader)
-        self.add_node("stage1.affiliate_scorer",   affiliate_scorer)
-        self.add_node("stage1.brief_locker",       brief_locker)
+        self.add_node("stage1.topic_loader",       topic_loader.run)
+        self.add_node("stage1.topic_selector",     topic_selector.run)
+        self.add_node("stage1.affiliate_loader",   affiliate_loader.run)
+        self.add_node("stage1.affiliate_scorer",   affiliate_scorer.run)
+        self.add_node("stage1.brief_locker",       brief_locker.run)
 
         # Parallel wave 1
-        self.add_node("stage2.keyword_research",    keyword_research)
-        self.add_node("stage3.market_context",      market_context)
-        self.add_node("stage5.competitor_analysis", competitor_analysis)
+        self.add_node("stage2.keyword_research",    keyword_research.run)
+        self.add_node("stage3.market_context",      market_context.run)
+        self.add_node("stage5.competitor_analysis", competitor_analysis.run)
 
         # Barriers (named no-ops)
         self.add_node("barrier.stage4", self._noop)
@@ -75,13 +90,13 @@ class ResearchGraph(BaseGraph):
         self.add_node("barrier.stage8", self._noop)
 
         # Stage 4, 6, 7, 8
-        self.add_node("stage4.top_factors",          top_factors)
-        self.add_node("stage6.data_fetcher",         data_fetcher)
-        self.add_node("stage6.psychology_synthesis", psychology_synthesis)
-        self.add_node("stage7.tool_loader",          tool_loader)
-        self.add_node("stage7.tool_mapping",         tool_mapping)
-        self.add_node("stage8.arc_coherence",        arc_coherence)
-        self.add_node("stage8.bundle_assembler",     bundle_assembler)
+        self.add_node("stage4.top_factors",          top_factors.run)
+        self.add_node("stage6.data_fetcher",         data_fetcher.run)
+        self.add_node("stage6.psychology_synthesis", psychology_synthesis.run)
+        self.add_node("stage7.tool_loader",          tool_loader.run)
+        self.add_node("stage7.tool_mapping",         tool_mapping.run)
+        self.add_node("stage8.arc_coherence",        arc_coherence.run)
+        self.add_node("stage8.bundle_assembler",     bundle_assembler.run)
 
         # Control nodes
         self.add_node("hitl_gate",      self._hitl)
