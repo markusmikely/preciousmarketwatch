@@ -183,6 +183,12 @@ class BaseGraph(ABC):
     def add_conditional_edges(self, source: str, router, path_map: dict):
         self._builder.add_conditional_edges(source, router, path_map)
 
+    @abstractmethod
+    def route_after_brief_lock(state):
+        raise NotImplementedError
+        
+    def _noop(state):
+        return state
     # ── Cost helper — available to all subclasses ─────────────────────
 
     @staticmethod
