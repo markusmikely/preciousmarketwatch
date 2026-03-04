@@ -1,1 +1,0 @@
-# WP REST transport (auth, pagination)
