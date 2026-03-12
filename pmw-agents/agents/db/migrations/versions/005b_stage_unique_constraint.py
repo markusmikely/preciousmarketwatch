@@ -4,6 +4,7 @@ Revision ID: 005b
 Revises: 005
 """
 from alembic import op
+from typing import Sequence, Union
 
 revision = '005b_stage_unique_constraint'
 down_revision: Union[str, Sequence[str], None] = "005_observability"

@@ -7,12 +7,12 @@ Create Date: 2026-03-12
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from typing import Sequence, Union
 
-revision = '005'
-down_revision = '004'
-branch_labels = None
-depends_on = None
-
+revision = '005_observability'
+down_revision: Union[str, Sequence[str], None] = "004_pipeline_runs"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
 
