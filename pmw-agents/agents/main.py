@@ -60,7 +60,7 @@ async def startup():
         event_type="system.worker_started",
         source="system",
         level="INFO",
-        payload={"worker": socket.gethostname()},
+        payload={"worker": "socket.gethostname()"},
     )
 
     print("Worker startup complete.")
