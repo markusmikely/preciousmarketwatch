@@ -10,8 +10,9 @@ import os
 import subprocess
 import sys
 import logging
-from agents.services.task_queue_service import TaskQueueService
 
+from services.task_queue_service import TaskQueueService
+# from agents.services.task_queue_service import TaskQueueService
 
 logging.basicConfig(
     level=logging.INFO,
