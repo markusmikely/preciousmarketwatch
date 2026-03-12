@@ -1,24 +1,93 @@
-anthropic>=0.40.0
+# ============================================================
+# PMW Agents — requirements.txt
+# Python 3.11+
+# Last verified: March 2026
+# ============================================================
+
+# ── LangGraph / LangChain stack ─────────────────────────────
+# These must be kept in sync — langgraph pins langchain-core.
+# The checkpoint-postgres package needs psycopg[binary] (v3),
+# which is already listed below.
+langgraph==0.2.73
+langgraph-checkpoint==2.0.8
+langgraph-checkpoint-postgres==2.0.8
+langchain-core==0.3.52
+langchain-anthropic==0.3.10
+langchain-community==0.3.20
+langchain==0.3.20
+
+# ── LLM providers ───────────────────────────────────────────
+anthropic>=0.49.0
 openai>=1.55.0
-asyncpg>=0.30.0
-redis[asyncio]>=5.2.0
-httpx>=0.27.0
-python-dotenv>=1.0.0
-pydantic>=2.9.0
-alembic>=1.14.0
-# Keep psycopg2-binary for existing dependencies
-psycopg2-binary>=2.9.9
-# Add psycopg[binary] for langgraph-checkpoint-postgres
-psycopg[binary]>=3.1.0
+
+# ── Observability / tracing ──────────────────────────────────
 langsmith>=0.1.140
-apscheduler>=3.10.4
-google-analytics-data>=0.18.0
-cairosvg>=2.7.1
-# SQLAlchemy with asyncio extras — required for create_async_engine + aiomysql
-sqlalchemy[asyncio]>=2.0
-# WordPress MySQL — async driver + auth plugin support
+
+# ── Database — Postgres ──────────────────────────────────────
+asyncpg>=0.30.0
+# psycopg2-binary: used by Alembic (sync) and any sync DB calls
+psycopg2-binary>=2.9.9
+# psycopg v3 (binary): required by langgraph-checkpoint-postgres
+psycopg[binary]>=3.2.0
+
+# ── Database — MySQL (WordPress) ────────────────────────────
 aiomysql>=0.2.0
 cryptography>=43.0.0
-pytest==9.0.2
-pytest-asyncio==1.3.0
-pytest-mock==3.15.1
+
+# ── ORM / migrations ─────────────────────────────────────────
+sqlalchemy[asyncio]>=2.0.36
+alembic>=1.14.0
+
+# ── Redis ────────────────────────────────────────────────────
+redis[asyncio]>=5.2.0
+
+# ── HTTP client ──────────────────────────────────────────────
+httpx>=0.27.0
+
+# ── HTML parsing (Stage 6 — affiliate FAQ + MSE scraping) ───
+beautifulsoup4>=4.12.3
+lxml>=5.3.0
+
+# ── Retry logic ──────────────────────────────────────────────
+# Used in llm_service.py and wordpress_client.py
+tenacity>=8.5.0
+
+# ── Config / environment ─────────────────────────────────────
+python-dotenv>=1.0.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+
+# ── Scheduling ───────────────────────────────────────────────
+apscheduler>=3.10.4
+
+# ── Analytics integrations ──────────────────────────────────
+google-analytics-data>=0.18.0
+# Search Console API — used by performance_intel node
+google-search-console>=0.1.0
+# Auth for Google APIs
+google-auth>=2.36.0
+google-auth-httplib2>=0.2.0
+
+# ── Image generation / media ─────────────────────────────────
+# cairosvg: SVG → PNG conversion for infographics
+cairosvg>=2.7.1
+# Pillow: image manipulation (thumbnails, format conversion)
+Pillow>=11.0.0
+
+# ── HuggingFace (optional provider — loads lazily) ───────────
+# Required only if HUGGINGFACE provider is configured.
+# AsyncInferenceClient is used in base.py _init_llm_client()
+huggingface-hub>=0.27.0
+
+# ── SERP / search tools ──────────────────────────────────────
+# serpapi: used by serp_search.py tool
+google-search-results>=2.4.2
+
+# ── Testing ──────────────────────────────────────────────────
+# NOTE: pytest-asyncio 1.3.0 in the original file does not exist.
+# The real package lives at 0.x — latest stable is 0.24.x.
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-mock>=3.15.1
+# Coverage reporting
+pytest-cov>=6.0.0
