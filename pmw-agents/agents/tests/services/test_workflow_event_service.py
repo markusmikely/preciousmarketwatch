@@ -3,7 +3,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from agents.services.workflow_event_service import WorkflowEventService
+from services.workflow_event_service import WorkflowEventService
 
 
 @pytest.fixture

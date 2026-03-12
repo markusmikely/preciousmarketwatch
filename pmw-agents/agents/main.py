@@ -54,7 +54,7 @@ async def startup():
     await queue.recover_stale()
 
     # 3. Log startup event
-    from agents.services.workflow_event_service import get_event_service
+    from services.workflow_event_service import get_event_service
     await get_event_service().emit(
         run_id=None,
         event_type="system.worker_started",
