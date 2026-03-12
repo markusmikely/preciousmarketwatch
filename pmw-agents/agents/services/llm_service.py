@@ -1,6 +1,6 @@
 # agents/services/llm_service.py
 import time
-from agents.services.cost_tracking_service import CostTrackingService
+from services.cost_tracking_service import CostTrackingService
 from dataclasses import dataclass
 import os
 from typing import Optional, Dict, Any, Tuple 
@@ -11,14 +11,14 @@ from tenacity import (
 import logging
 from datetime import datetime
 
-from agents.exceptions import (
+from exceptions import (
     LLMError, LLMTimeoutError, LLMRateLimitError, LLMProviderError
 )
 
-from agents.providers import (
+from providers import (
     AnthropicProvider, HuggingFaceProvider, DeepSeekProvider
 )
-from agents.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable
-from agents.services.llm_service import LLMService as _LLMService
-from agents.services.workflow_event_service import get_event_service
+from services.llm_service import LLMService as _LLMService
+from services.workflow_event_service import get_event_service
         
 # ---------------------------------------------------------------------------
 # Structured logger — emits JSON lines for Railway log drain
@@ -235,7 +235,7 @@ class _DBPool:
             if os.environ.get("DATABASE_URL"):
                 try:
                     try:
-                        from agents.db.run_migrations import run_migrations
+                        from db.run_migrations import run_migrations
                     except ImportError:
                         from ..db.run_migrations import run_migrations
                     run_migrations()

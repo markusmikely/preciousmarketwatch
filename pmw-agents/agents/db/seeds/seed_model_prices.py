@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import asyncpg
 
-from agents.config.pricing import ModelPricing
+from config.pricing import ModelPricing
 
 
 async def seed():
