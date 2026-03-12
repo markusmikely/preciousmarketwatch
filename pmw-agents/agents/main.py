@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 import logging
+from agents.services.task_queue_service import TaskQueueService
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,14 +43,33 @@ def run_migrations() -> None:
         log.error(f"Migration failed: {e}")
         raise
 
+async def startup():
+    """Run on worker process start."""
+    # 1. Run any pending Alembic migrations
+    run_migrations()  # your existing function
 
+    # 2. Recover stale tasks from crashed workers
+    queue = TaskQueueService()
+    await queue.recover_stale()
+
+    # 3. Log startup event
+    from agents.services.workflow_event_service import get_event_service
+    await get_event_service().emit(
+        run_id=None,
+        event_type="system.worker_started",
+        source="system",
+        level="INFO",
+        payload={"worker": socket.gethostname()},
+    )
+
+    print("Worker startup complete.")
 # ── Entry point ───────────────────────────────────────────────────────
 
 async def main() -> None:
     log.info("PMW Agents starting...")
 
     # 1. Run migrations first
-    run_migrations()
+    startup()
 
     # 2. Import and run the workflow from orchestrator
     try:

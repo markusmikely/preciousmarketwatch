@@ -54,14 +54,14 @@ class CostTrackingService:
         # Store in database
         await infrastructure.postgres.execute(
             """
-            INSERT INTO model_usage_costs
-                (run_id, stage_name, attempt, provider, model,
-                 input_tokens, output_tokens, cost_usd, price_at_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+            INSERT INTO llm_call_logs
+                (run_id, agent_name, stage_name, attempt, provider, model,
+                input_tokens, output_tokens, cost_usd, price_snapshot, latency_ms, success)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, true)
             """,
-            run_id, stage_name, attempt, provider.value, model,
+            run_id, agent_name, stage_name, attempt, provider.value, model,
             input_tokens, output_tokens, total_cost,
-            json.dumps(price_snapshot)
+            json.dumps(price_snapshot), latency_ms,
         )
         
         # Update budget usage if applicable
@@ -185,6 +185,30 @@ class CostTrackingService:
             f"Budget alert: {team_id}/{project_id} at {threshold}% "
             f"(${usage:.2f}/${limit:.2f})"
         )
+
+    async def record_failed_call(
+        self,
+        run_id: int | None,
+        stage_name: str,
+        agent_name: str | None,
+        provider,
+        model: str,
+        error: str,
+    ):
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO llm_call_logs
+                        (run_id, agent_name, stage_name, provider, model,
+                        input_tokens, output_tokens, cost_usd, price_snapshot, success, error)
+                    VALUES ($1, $2, $3, $4, $5, 0, 0, 0, '{}', false, $6)
+                    """,
+                    run_id, agent_name, stage_name, str(provider), model, error,
+                )
+        except Exception as exc:
+            log.warning(f"Failed to log failed LLM call: {exc}")
 
 
 # Global instance

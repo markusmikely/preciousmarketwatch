@@ -26,8 +26,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable
-
-
+from agents.services.llm_service import LLMService as _LLMService
+from agents.services.workflow_event_service import get_event_service
+        
 # ---------------------------------------------------------------------------
 # Structured logger — emits JSON lines for Railway log drain
 # ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ class StructuredLogger:
     def __init__(self, agent_name: str):
         self._logger    = logging.getLogger(f"pmw.agent.{agent_name}")
         self.agent_name = agent_name
+        self._llm_service = _LLMService()
 
     def _emit(self, level: str, message: str, run_id: int | None = None, **kwargs):
         record = {
@@ -301,6 +303,7 @@ class BaseAgent(ABC):
         self.failure_config  = failure_config or FailureConfig()
         self.prompt_template = prompt_template
         self.requires_llm    = requires_llm
+        self._event_svc = get_event_service()
 
         self.log = StructuredLogger(agent_name)
 
@@ -390,89 +393,17 @@ class BaseAgent(ABC):
     # Event emission — Redis pub/sub (Section 9b)
     # ------------------------------------------------------------------
 
-    async def _emit_event(
-        self,
-        event_type: EventType,
-        run_id:     int,
-        payload:    dict,
-    ) -> None:
-        """
-        Publish a structured event to Redis 'pmw:events'.
-        The Bridge WebSocket manager subscribes and fans out to dashboard clients.
-        Also writes an immutable vault_events record.
-        Never raises — event failure must not block the pipeline.
-        """
-        event = {
-            "event_type": event_type.value,
-            "run_id":     run_id,
-            "agent":      self.agent_name,
-            "stage":      self.stage_name,
-            "ts":         datetime.now(timezone.utc).isoformat(),
-            **payload,
-        }
-
-        # ── Redis publish ──────────────────────────────────────────────
-        try:
-            redis = _RedisClient.get()
-            await redis.publish("pmw:events", json.dumps(event))
-        except Exception as exc:
-            self.log.warning(
-                "Redis publish failed — event not delivered to dashboard",
-                run_id=run_id,
-                event_type=event_type.value,
-                error=str(exc),
-            )
-
-        # ── Immutable vault append ─────────────────────────────────────
-        await self._append_vault_event(run_id, event_type.value, event)
-
-    async def _append_vault_event(
-        self,
-        run_id:     int,
-        event_type: str,
-        payload:    dict,
-    ) -> None:
-        """
-        Append an immutable record to vault_events (Section 5a).
-        Computes payload_hash and chains previous_hash for tamper detection.
-        The DB app user must NOT have UPDATE/DELETE on vault_events
-        (enforced by nightly compliance test §17c).
-        """
-        try:
-            pool         = await _DBPool.get()
-            payload_str  = json.dumps(payload, sort_keys=True)
-            payload_hash = hashlib.sha256(payload_str.encode()).hexdigest()
-
-            async with pool.acquire() as conn:
-                prev = await conn.fetchval(
-                    "SELECT payload_hash FROM vault_events "
-                    "WHERE run_id = $1 ORDER BY created_at DESC LIMIT 1",
-                    run_id,
-                )
-                previous_hash = prev or ("0" * 64)
-
-                await conn.execute(
-                    """
-                    INSERT INTO vault_events
-                        (event_type, run_id, stage_name, payload,
-                         payload_hash, previous_hash)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    event_type,
-                    run_id,
-                    self.stage_name,
-                    json.dumps(payload),
-                    payload_hash,
-                    previous_hash,
-                )
-        except Exception as exc:
-            # Vault write failure must never stop the pipeline
-            self.log.error(
-                "Vault event write failed",
-                run_id=run_id,
-                event_type=event_type,
-                error=str(exc),
-            )
+    async def _emit_event(self, event_type, run_id, payload):
+        await self._event_svc.emit(
+            run_id=run_id,
+            event_type=event_type.value if hasattr(event_type, 'value') else event_type,
+            source="agent",
+            payload=payload,
+            agent_name=self.agent_name,
+            stage_name=self.stage_name,
+            level="INFO",
+            update_current_stage=(event_type in ("stage.started", "stage.complete")),
+        )
 
     # ------------------------------------------------------------------
     # workflow_stages record writes (Section 5a)
@@ -567,108 +498,35 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
     # LLM call — normalised across providers, returns token counts
     # ------------------------------------------------------------------
-
     async def _call_llm(
         self,
-        prompt:      str,
+        prompt: str,
         temperature: float | None = None,
+        run_id: int | None = None,
+        attempt: int = 1,
     ) -> tuple[str, int, int]:
         """
-        Call the configured LLM asynchronously.
-
-        Returns
-        -------
-        (response_text, input_tokens, output_tokens)
-
-        Token counts are summed across retries for total cost tracking.
+        Delegate to LLMService. Returns (response_text, input_tokens, output_tokens).
+        Cost tracking is handled inside LLMService — no need for inline calculation.
         """
         if not self.requires_llm:
-            raise RuntimeError(
-                f"[{self.agent_name}] _call_llm() called on a non-LLM agent"
-            )
+            raise RuntimeError(f"[{self.agent_name}] _call_llm() called on a non-LLM agent")
 
-        temp     = temperature if temperature is not None else self.model_config.temperature
-        provider = self.model_config.provider
+        temp = temperature if temperature is not None else self.model_config.temperature
 
-        # ── LangSmith trace span ───────────────────────────────────────
-        run_tree = None
-        if self._tracer:
-            try:
-                from langsmith.run_trees import RunTree
-                run_tree = RunTree(
-                    name         = f"{self.agent_name}.llm_call",
-                    run_type     = "llm",
-                    inputs       = {"prompt": prompt[:500]},
-                    project_name = os.environ.get("LANGCHAIN_PROJECT", "pmw"),
-                )
-                run_tree.post()
-            except Exception:
-                run_tree = None   # tracing is best-effort
-
-        try:
-            # ── Anthropic ──────────────────────────────────────────────
-            if provider == ModelProvider.ANTHROPIC:
-                response = await self._llm_client.messages.create(
-                    model       = self.model_config.model_id,
-                    max_tokens  = self.model_config.max_tokens,
-                    temperature = temp,
-                    messages    = [{"role": "user", "content": prompt}],
-                )
-                text    = response.content[0].text
-                in_tok  = response.usage.input_tokens
-                out_tok = response.usage.output_tokens
-
-            # ── HuggingFace ────────────────────────────────────────────
-            elif provider == ModelProvider.HUGGINGFACE:
-                use_api = self.model_config.extra_params.get("use_inference_api", False)
-                if use_api:
-                    text = await self._llm_client.text_generation(
-                        prompt,
-                        max_new_tokens=self.model_config.max_tokens,
-                        temperature=temp,
-                    )
-                else:
-                    loop    = asyncio.get_event_loop()
-                    outputs = await loop.run_in_executor(
-                        None,
-                        lambda: self._llm_client(
-                            prompt,
-                            max_new_tokens=self.model_config.max_tokens,
-                            temperature=temp,
-                            do_sample=True,
-                        )
-                    )
-                    text = outputs[0]["generated_text"][len(prompt):]
-                # HuggingFace doesn't return exact token counts — approximate
-                in_tok  = len(prompt.split())
-                out_tok = len(text.split())
-
-            # ── DeepSeek (OpenAI-compatible) ───────────────────────────
-            elif provider == ModelProvider.DEEPSEEK:
-                response = await self._llm_client.chat.completions.create(
-                    model       = self.model_config.model_id,
-                    max_tokens  = self.model_config.max_tokens,
-                    temperature = temp,
-                    messages    = [{"role": "user", "content": prompt}],
-                )
-                text    = response.choices[0].message.content
-                in_tok  = response.usage.prompt_tokens
-                out_tok = response.usage.completion_tokens
-
-            else:
-                raise ValueError(f"Unknown provider: {provider}")
-
-            if run_tree:
-                run_tree.end(outputs={"response": text[:200]})
-                run_tree.patch()
-
-            return text, in_tok, out_tok
-
-        except Exception as exc:
-            if run_tree:
-                run_tree.end(error=str(exc))
-                run_tree.patch()
-            raise
+        response = await self._llm_service.generate(
+            model=self.model_config.model_id,
+            prompt=prompt,
+            provider=self.model_config.provider,
+            temperature=temp,
+            max_tokens=self.model_config.max_tokens,
+            run_id=run_id,
+            agent_name=self.agent_name,
+            stage_name=self.stage_name,
+            attempt=attempt,
+        )
+        return response.text, response.input_tokens, response.output_tokens
+    
 
     # ------------------------------------------------------------------
     # Prompt building hook
