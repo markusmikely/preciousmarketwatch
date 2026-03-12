@@ -1,4 +1,4 @@
-from agents.nodes.base import BaseAgent
+from nodes.base import BaseAgent
 
 class AffiliateLoader(BaseAgent):
     def __init__(self):
