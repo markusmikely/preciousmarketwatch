@@ -70,7 +70,7 @@ async def main() -> None:
     log.info("PMW Agents starting...")
 
     # 1. Run migrations first
-    startup()
+    await startup()
 
     # 2. Import and run the workflow from orchestrator
     try:
