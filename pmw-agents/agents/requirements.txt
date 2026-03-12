@@ -63,7 +63,7 @@ apscheduler>=3.10.4
 # ── Analytics integrations ──────────────────────────────────
 google-analytics-data>=0.18.0
 # Search Console API — used by performance_intel node
-google-search-console>=0.1.0
+# google-search-console>=0.1.0
 # Auth for Google APIs
 google-auth>=2.36.0
 google-auth-httplib2>=0.2.0
