@@ -86,4 +86,4 @@ def get_infrastructure() -> Infrastructure:
     global _instance
     if _instance is None:
         _instance = Infrastructure()
-return _instance
+    return _instance
