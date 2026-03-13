@@ -9,10 +9,28 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config import settings 
-from exceptions import WordpressError, WordpressAuthError, WordpressNotFoundError
 
 logger = logging.getLogger(__name__)
 
+ 
+# ── Exceptions ─────────────────────────────────────────────────────────────
+ 
+ 
+class WordpressError(Exception):
+    """Base exception for all WordPress client errors."""
+ 
+ 
+class WordpressAuthError(WordpressError):
+    """401 — bad credentials or application password revoked."""
+ 
+ 
+class WordpressNotFoundError(WordpressError):
+    """404 — post, page, or resource does not exist."""
+ 
+ 
+class WordpressConflictError(WordpressError):
+    """409 — e.g. duplicate slug on post creation."""
+ 
 class WordpressClient:
     """Wordpress REST API client with authentication and pagination handling."""
 
