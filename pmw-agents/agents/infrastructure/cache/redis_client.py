@@ -7,7 +7,7 @@ log = logging.getLogger("pmw.infra.redis")
 
 class RedisClient:
     def __init__(self):
-        self._url = url or os.environ.get("REDIS_URL", "redis://localhost:6379")
+        self._url = os.environ.get("REDIS_URL", "redis://localhost:6379")
         self._client = None
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
