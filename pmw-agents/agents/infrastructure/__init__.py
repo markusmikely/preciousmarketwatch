@@ -3,7 +3,7 @@ agents/infrastructure — top-level package.
 
 Import get_infrastructure() from here everywhere in the codebase:
 
-    from agents.infrastructure import get_infrastructure
+    from infrastructure import get_infrastructure
     infra = get_infrastructure()
 """
 

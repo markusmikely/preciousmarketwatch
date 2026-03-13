@@ -14,8 +14,8 @@ import json
 import logging
 from typing import Any
 
-from agents.infrastructure import get_infrastructure
-from agents.services.base_service import BaseDataService
+from infrastructure import get_infrastructure
+from services.base_service import BaseDataService
 
 log = logging.getLogger("pmw.services.paa")
 

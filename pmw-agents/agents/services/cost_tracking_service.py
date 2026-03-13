@@ -24,7 +24,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from agents.infrastructure import get_infrastructure
+from infrastructure import get_infrastructure
 
 log = logging.getLogger("pmw.services.cost_tracking")
 
