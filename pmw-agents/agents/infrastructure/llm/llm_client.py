@@ -1,8 +1,8 @@
 # Anthropic wrapper, token/cost tracking
 
-from agents.infrastructure.anthropic_client import AnthropicClient
-from agents.infrastructure.openai_client import OpenAIClient
-from agents.infrastructure.claude_client import ClaudeClient
+from infrastructure.anthropic_client import AnthropicClient
+from infrastructure.openai_client import OpenAIClient
+from infrastructure.claude_client import ClaudeClient
 
 class LLMClient:
     def __init__(self):

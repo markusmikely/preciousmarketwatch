@@ -6,14 +6,11 @@ On container start:
   2. Run the workflow
 """
 import asyncio
+import logging
 import os
 import subprocess
 import sys
-import logging
-
-from services.task_queue_service import TaskQueueService
-# from agents.services.task_queue_service import TaskQueueService
-
+ 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -25,11 +22,10 @@ log = logging.getLogger("pmw.main")
 
 def run_migrations() -> None:
     """
-    Run Alembic migrations.
-    Safe to call on every container start — alembic upgrade head is idempotent.
+    Run Alembic migrations synchronously before the event loop starts.
+    Safe to call on every container start — 'alembic upgrade head' is idempotent.
     """
     log.info("Running database migrations...")
-
     try:
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -40,51 +36,48 @@ def run_migrations() -> None:
         if result.returncode != 0:
             raise RuntimeError(result.stderr or result.stdout)
         log.info("Migrations complete.")
-    except Exception as e:
-        log.error(f"Migration failed: {e}")
+    except Exception as exc:
+        log.error(f"Migration failed: {exc}")
         raise
 
-async def startup():
-    """Run on worker process start."""
-    # 1. Run any pending Alembic migrations
-    run_migrations()  # your existing function
-
-    # 2. Recover stale tasks from crashed workers
-    queue = TaskQueueService()
-    await queue.recover_stale()
-
-    # 3. Log startup event
-    from services.workflow_event_service import get_event_service
-    await get_event_service().emit(
-        run_id=None,
-        event_type="system.worker_started",
-        source="system",
-        level="INFO",
-        payload={"worker": "socket.gethostname()"},
-    )
-
-    print("Worker startup complete.")
-# ── Entry point ───────────────────────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────────────────────
 
 async def main() -> None:
     log.info("PMW Agents starting...")
+    
+    # 1. Run migrations before connecting anything
+    run_migrations()
+ 
+    # 2. Connect infrastructure (Postgres pool, Redis, LLM SDKs, HTTP session)
+    from infrastructure import get_infrastructure
+    infra = get_infrastructure()
+    await infra.connect()
 
-    # 1. Run migrations first
-    await startup()
-
-    # 2. Import and run the workflow from orchestrator
     try:
+        # 3. Recover any tasks that were in-flight when the last worker died
+        try:
+            from services.task_queue_service import TaskQueueService
+            await TaskQueueService().recover_stale()
+            log.info("Stale task recovery complete.")
+        except ImportError:
+            log.warning("TaskQueueService not found — skipping stale recovery.")
+        except Exception as exc:
+            log.warning(f"Stale task recovery failed (non-fatal): {exc}")
+ 
+        # 4. Run the workflow orchestrator
         from orchestrator import run_workflow
-        
         log.info("Starting workflow execution...")
         await run_workflow(triggered_by="scheduler")
-        
-    except Exception as e:
-        log.error(f"Workflow execution failed: {e}")
+ 
+    except Exception as exc:
+        log.error(f"Worker error: {exc}")
         raise
-
-    log.info("PMW Agents shut down.")
-
-
+ 
+    finally:
+        # 5. Always close infrastructure cleanly, even on error
+        await infra.close()
+        log.info("PMW Agents shut down.")
+ 
+ 
 if __name__ == "__main__":
     asyncio.run(main())

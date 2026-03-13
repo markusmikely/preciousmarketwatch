@@ -1,214 +1,184 @@
-# agents/services/cost_tracking/service.py
-from datetime import datetime, date
-from typing import Optional, Dict, Any
+"""
+CostTrackingService — record LLM token usage and calculate costs.
+
+Writes to llm_call_logs (created in migration 005_observability).
+Reads model prices from model_prices table, falling back to env config.
+
+Usage (called by LLMService after every generate() call):
+    tracker = CostTrackingService()
+    cost_usd = await tracker.record_usage(
+        run_id=42,
+        stage_name="research.stage2.serp",
+        attempt=1,
+        provider="anthropic",
+        model="claude-sonnet-4-6",
+        input_tokens=1200,
+        output_tokens=400,
+    )
+"""
+
+from __future__ import annotations
+
 import json
 import logging
+from datetime import datetime
+from typing import Any
 
-from services.infrastructure import infrastructure
-from core.pricing import ModelPricing, ModelProvider
+from agents.infrastructure import get_infrastructure
+
+log = logging.getLogger("pmw.services.cost_tracking")
+
 
 class CostTrackingService:
     """
-    Tracks model usage costs with historical accuracy.
+    Tracks LLM usage costs with historical price accuracy.
+
+    Prices are looked up from the model_prices table first (allowing
+    retroactive correction), falling back to MODEL_PRICE_* env vars,
+    and finally to hard-coded defaults so the service never breaks.
     """
-    
+
+    # ── Hard-coded fallback prices (USD per 1k tokens) ─────────────────────
+    # Keep in sync with seed_model_prices.py.  Used only when DB has no row.
+    _FALLBACK_PRICES: dict[str, dict[str, float]] = {
+        "claude-opus-4-6":        {"input": 0.015,  "output": 0.075},
+        "claude-sonnet-4-6":      {"input": 0.003,  "output": 0.015},
+        "claude-haiku-4-5":       {"input": 0.00025,"output": 0.00125},
+        "gpt-4o":                  {"input": 0.005,  "output": 0.015},
+        "gpt-4o-mini":             {"input": 0.00015,"output": 0.0006},
+        "deepseek-chat":           {"input": 0.00014,"output": 0.00028},
+    }
+
     async def record_usage(
         self,
         run_id: int,
         stage_name: str,
         attempt: int,
-        provider: ModelProvider,
+        provider: str,
         model: str,
         input_tokens: int,
         output_tokens: int,
-        timestamp: Optional[datetime] = None
+        timestamp: datetime | None = None,
     ) -> float:
         """
-        Record model usage and calculate cost using prices effective at that time.
+        Record model usage and return the calculated cost in USD.
+
+        Looks up the effective price at `timestamp` from model_prices,
+        calculates cost, and inserts a row into llm_call_logs.
+
+        Returns:
+            Total cost in USD for this call.
         """
         timestamp = timestamp or datetime.utcnow()
-        
-        # Get price effective at this timestamp
+
         price = await self._get_price_at_time(
             provider=provider,
             model=model,
-            timestamp=timestamp
+            timestamp=timestamp,
         )
-        
-        # Calculate cost
-        input_cost = (input_tokens / 1000) * price['input_rate']
-        output_cost = (output_tokens / 1000) * price['output_rate']
-        total_cost = round(input_cost + output_cost, 6)
-        
-        # Snapshot of price used
+
+        input_cost  = (input_tokens  / 1_000) * price["input_rate"]
+        output_cost = (output_tokens / 1_000) * price["output_rate"]
+        total_cost  = round(input_cost + output_cost, 6)
+
         price_snapshot = {
-            'provider': provider.value,
-            'model': model,
-            'input_rate_per_1k': float(price['input_rate']),
-            'output_rate_per_1k': float(price['output_rate']),
-            'effective_from': price['effective_from'].isoformat() if price['effective_from'] else None,
-            'calculated_at': timestamp.isoformat()
+            "provider":            provider,
+            "model":               model,
+            "input_rate_per_1k":   price["input_rate"],
+            "output_rate_per_1k":  price["output_rate"],
+            "effective_from":      price["effective_from"],
+            "calculated_at":       timestamp.isoformat(),
         }
-        
-        # Store in database
-        await infrastructure.postgres.execute(
-            """
-            INSERT INTO llm_call_logs
-                (run_id, agent_name, stage_name, attempt, provider, model,
-                input_tokens, output_tokens, cost_usd, price_snapshot, latency_ms, success)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, true)
-            """,
-            run_id, agent_name, stage_name, attempt, provider.value, model,
-            input_tokens, output_tokens, total_cost,
-            json.dumps(price_snapshot), latency_ms,
-        )
-        
-        # Update budget usage if applicable
-        await self._update_budget_usage(run_id, total_cost, timestamp)
-        
+
+        infra = get_infrastructure()
+        try:
+            await infra.postgres.execute(
+                """
+                INSERT INTO llm_call_logs
+                    (run_id, stage_name, attempt_number, provider, model,
+                     input_tokens, output_tokens, cost_usd, price_snapshot,
+                     called_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+                """,
+                run_id,
+                stage_name,
+                attempt,
+                provider,
+                model,
+                input_tokens,
+                output_tokens,
+                total_cost,
+                json.dumps(price_snapshot),
+                timestamp,
+            )
+        except Exception as exc:
+            # Cost write failure must never block the pipeline
+            log.error(
+                "llm_call_logs write failed",
+                extra={"run_id": run_id, "stage": stage_name, "error": str(exc)},
+            )
+
         return total_cost
-    
+
     async def _get_price_at_time(
         self,
-        provider: ModelProvider,
+        provider: str,
         model: str,
-        timestamp: datetime
-    ) -> Dict[str, Any]:
+        timestamp: datetime,
+    ) -> dict[str, Any]:
         """
-        Get price effective at a specific timestamp.
-        First checks DB for historical prices, falls back to config.
+        Return the price effective at `timestamp`.
+
+        Lookup order:
+          1. model_prices table (allows price history + corrections)
+          2. Hard-coded _FALLBACK_PRICES
         """
-        # Try database first (for historical prices)
-        async with infrastructure.postgres.connection() as conn:
-            row = await conn.fetchrow(
+        infra = get_infrastructure()
+        try:
+            row = await infra.postgres.fetchrow(
                 """
                 SELECT input_rate_per_1k, output_rate_per_1k, effective_from
                 FROM model_prices
-                WHERE provider = $1 AND model = $2
+                WHERE provider = $1
+                  AND model     = $2
                   AND effective_from <= $3
                   AND (effective_to IS NULL OR effective_to > $3)
                 ORDER BY effective_from DESC
                 LIMIT 1
                 """,
-                provider.value, model, timestamp
+                provider,
+                model,
+                timestamp,
             )
-            
             if row:
                 return {
-                    'input_rate': float(row['input_rate_per_1k']),
-                    'output_rate': float(row['output_rate_per_1k']),
-                    'effective_from': row['effective_from']
+                    "input_rate":    float(row["input_rate_per_1k"]),
+                    "output_rate":   float(row["output_rate_per_1k"]),
+                    "effective_from": str(row["effective_from"]),
                 }
-        
-        # Fall back to current config price
-        price = ModelPricing.get_price(provider, model)
-        return {
-            'input_rate': price.input_rate,
-            'output_rate': price.output_rate,
-            'effective_from': datetime.combine(price.effective_from, datetime.min.time())
-        }
-    
-    async def _update_budget_usage(self, run_id: int, cost: float, timestamp: datetime):
-        """Update budget tracking for this run."""
-        # Get project/team from run_id (you'd have this mapping elsewhere)
-        # For now, simplified version
-        billing_month = timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0).date()
-        
-        # You'd look up the budget ID based on run context
-        # This is just an example
-        pass
-    
-    async def check_budget(
-        self,
-        team_id: str,
-        project_id: str
-    ) -> Dict[str, Any]:
-        """
-        Check current budget status and trigger alerts if needed.
-        """
-        async with infrastructure.postgres.connection() as conn:
-            budget = await conn.fetchrow(
-                """
-                SELECT * FROM model_budgets
-                WHERE team_id = $1 AND project_id = $2
-                """,
-                team_id, project_id
-            )
-            
-            if not budget:
-                return {'within_budget': True, 'message': 'No budget set'}
-            
-            # Get current month's usage
-            first_of_month = date.today().replace(day=1)
-            usage = await conn.fetchval(
-                """
-                SELECT SUM(cost_usd)
-                FROM budget_usage
-                WHERE budget_id = $1 AND billing_month = $2
-                """,
-                budget['id'], first_of_month
-            )
-            
-            current_usage = float(usage or 0)
-            budget_limit = float(budget['monthly_budget_usd'])
-            percentage = (current_usage / budget_limit) * 100 if budget_limit > 0 else 0
-            
-            # Check thresholds
-            if budget['alerts_enabled']:
-                if percentage >= 90 and not budget['threshold_90_sent']:
-                    await self._send_alert(team_id, project_id, 90, current_usage, budget_limit)
-                    await conn.execute(
-                        "UPDATE model_budgets SET threshold_90_sent = TRUE WHERE id = $1",
-                        budget['id']
-                    )
-                elif percentage >= 70 and not budget['threshold_70_sent']:
-                    await self._send_alert(team_id, project_id, 70, current_usage, budget_limit)
-                    await conn.execute(
-                        "UPDATE model_budgets SET threshold_70_sent = TRUE WHERE id = $1",
-                        budget['id']
-                    )
-            
-            return {
-                'within_budget': current_usage < budget_limit,
-                'current_usage_usd': current_usage,
-                'budget_limit_usd': budget_limit,
-                'percentage_used': round(percentage, 2),
-                'reset_day': budget['reset_day']
-            }
-    
-    async def _send_alert(self, team_id: str, project_id: str, 
-                          threshold: int, usage: float, limit: float):
-        """Send budget alert (Slack, email, etc.)."""
-        # Implementation depends on your alerting system
-        logger.warning(
-            f"Budget alert: {team_id}/{project_id} at {threshold}% "
-            f"(${usage:.2f}/${limit:.2f})"
-        )
-
-    async def record_failed_call(
-        self,
-        run_id: int | None,
-        stage_name: str,
-        agent_name: str | None,
-        provider,
-        model: str,
-        error: str,
-    ):
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO llm_call_logs
-                        (run_id, agent_name, stage_name, provider, model,
-                        input_tokens, output_tokens, cost_usd, price_snapshot, success, error)
-                    VALUES ($1, $2, $3, $4, $5, 0, 0, 0, '{}', false, $6)
-                    """,
-                    run_id, agent_name, stage_name, str(provider), model, error,
-                )
         except Exception as exc:
-            log.warning(f"Failed to log failed LLM call: {exc}")
+            log.warning(
+                "model_prices lookup failed — using fallback",
+                extra={"model": model, "error": str(exc)},
+            )
+
+        # Fallback — use hard-coded defaults
+        fallback = self._FALLBACK_PRICES.get(model, {"input": 0.001, "output": 0.002})
+        return {
+            "input_rate":    fallback["input"],
+            "output_rate":   fallback["output"],
+            "effective_from": "fallback",
+        }
+
+    async def get_run_cost(self, run_id: int) -> float:
+        """Return the total cost in USD for all LLM calls in a run."""
+        infra = get_infrastructure()
+        val = await infra.postgres.fetchval(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM llm_call_logs WHERE run_id = $1",
+            run_id,
+        )
+        return float(val or 0)
 
 
-# Global instance
+# Global instance — import and use this in services/nodes
 cost_tracker = CostTrackingService()
