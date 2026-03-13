@@ -7,6 +7,6 @@ Import get_infrastructure() from here everywhere in the codebase:
     infra = get_infrastructure()
 """
 
-from agents.infrastructure.infrastructure import Infrastructure, get_infrastructure
+from infrastructure.infrastructure import Infrastructure, get_infrastructure
 
 __all__ = ["Infrastructure", "get_infrastructure"]
