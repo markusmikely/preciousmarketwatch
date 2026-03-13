@@ -17,7 +17,7 @@ from infrastructure.owned.wordpress.wp_db_client import WordpressClient
 from infrastructure.external.news_client import NewsClient
 from infrastructure.external.price_client import PriceClient
 from infrastructure.external.reddit_client import RedditClient
-from infrastructure.external.serp_client import SERPClient
+from infrastructure.external.serp_client import SerpClient
 
 log = logging.getLogger("pmw.infra")
 
@@ -30,7 +30,7 @@ class Infrastructure:
         self.news = NewsClient()
         self.price = PriceClient()
         self.reddit = RedditClient(http=None)
-        self.serp = SERPClient(http=None)
+        self.serp = SerpClient(http=None)
         self.wordpress = WordpressClient(
             base_url=os.environ.get("WP_API_URL", ""),
             username=os.environ.get("WP_API_USER", ""),
