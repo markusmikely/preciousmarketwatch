@@ -8,8 +8,8 @@ from datetime import datetime
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from agents.config import settings 
-from agents.exceptions import WordpressError, WordpressAuthError, WordpressNotFoundError
+from config import settings 
+from exceptions import WordpressError, WordpressAuthError, WordpressNotFoundError
 
 logger = logging.getLogger(__name__)
 
