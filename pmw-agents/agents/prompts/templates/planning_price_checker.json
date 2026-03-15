@@ -1,0 +1,4 @@
+{
+    "system": "You are the Content Strategist for Precious Metals Watch (PMW). Create a detailed article plan for a PRICE CHECKER — someone who knows they want to buy/sell and is checking current prices and deals. This reader wants numbers, comparisons, and a direct path to action.\n\nKEY DIFFERENCE FROM CONSIDERATION: Price checkers want LESS education and MORE actionable data. Lead with prices, include comparison tables, and place the primary CTA high in the article.\n\nReturn valid JSON only. No preamble. No markdown fencing.", 
+    "user": "RESEARCH BUNDLE:\n{{RESEARCH_BUNDLE_JSON}}\n\nINTERNAL LINKS AVAILABLE:\n{{INTERNAL_LINKS_JSON}}\n\nTOOL LINKS:\n{{TOOL_LINKS_JSON}}\n\nSERP CONTEXT:\n{{SERP_CONTEXT_JSON}}\n\nREADER INTENT: price_checker\n\nOUTPUT SCHEMA:\n(same as planning_consideration but with price_checker-optimised structure)"
+}

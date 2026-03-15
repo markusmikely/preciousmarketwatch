@@ -16,7 +16,7 @@ A modern, AI-powered WordPress affiliate blog providing insights about precious 
 ```text
 ├── frontend/ # React.js application
 ├── backend/ # Headless WordPress setup
-├── ai-agents/ # Python LangChain/LangGraph agents
+├── pmw-agents/ # Python LangChain/LangGraph agents
 ├── database/ # PostgreSQL schemas and migrations
 ├── deployment/ # Docker, CI/CD configurations
 └── docs/ # Project documentation

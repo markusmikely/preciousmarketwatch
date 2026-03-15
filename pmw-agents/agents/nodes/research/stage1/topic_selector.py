@@ -7,5 +7,18 @@ class TopicSelector(BaseAgent):
             stage_name="research.stage1.topic_selector",
         )
 
-    def run(self, input_data: dict, run_id: int) -> dict:
-        return input_data
+    async def run(self, input_data, run_id):
+        await self._emit_event(EventType.STAGE_STARTED, run_id, {})
+        await self._write_stage_record(run_id, status="running", attempt=1)
+        try:
+            
+            selected = await topic_service.select_next_topic(input_data['candidate_topics'])
+            output = {
+                'selected_topic': selected
+            }
+            await self._emit_event(EventType.STAGE_COMPLETE, run_id, {})
+            await self._write_stage_record(run_id, status="complete", attempt=1,
+                passed_threshold=True, output=output)
+            return AgentResult(status=AgentStatus.SUCCESS, output=output, attempts=1)
+        except Exception as exc:
+            return await self._handle_failure(run_id, str(exc))

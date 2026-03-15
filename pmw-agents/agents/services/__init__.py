@@ -26,7 +26,6 @@ from services.cost_tracking_service import CostTrackingService
 
 from services.topic_service import TopicService 
 from services.affiliate_service import AffiliateService
-from services.workflow_event_service import WorkflowEventService
 from services.serp_service import SerpService
 from services.market_service import MarketService
 from services.buyer_service import BuyerResearchService

@@ -19,22 +19,39 @@ from infrastructure.external.price_client import PriceClient
 from infrastructure.external.reddit_client import RedditClient
 from infrastructure.external.serp_client import SerpClient
 
+from config import settings
+
 log = logging.getLogger("pmw.infra")
 
 class Infrastructure:
+    _instance = None
+
+    @classmethod
+    def get(cls) -> "Infrastructure":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(self):
-        self.llm = LLMClient()
+        self.llm = LLMClient(
+            anthropic_api_key=settings.ANTHROPIC_API_KEY,
+            openai_api_key=settings.OPENAI_API_KEY,
+            deepseek_api_key=settings.DEEPSEEK_API_KEY,
+            huggingface_api_key=settings.HUGGINGFACE_API_KEY,
+        )
         self.http = HTTPClient()
-        self.postgres = PostgresClient()
+        self.postgres = PostgresClient(
+            dsn=settings.DATABASE_URL
+        )
         self.redis = RedisClient()
         self.news = NewsClient()
         self.price = PriceClient()
         self.reddit = RedditClient(http=None)
         self.serp = SerpClient(http=None)
         self.wordpress = WordpressClient(
-            base_url=os.environ.get("WP_API_URL", ""),
-            username=os.environ.get("WP_API_USER", ""),
-            password=os.environ.get("WP_API_PASSWORD", ""),
+            base_url=settings.WORDPRESS_URL,
+            username=settings.WORDPRESS_USERNAME,
+            password=settings.WORDPRESS_PASSWORD,
         )
 
     async def connect(self) -> None:
