@@ -3,7 +3,8 @@ PMW Content Pipeline — Base Agent
 ==================================
 
 One function to call the LLM: call_llm().
-It has the @retry decorator. Agents override run() and call it if they need it.
+Tenacity retry is applied dynamically so each subclass's MAX_RETRIES is respected.
+Agents override run() and call it if they need it.
 No separate NonLLMAgent class — if your run() doesn't call call_llm(), that's fine.
 """
 
@@ -24,6 +25,7 @@ from tenacity import (
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
+    RetryError,
 )
 
 from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError
@@ -158,27 +160,12 @@ class BaseAgent(ABC):
             async def run(self, input_data, run_id):
                 ...
 
-    call_llm() usage inside run():
-
-        async def run(self, input_data, run_id):
-            prompt = self.build_prompt(input_data)
-
-            await self._emit_event(EventType.STAGE_STARTED, run_id, {...})
-            await self._write_stage_record(run_id, status="running", attempt=1)
-
-            try:
-                result = await self.call_llm(prompt, run_id, attempt=1)
-            except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-                return await self._handle_failure(run_id, error=str(exc), ...)
-
-            await self._emit_event(EventType.STAGE_COMPLETE, run_id, {...})
-            await self._write_stage_record(run_id, status="complete", ...)
-            return AgentResult(status=AgentStatus.SUCCESS, output=result.output, ...)
+    call_llm() builds a fresh tenacity decorator from self.MAX_RETRIES on
+    every invocation, so subclass overrides always take effect.
     """
 
     # Override per subclass to change total attempt count.
-    # stop_after_attempt reads this at class definition time.
-    MAX_RETRIES: int = 2  # default: 3 total attempts
+    MAX_RETRIES: int = 2  # default: 3 total attempts (1 + 2 retries)
 
     def __init__(
         self,
@@ -268,20 +255,9 @@ class BaseAgent(ABC):
         )
 
     # ------------------------------------------------------------------
-    # THE LLM call — @retry decorator, one function, agents call this directly
+    # THE LLM call — tenacity applied dynamically so MAX_RETRIES works
     # ------------------------------------------------------------------
 
-    @retry(
-        stop   = stop_after_attempt(MAX_RETRIES + 1),
-        wait   = wait_exponential(multiplier=1, min=2, max=10),
-        retry  = retry_if_exception_type((
-            LLMTimeoutError,
-            LLMRateLimitError,
-            LLMProviderError,
-            ValueError,          # raised by validate_output() on bad LLM output
-        )),
-        reraise = True,          # propagates the last exception when exhausted
-    )
     async def call_llm(
         self,
         prompt:      str,
@@ -290,8 +266,11 @@ class BaseAgent(ABC):
         temperature: float | None = None,
     ) -> AgentResult:
         """
-        Call the LLM, record cost, validate output. Retried automatically
-        by tenacity on transient errors or validation failure.
+        Call the LLM, record cost, validate output.
+
+        Tenacity retry is built fresh on every call using self.MAX_RETRIES,
+        so subclass overrides always take effect. The decorator is NOT on
+        the method signature — it wraps an inner function instead.
 
         Args:
             prompt:      Full prompt string.
@@ -306,12 +285,6 @@ class BaseAgent(ABC):
         Raises (on exhaustion, reraise=True):
             LLMTimeoutError / LLMRateLimitError / LLMProviderError / ValueError
             Catch these in run() and pass to _handle_failure().
-
-        Typical usage in run():
-            try:
-                result = await self.call_llm(prompt, run_id)
-            except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-                return await self._handle_failure(run_id, str(exc), ...)
         """
         if self.model_config is None:
             raise RuntimeError(
@@ -323,48 +296,66 @@ class BaseAgent(ABC):
 
         temp = temperature if temperature is not None else self.model_config.temperature
 
-        raw, in_tok, out_tok, cost_usd = await services.llm.generate(
-            model_config = self.model_config,
-            prompt       = prompt,
-            run_id       = run_id,
-            stage_name   = self.stage_name,
-            attempt      = attempt,
-            temperature  = temp,
-            tracer       = self._tracer,
+        # ── Build tenacity decorator dynamically from self.MAX_RETRIES ──
+        # This is the fix: the decorator reads MAX_RETRIES at call time,
+        # not at class definition time, so subclass overrides work.
+
+        @retry(
+            stop    = stop_after_attempt(self.MAX_RETRIES + 1),
+            wait    = wait_exponential(multiplier=1, min=2, max=10),
+            retry   = retry_if_exception_type((
+                LLMTimeoutError,
+                LLMRateLimitError,
+                LLMProviderError,
+                ValueError,          # raised by validate_output() on bad LLM output
+            )),
+            reraise = True,          # propagates the last exception when exhausted
         )
+        async def _attempt() -> AgentResult:
+            raw, in_tok, out_tok, cost_usd = await services.llm.generate(
+                model_config = self.model_config,
+                prompt       = prompt,
+                run_id       = run_id,
+                stage_name   = self.stage_name,
+                attempt      = attempt,
+                temperature  = temp,
+                tracer       = self._tracer,
+            )
 
-        # Emit cost.update so dashboard shows running total
-        await self._emit_event(EventType.COST_UPDATE, run_id, {
-            "attempt":       attempt,
-            "model":         self.model_config.model_id,
-            "input_tokens":  in_tok,
-            "output_tokens": out_tok,
-            "cost_usd":      cost_usd,
-        })
+            # Emit cost.update so dashboard shows running total
+            await self._emit_event(EventType.COST_UPDATE, run_id, {
+                "attempt":       attempt,
+                "model":         self.model_config.model_id,
+                "input_tokens":  in_tok,
+                "output_tokens": out_tok,
+                "cost_usd":      cost_usd,
+            })
 
-        self.log.debug(
-            "LLM response received",
-            run_id   = run_id,
-            attempt  = attempt,
-            in_tok   = in_tok,
-            out_tok  = out_tok,
-            cost_usd = cost_usd,
-            preview  = raw[:120].replace("\n", " "),
-        )
+            self.log.debug(
+                "LLM response received",
+                run_id   = run_id,
+                attempt  = attempt,
+                in_tok   = in_tok,
+                out_tok  = out_tok,
+                cost_usd = cost_usd,
+                preview  = raw[:120].replace("\n", " "),
+            )
 
-        # validate_output() raising ValueError → tenacity retries
-        validated = self.validate_output(raw)
+            # validate_output() raising ValueError → tenacity retries
+            validated = self.validate_output(raw)
 
-        return AgentResult(
-            status         = AgentStatus.SUCCESS,
-            output         = validated,
-            raw_llm_output = raw,
-            attempts       = attempt,
-            input_tokens   = in_tok,
-            output_tokens  = out_tok,
-            cost_usd       = cost_usd,
-            model_used     = self.model_config.model_id,
-        )
+            return AgentResult(
+                status         = AgentStatus.SUCCESS,
+                output         = validated,
+                raw_llm_output = raw,
+                attempts       = attempt,
+                input_tokens   = in_tok,
+                output_tokens  = out_tok,
+                cost_usd       = cost_usd,
+                model_used     = self.model_config.model_id,
+            )
+
+        return await _attempt()
 
     # ------------------------------------------------------------------
     # Failure handler — call from run() when call_llm() raises on exhaustion
@@ -383,10 +374,6 @@ class BaseAgent(ABC):
         """
         Route to HITL or hard failure based on FailureConfig.
         Call this in run() when call_llm() raises after exhausting retries.
-
-        Usage in run():
-            except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-                return await self._handle_failure(run_id, str(exc), total_cost=cost_so_far)
         """
         total_attempts = self.MAX_RETRIES + 1
         final_message  = f"{self.failure_config.failure_message} | {error}"

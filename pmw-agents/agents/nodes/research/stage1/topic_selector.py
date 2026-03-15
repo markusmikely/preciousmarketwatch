@@ -7,12 +7,12 @@ class TopicSelector(BaseAgent):
             stage_name="research.stage1.topic_selector",
         )
 
-    async def run(self, input_data, run_id):
+    async def run(self, state: dict, run_id: int = 0) -> dict
         await self._emit_event(EventType.STAGE_STARTED, run_id, {})
         await self._write_stage_record(run_id, status="running", attempt=1)
         try:
             
-            selected = await topic_service.select_next_topic(input_data['candidate_topics'])
+            selected = await topic_service.select_next_topic(state['candidate_topics'])
             output = {
                 'selected_topic': selected
             }

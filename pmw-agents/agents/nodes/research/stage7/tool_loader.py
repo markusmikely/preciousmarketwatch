@@ -7,5 +7,5 @@ class ToolLoader(BaseAgent):
             stage_name="research.stage7.tool_loader",
         )
 
-    def run(self, input_data: dict, run_id: int) -> dict:
-        return input_data
+    async def run(self, state: dict, run_id: int = 0) -> dict
+        return {}

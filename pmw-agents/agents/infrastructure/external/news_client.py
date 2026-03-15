@@ -1,4 +1,4 @@
 # news API
 class NewsClient:
-    def __init(self):
+    def __init__(self):
         pass

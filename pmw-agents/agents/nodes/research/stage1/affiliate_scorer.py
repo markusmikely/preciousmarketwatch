@@ -7,12 +7,12 @@ class AffiliateScorer(BaseAgent):
             stage_name="research.stage1.affiliate_scorer",
         )
 
-    async def run(self, input_data, run_id):
+    async def run(self, state: dict, run_id: int = 0) -> dict
         await self._emit_event(EventType.STAGE_STARTED, run_id, {})
         await self._write_stage_record(run_id, status="running", attempt=1)
         try:
             
-            scored   = await affiliate_service.score_affiliates_for_topic(input_data['selected_topic'], input_data['candidate_affiliates'])
+            scored   = await affiliate_service.score_affiliates_for_topic(state['selected_topic'], state['candidate_affiliates'])
             primary  = scored[0]
             secondary = scored[1] if len(scored) > 1 else None
             output = {

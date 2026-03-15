@@ -83,7 +83,7 @@ class ResearchGraph(BaseGraph):
         self.add_node("stage3.market_context",      market_context.run)
         self.add_node("stage5.competitor_analysis", competitor_analysis.run)
 
-        # Barriers (named no-ops)
+        # Barriers (named no-ops — inherited from BaseGraph)
         self.add_node("barrier.stage4", self._noop)
         self.add_node("barrier.stage6", self._noop)
         self.add_node("barrier.stage7", self._noop)
@@ -145,7 +145,6 @@ class ResearchGraph(BaseGraph):
         self.add_edge("stage7.tool_loader",          "stage7.tool_mapping")
 
         # ── Stage 8 barrier — waits for stage5 + stage7 ──────────────
-        # (stage2, 3, 4, 6 are already upstream of stage7)
         self.add_edge("stage5.competitor_analysis", "barrier.stage8")
         self.add_edge("stage7.tool_mapping",        "barrier.stage8")
         self.add_edge("barrier.stage8",             "stage8.arc_coherence")
@@ -162,13 +161,58 @@ class ResearchGraph(BaseGraph):
         )
 
         # ── END — pipeline completes at bundle assembler ───────────────
-        # Stage 9 dispatched as background task from within bundle_assembler
         self.add_edge("stage8.bundle_assembler", self.END)
 
         # ── Terminal nodes ─────────────────────────────────────────────
         self.add_edge("hitl_gate",      self.END)
         self.add_edge("handle_failure", self.END)
 
+    # ── Terminal node implementations ─────────────────────────────────
+
+    @staticmethod
+    async def _hitl(state: dict) -> dict:
+        """
+        HITL gate — halts the pipeline for human review.
+        Sets status to 'hitl' so _make_result produces a PhaseResult
+        with needs_hitl=True. The operator reviews in the dashboard
+        and restarts the run from the failed stage.
+        """
+        log.warning(
+            "Pipeline halted for human review",
+            extra={
+                "run_id":     state.get("run_id"),
+                "hitl_stage": state.get("hitl_stage"),
+                "hitl_reason": state.get("hitl_reason"),
+            },
+        )
+        return {
+            "status":     "hitl",
+            "errors":     state.get("errors", []) + [{
+                "stage":  state.get("hitl_stage", "unknown"),
+                "error":  state.get("hitl_reason", "Human review required"),
+                "source": "hitl_gate",
+            }],
+        }
+
+    @staticmethod
+    async def _failure(state: dict) -> dict:
+        """
+        Hard failure — pipeline cannot continue.
+        Records the failure in state so _make_result produces a
+        PhaseResult with succeeded=False.
+        """
+        log.error(
+            "Pipeline failed — cannot continue",
+            extra={
+                "run_id": state.get("run_id"),
+                "errors": state.get("errors", []),
+            },
+        )
+        return {
+            "status": "failed",
+        }
+
+    # ── Input / output translation ────────────────────────────────────
 
     def _make_input(self, input_data: dict) -> dict:
         """
@@ -215,70 +259,53 @@ class ResearchGraph(BaseGraph):
             },
         )
 
-    def route_after_brief_lock(self, state: ResearchState) -> [str]:
+    # ── Conditional routing functions ─────────────────────────────────
+
+    def route_after_brief_lock(self, state: ResearchState) -> list[str] | str:
+        """
+        After Stage 1.5 completes:
+          - Happy path: fan-out to parallel stages 2, 3, 5
+          - HITL: brief coherence failed → human review
+          - Failed: hard error → pipeline stops
+        """
         if state.get("hitl_required"):
             return "hitl"
         if state.get("status") == "failed":
             return "failed"
         # Fan-out — return list to trigger parallel execution
-        return ["stage2.keyword_research", "stage3.market_context", "stage5.competitor_analysis"]
-    
+        return [
+            "stage2.keyword_research",
+            "stage3.market_context",
+            "stage5.competitor_analysis",
+        ]
+
     def route_after_arc(self, state: ResearchState) -> str:
         """
         Conditional edge function called after stage8.arc_coherence completes.
-
-        LangGraph calls this with the current state and uses the returned
-        string to select the next node from the path_map in add_conditional_edges.
 
         Three possible outcomes:
             "continue"  → arc is coherent, proceed to bundle assembly
             "hitl"      → arc is incoherent but recoverable, suspend for human review
             "failed"    → arc confidence too low to recover, hard failure
-
-        Reads from:
-            state["arc_validation"]  — written by arc_coherence node
-            state["status"]          — written by arc_coherence node on hard failure
-
-        Arc validation schema (what arc_coherence writes):
-            {
-                "arc_coherent":    bool,
-                "arc_confidence":  float,   # 0.0 → 1.0
-                "issues":          list[dict],
-                "recommendations": list[str],
-            }
         """
-        # Hard failure — arc_coherence node itself errored before producing output
-        # This means something went wrong in the LLM call or the node logic,
-        # not just a bad arc. Status "failed" set by the node directly.
+        # Hard failure — arc_coherence node itself errored
         if state.get("status") == "failed":
             return "failed"
 
         arc = state.get("arc_validation")
 
         # arc_validation missing entirely — node produced no output
-        # Treat as hard failure, not HITL — there's nothing for a human to review
         if not arc:
             return "failed"
 
         arc_coherent   = arc.get("arc_coherent", False)
         arc_confidence = arc.get("arc_confidence", 0.0)
 
-        # Happy path — arc is coherent, proceed
+        # Happy path
         if arc_coherent:
             return "continue"
 
-        # Arc incoherent — decide between HITL and hard failure based on confidence.
-        #
-        # High confidence incoherence (0.3 → 1.0):
-        #   The model is sure the arc doesn't work — but a human may be able to
-        #   resolve it (e.g. conflicting intent signals, wrong affiliate pairing).
-        #   Route to HITL so a human can inspect the issues and recommendations
-        #   written to arc_validation by the arc_coherence node.
-        #
-        # Low confidence incoherence (0.0 → 0.3):
-        #   The model is uncertain — the arc might be fine but the check itself
-        #   is unreliable. Hard failure is safer than suspending for human review
-        #   on a result we can't trust. The run will be retried on the next tick.
+        # Arc incoherent — high confidence → HITL, low confidence → hard fail
         if arc_confidence >= 0.3:
             return "hitl"
 
