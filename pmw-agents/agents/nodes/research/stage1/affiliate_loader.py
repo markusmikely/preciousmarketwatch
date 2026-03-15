@@ -7,7 +7,7 @@ class AffiliateLoader(BaseAgent):
             stage_name="research.stage1.affiliate_loader",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         await self._emit_event(EventType.STAGE_STARTED, run_id, {})
         await self._write_stage_record(run_id, status="running", attempt=1)
         try:

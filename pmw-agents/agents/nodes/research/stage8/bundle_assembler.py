@@ -7,5 +7,5 @@ class BundleAssembler(BaseAgent):
             stage_name="research.stage8.bundle_assembler",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

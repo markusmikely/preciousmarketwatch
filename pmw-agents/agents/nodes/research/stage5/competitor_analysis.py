@@ -7,5 +7,5 @@ class CompetitorAnalysis(BaseAgent):
             stage_name="research.stage5.competitor_analysis",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

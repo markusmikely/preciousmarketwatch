@@ -7,5 +7,5 @@ class ToolMapping(BaseAgent):
             stage_name="research.stage7.tool_mapping",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

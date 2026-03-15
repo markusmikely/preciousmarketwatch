@@ -7,5 +7,5 @@ class MarketContext(BaseAgent):
             stage_name="research.stage3.market_context",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

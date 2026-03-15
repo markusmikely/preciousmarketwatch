@@ -7,5 +7,5 @@ class IntelligenceAggregation(BaseAgent):
             stage_name="research.stage9.intelligence_aggregation",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

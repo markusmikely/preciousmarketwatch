@@ -7,5 +7,5 @@ class KeywordResearch(BaseAgent):
             stage_name="research.stage2.keyword_research",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

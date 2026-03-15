@@ -7,5 +7,5 @@ class PsychologySynthesis(BaseAgent):
             stage_name="research.stage6.psychology_synthesis",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

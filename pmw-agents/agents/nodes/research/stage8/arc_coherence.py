@@ -7,5 +7,5 @@ class ArcCoherence(BaseAgent):
             stage_name="research.stage8.arc_coherence",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return {}

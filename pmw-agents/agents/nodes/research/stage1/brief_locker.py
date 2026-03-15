@@ -7,7 +7,7 @@ class BriefLocker(BaseAgent):
             stage_name="research.stage1.brief_locker",
         )
         
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         
         state  = self.preprocess(state)
         

@@ -7,5 +7,5 @@ class TopFactors(BaseAgent):
             stage_name="research.stage4.top_factors",
         )
 
-    async def run(self, state: dict, run_id: int = 0) -> dict
+    async def run(self, state: dict, run_id: int = 0) -> dict:
         return state
