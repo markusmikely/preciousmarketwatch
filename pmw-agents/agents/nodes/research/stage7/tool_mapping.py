@@ -6,6 +6,7 @@ Validation: ≥1 tool selected (unless no_tool_fits=true)
 Depends on: Stage 7a (available_tools in state)
 """
 
+
 from __future__ import annotations
 
 import hashlib
