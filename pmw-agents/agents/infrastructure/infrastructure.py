@@ -1,5 +1,5 @@
 from __future__ import annotations
- 
+
 import logging
 import os
 
@@ -23,6 +23,7 @@ from config import settings
 
 log = logging.getLogger("pmw.infra")
 
+
 class Infrastructure:
     _instance = None
 
@@ -41,13 +42,17 @@ class Infrastructure:
         )
         self.http = HTTPClient()
         self.postgres = PostgresClient(
-            dsn=settings.DATABASE_URL
+            dsn=settings.DATABASE_URL,
         )
         self.redis = RedisClient()
-        self.news = NewsClient()
-        self.price = PriceClient()
+
+        # External clients — HTTP injected in connect()
+        self.news   = NewsClient(http=None, api_key=settings.NEWS_API_KEY)
+        self.price  = PriceClient(http=None)
         self.reddit = RedditClient(http=None)
-        self.serp = SerpClient(http=None)
+        self.serp   = SerpClient(http=None, api_key=settings.SERP_API_KEY)
+
+        # Owned clients
         self.wordpress = WordpressClient(
             base_url=settings.WORDPRESS_URL,
             username=settings.WORDPRESS_USERNAME,
@@ -56,21 +61,23 @@ class Infrastructure:
 
     async def connect(self) -> None:
         log.info("Infrastructure connecting...")
- 
+
         await self.postgres.connect()
         await self.redis.connect()
         await self.llm.connect()
-        await self.http.connect()   
+        await self.http.connect()
 
+        # Inject shared HTTPClient into external clients
         self.serp.set_http(self.http)
         self.reddit.set_http(self.http)
+        self.news.set_http(self.http)
+        self.price.set_http(self.http)
 
         log.info("Infrastructure ready")
 
-    
     async def close(self) -> None:
         log.info("Infrastructure shutting down...")
- 
+
         for name, client, method in [
             ("postgres",  self.postgres,  self.postgres.close),
             ("redis",     self.redis,     self.redis.close),
@@ -82,20 +89,21 @@ class Infrastructure:
                 await method()
             except Exception as exc:
                 log.error(f"Error closing {name}: {exc}")
- 
+
         log.info("Infrastructure closed")
 
+
 _instance: Infrastructure | None = None
- 
- 
+
+
 def get_infrastructure() -> Infrastructure:
     """
     Return the global Infrastructure singleton.
- 
+
     Always call await get_infrastructure().connect() once at startup before
     any service accesses the singleton. Services should import and call this
     function rather than holding a module-level reference.
- 
+
     Usage:
         infra = get_infrastructure()
         row = await infra.postgres.fetchrow("SELECT 1")

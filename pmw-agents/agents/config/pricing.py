@@ -12,11 +12,12 @@ class ModelProvider(str, Enum):
 
 @dataclass
 class ModelPrice:
-    """Base price per 1K tokens:."""
-    input_rate: float # USD per 1K input tokens
-    output_rate: float # USD per 1K output tokens
+    """Base price per 1K tokens."""
+    input_rate: float   # USD per 1K input tokens
+    output_rate: float  # USD per 1K output tokens
     effective_from: date
     effective_to: Optional[date] = None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # All prices verified March 2026 from official provider documentation.
 # Stored as USD per 1,000 tokens (your existing format).
@@ -30,10 +31,10 @@ class ModelPrice:
 class ModelPricing:
     """
     Base model prices from providers.
-    These change raely, so they live in code with version control.
+    These change rarely, so they live in code with version control.
     """
 
-    # Current prices (Feb 2026)
+    # Current prices (March 2026)
     _prices: Dict[str, Dict[str, ModelPrice]] = {
         "anthropic": {
             "claude-opus-4-6": ModelPrice(0.005, 0.025, date(2026, 3, 2)),
@@ -50,9 +51,9 @@ class ModelPricing:
         },
         "deepseek": {
             "deepseek-chat": ModelPrice(0.00014, 0.00028, date(2024, 1, 1)),
-        }
+        },
         "huggingface": {
             "llama-3.1-8b": ModelPrice(0.0001, 0.0005, date(2024, 1, 1)),
             "llama-3.1-70b": ModelPrice(0.0003, 0.0015, date(2024, 1, 1)),
-        }
+        },
     }
