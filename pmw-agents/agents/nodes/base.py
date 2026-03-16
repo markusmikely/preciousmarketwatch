@@ -6,6 +6,9 @@ One function to call the LLM: call_llm().
 Tenacity retry is applied dynamically so each subclass's MAX_RETRIES is respected.
 Agents override run() and call it if they need it.
 No separate NonLLMAgent class — if your run() doesn't call call_llm(), that's fine.
+
+C1 Fix: run() now accepts (self, state: dict) -> dict to match LangGraph's
+node calling convention. Nodes extract run_id from state["run_id"] internally.
 """
 
 from __future__ import annotations
@@ -147,8 +150,12 @@ class BaseAgent(ABC):
     """
     Abstract base for all PMW pipeline agents.
 
-    Every agent overrides run(). LLM agents call self.call_llm() inside run().
+    Every agent overrides run(state). LLM agents call self.call_llm() inside run().
     Non-LLM agents simply don't — no separate class needed.
+
+    C1 Fix: run() now accepts a single state dict (LangGraph convention).
+    Nodes extract run_id via state["run_id"] internally.
+    run() returns a dict of state updates (not AgentResult).
 
     Override MAX_RETRIES on the subclass to change the attempt ceiling:
 
@@ -157,11 +164,8 @@ class BaseAgent(ABC):
 
         class TopicLoaderAgent(BaseAgent):
             # No MAX_RETRIES override needed — doesn't call call_llm()
-            async def run(self, input_data, run_id):
+            async def run(self, state):
                 ...
-
-    call_llm() builds a fresh tenacity decorator from self.MAX_RETRIES on
-    every invocation, so subclass overrides always take effect.
     """
 
     # Override per subclass to change total attempt count.
@@ -297,9 +301,6 @@ class BaseAgent(ABC):
         temp = temperature if temperature is not None else self.model_config.temperature
 
         # ── Build tenacity decorator dynamically from self.MAX_RETRIES ──
-        # This is the fix: the decorator reads MAX_RETRIES at call time,
-        # not at class definition time, so subclass overrides work.
-
         @retry(
             stop    = stop_after_attempt(self.MAX_RETRIES + 1),
             wait    = wait_exponential(multiplier=1, min=2, max=10),
@@ -309,7 +310,7 @@ class BaseAgent(ABC):
                 LLMProviderError,
                 ValueError,          # raised by validate_output() on bad LLM output
             )),
-            reraise = True,          # propagates the last exception when exhausted
+            reraise = True,
         )
         async def _attempt() -> AgentResult:
             raw, in_tok, out_tok, cost_usd = await services.llm.generate(
@@ -469,48 +470,38 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def run(self, input_data: Any, run_id: int) -> AgentResult:
+    async def run(self, state: dict) -> dict:
         """
-        Implement the agent's task.
+        LangGraph node entry point.
+
+        Accepts the full LangGraph state dict.
+        Returns a dict of state field updates (LangGraph merges these into state).
+
+        Extract run_id internally:
+            run_id = state["run_id"]
 
         LLM agent pattern:
-            async def run(self, input_data, run_id):
-                input_data  = self.preprocess(input_data)
-                prompt      = self.build_prompt(input_data)
-                prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            async def run(self, state):
+                run_id = state["run_id"]
+                topic = state.get("selected_topic") or {}
 
-                await self._emit_event(EventType.STAGE_STARTED, run_id, {
-                    "model": self.model_config.model_id,
-                })
-                await self._write_stage_record(run_id, status="running", attempt=1,
-                                               prompt_hash=prompt_hash)
-                try:
-                    result = await self.call_llm(prompt, run_id, attempt=1)
-                except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-                    return await self._handle_failure(run_id, str(exc))
-
-                await self._emit_event(EventType.STAGE_COMPLETE, run_id, {
-                    "cost_usd": result.cost_usd,
-                })
-                await self._write_stage_record(run_id, status="complete", attempt=1,
-                    passed_threshold=True, output=result.output,
-                    input_tokens=result.input_tokens, output_tokens=result.output_tokens,
-                    cost_usd=result.cost_usd, prompt_hash=prompt_hash)
-
-                return self.postprocess(result)
-
-        Non-LLM agent pattern:
-            async def run(self, input_data, run_id):
                 await self._emit_event(EventType.STAGE_STARTED, run_id, {})
                 await self._write_stage_record(run_id, status="running", attempt=1)
+
+                prompt = PromptRegistry.render("template_name", {...})
                 try:
-                    output = await self._fetch_data(input_data)
-                    await self._emit_event(EventType.STAGE_COMPLETE, run_id, {})
-                    await self._write_stage_record(run_id, status="complete", attempt=1,
-                        passed_threshold=True, output=output)
-                    return AgentResult(status=AgentStatus.SUCCESS, output=output, attempts=1)
-                except Exception as exc:
+                    result = await self.call_llm(prompt, run_id, attempt=1)
+                except (LLMTimeoutError, ...) as exc:
                     return await self._handle_failure(run_id, str(exc))
+
+                return {"my_output": result.output, "current_stage": "my.stage"}
+
+        Non-LLM agent pattern:
+            async def run(self, state):
+                run_id = state["run_id"]
+                await self._emit_event(EventType.STAGE_STARTED, run_id, {})
+                data = await services.some_service.do_work()
+                return {"my_data": data, "current_stage": "my.stage"}
         """
 
 
@@ -532,12 +523,6 @@ class JSONOutputMixin:
                 if data.get("confidence", 0) < 0.75:
                     raise ValueError(f"confidence {data['confidence']} below threshold")
                 return data
-
-            async def run(self, input_data, run_id):
-                prompt = self.build_prompt(input_data)
-                ...
-                result = await self.call_llm(prompt, run_id)
-                ...
     """
 
     def validate_output(self, raw_output: str) -> dict:
