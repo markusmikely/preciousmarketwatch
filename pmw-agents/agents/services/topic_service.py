@@ -1,11 +1,11 @@
 """
-TopicService — fetch topics from WordPress, filter by lock status, select next.
+TopicService — fetch topics from WordPress (GraphQL), filter by lock status, select next.
 
 Owns:
-  - GET /wp/v2/pmw-topics from WordPress REST API via infra.wordpress
+  - Query pmw_topic CPT from WPGraphQL via infra.wordpress.query_topics()
   - Filtering out topics with active Postgres locks
   - Priority-based topic selection (respects 24h cooldown)
-  - PATCH WP meta for display-only status (fire-and-forget)
+  - GraphQL mutation for display-only status updates (fire-and-forget)
 
 Does NOT own:
   - Topic creation (WordPress admin UI owns that)
@@ -33,7 +33,7 @@ log = logging.getLogger("pmw.services.topic")
 
 class TopicService:
     """
-    Stateless service — WordPress access via infra.wordpress,
+    Stateless service — WordPress access via infra.wordpress (GraphQL),
     Postgres lock checks via infra.postgres.
     """
 
@@ -41,7 +41,7 @@ class TopicService:
 
     async def get_eligible_topics(self) -> list[dict]:
         """
-        Fetch all published pmw_topic posts from WordPress REST API.
+        Fetch all published pmw_topic posts from WordPress via GraphQL.
         Only topics with status='publish' are eligible for scheduled runs.
 
         Returns:
@@ -50,10 +50,10 @@ class TopicService:
         infra = get_infrastructure()
 
         try:
-            # WordPress REST API: GET /wp/v2/pmw-topics?status=publish&per_page=100
-            raw_topics = await infra.wordpress.get_all(
-                "/pmw-topics",
-                params={"status": "publish", "per_page": 100},
+            # WPGraphQL query — returns normalised dicts matching old REST shape
+            raw_topics = await infra.wordpress.query_topics(
+                status="PUBLISH",
+                first=100,
             )
         except Exception as exc:
             log.error("Failed to fetch topics from WordPress", extra={"error": str(exc)})
@@ -95,12 +95,6 @@ class TopicService:
         Remove topics that have an active lock in workflow_runs.
         A topic is locked if there's a row with status='running' and
         lock_expires_at in the future.
-
-        Args:
-            topics: List of topic dicts from get_eligible_topics().
-
-        Returns:
-            Filtered list with locked topics removed.
         """
         if not topics:
             return []
@@ -108,7 +102,6 @@ class TopicService:
         infra = get_infrastructure()
         topic_ids = [t["id"] for t in topics]
 
-        # Fetch all topic IDs that currently have active locks
         rows = await infra.postgres.fetch(
             """
             SELECT DISTINCT topic_id
@@ -139,15 +132,9 @@ class TopicService:
 
         Selection criteria (in order):
           1. Exclude topics run in the last 24 hours
-          2. Sort by priority (lower number = higher priority, 1 is highest)
+          2. Sort by priority (lower number = higher priority)
           3. Among equal priority, prefer topics with fewer total runs
           4. Among equal runs, prefer topics that haven't been run recently
-
-        Args:
-            candidates: Unlocked topics from filter_locked_topics().
-
-        Returns:
-            The selected topic dict, or None if no candidates remain.
         """
         if not candidates:
             return None
@@ -155,7 +142,6 @@ class TopicService:
         now = datetime.now(timezone.utc)
         cooldown = now - timedelta(hours=24)
 
-        # Exclude topics run in the last 24 hours
         eligible = []
         for t in candidates:
             last_run = t.get("last_run_at", "")
@@ -163,18 +149,15 @@ class TopicService:
                 try:
                     last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
                     if last_dt > cooldown:
-                        continue  # Too recent — skip
+                        continue
                 except (ValueError, TypeError):
-                    pass  # Can't parse — treat as never run
+                    pass
             eligible.append(t)
 
         if not eligible:
-            # If all topics were run recently, fall back to full candidate list
-            # but still sort by priority
             log.warning("All candidates run in last 24h — using full list")
             eligible = candidates
 
-        # Sort: priority ASC (1 = highest), then run_count ASC, then last_run_at ASC
         def sort_key(topic):
             priority = topic.get("priority", 5)
             run_count = topic.get("run_count", 0)
@@ -194,16 +177,16 @@ class TopicService:
         )
         return selected
 
-    # ── WP display status updates (fire-and-forget) ────────────────────────
+    # ── WP display status updates (fire-and-forget, via GraphQL) ───────────
     # These write to WP meta for display in the WordPress admin only.
     # They are NOT used for locking or concurrency control.
 
     async def mark_topic_running(self, topic_wp_id: int, run_id: int) -> None:
         """
-        PATCH WP meta: pmw_agent_status=running, pmw_last_run_id=run_id.
+        Update WP meta: pmw_agent_status=running, pmw_last_run_id=run_id.
         Fire-and-forget — failure is logged but never propagates.
         """
-        await self._patch_topic_meta(topic_wp_id, {
+        await self._update_topic_meta(topic_wp_id, {
             "pmw_agent_status": "running",
             "pmw_last_run_id": run_id,
             "pmw_last_run_at": datetime.now(timezone.utc).isoformat(),
@@ -216,23 +199,15 @@ class TopicService:
         wp_post_id: int | None = None,
     ) -> None:
         """
-        PATCH WP meta: status=idle, increment run_count, set last_wp_post_id.
+        Update WP meta: status=idle, increment run_count, set last_wp_post_id.
         Fire-and-forget.
         """
-        # Fetch current run_count to increment
         infra = get_infrastructure()
+
+        # Fetch current run_count from WP to increment
         try:
-            resp_items = await infra.wordpress.get_all(
-                f"/pmw-topics/{topic_wp_id}",
-                params={"_fields": "meta"},
-            )
-            # get_all returns a list; for a single item endpoint we may get a dict
-            # Handle both cases
-            current_count = 0
-            if isinstance(resp_items, list) and resp_items:
-                current_count = resp_items[0].get("meta", {}).get("pmw_run_count", 0)
-            elif isinstance(resp_items, dict):
-                current_count = resp_items.get("meta", {}).get("pmw_run_count", 0)
+            current_meta = await infra.wordpress.get_topic_meta(topic_wp_id)
+            current_count = current_meta.get("pmw_run_count", 0)
         except Exception:
             current_count = 0
 
@@ -245,29 +220,25 @@ class TopicService:
         if wp_post_id:
             meta["pmw_last_wp_post_id"] = wp_post_id
 
-        await self._patch_topic_meta(topic_wp_id, meta)
+        await self._update_topic_meta(topic_wp_id, meta)
 
     async def mark_topic_failed(self, topic_wp_id: int, error: str) -> None:
         """
-        PATCH WP meta: pmw_agent_status=failed.
+        Update WP meta: pmw_agent_status=failed.
         Fire-and-forget.
         """
-        await self._patch_topic_meta(topic_wp_id, {
+        await self._update_topic_meta(topic_wp_id, {
             "pmw_agent_status": "failed",
         })
 
-    async def _patch_topic_meta(self, topic_wp_id: int, meta: dict) -> None:
+    async def _update_topic_meta(self, topic_wp_id: int, meta: dict) -> None:
         """
-        PATCH /wp/v2/pmw-topics/{id} with meta fields.
+        Update topic meta fields via GraphQL mutation.
         Never raises — failures are logged and swallowed.
         """
         infra = get_infrastructure()
         try:
-            await infra.wordpress.client.request(
-                method="POST",  # WP REST API uses POST for updates
-                url=f"{infra.wordpress.api_url}/pmw-topics/{topic_wp_id}",
-                json={"meta": meta},
-            )
+            await infra.wordpress.update_topic_meta(topic_wp_id, meta)
             log.debug(
                 "WP topic meta updated",
                 extra={"topic_wp_id": topic_wp_id, "meta_keys": list(meta.keys())},

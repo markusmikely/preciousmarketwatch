@@ -1,10 +1,10 @@
 """
-PageManagementService — create/update WordPress affiliate intelligence pages.
+PageManagementService — create/update WordPress affiliate intelligence pages via GraphQL.
 
 Owns:
-  - Finding existing WP pages by slug
-  - Creating new WP pages for affiliate intelligence
-  - Updating existing pages with aggregated intelligence data
+  - Finding existing WP pages by slug (GraphQL query)
+  - Creating new WP pages for affiliate intelligence (GraphQL mutation)
+  - Updating existing pages with aggregated intelligence data (GraphQL mutation)
 
 Does NOT own:
   - Intelligence aggregation (AffiliateService owns that)
@@ -27,7 +27,7 @@ log = logging.getLogger("pmw.services.page_management")
 
 
 class PageManagementService:
-    """Stateless service — WordPress access via get_infrastructure()."""
+    """Stateless service — WordPress access via get_infrastructure() (GraphQL)."""
 
     async def upsert_affiliate_intelligence_page(
         self,
@@ -41,7 +41,7 @@ class PageManagementService:
         If the page exists, it's updated. If not, it's created.
 
         Intelligence data is stored in WP post meta as JSON,
-        then rendered by the WordPress theme template.
+        then rendered by the WordPress theme/React frontend.
 
         Args:
             affiliate: Affiliate dict with name, partner_key, url, etc.
@@ -53,46 +53,44 @@ class PageManagementService:
         infra = get_infrastructure()
         partner_key = affiliate.get("name", "").lower().replace(" ", "-")
         slug = f"affiliates-{partner_key}"
+        title = f"{affiliate.get('name', 'Unknown')} — Investment Intelligence"
 
-        # Build the page payload
-        page_data = {
-            "title": f"{affiliate.get('name', 'Unknown')} — Investment Intelligence",
-            "slug": slug,
-            "status": "publish",
-            "meta": {
-                "pmw_intelligence_data": json.dumps(aggregated_data),
-                "pmw_intelligence_updated": aggregated_data.get("last_run_at", ""),
-                "pmw_partner_key": partner_key,
-                "pmw_pending_review": str(aggregated_data.get("has_pending_review", False)),
-            },
+        # Build the meta payload for the page
+        page_meta = {
+            "pmw_intelligence_data": json.dumps(aggregated_data),
+            "pmw_intelligence_updated": aggregated_data.get("last_run_at", ""),
+            "pmw_partner_key": partner_key,
+            "pmw_pending_review": str(aggregated_data.get("has_pending_review", False)),
         }
 
         try:
             # Check if page already exists by slug
-            existing = await infra.wordpress.get_all(
-                "/pages",
-                params={"slug": slug, "_fields": "id", "per_page": 1},
-            )
+            existing = await infra.wordpress.find_page_by_slug(slug)
 
-            if existing and isinstance(existing, list) and len(existing) > 0:
+            if existing and existing.get("id"):
                 # Update existing page
-                page_id = existing[0].get("id")
-                await infra.wordpress.client.request(
-                    method="POST",
-                    url=f"{infra.wordpress.api_url}/pages/{page_id}",
-                    json=page_data,
+                page_id = existing["id"]
+                success = await infra.wordpress.update_page(
+                    page_id=page_id,
+                    title=title,
+                    meta=page_meta,
                 )
-                log.info(f"Updated affiliate page: {slug} (ID={page_id})")
-                return page_id
+                if success:
+                    log.info(f"Updated affiliate page: {slug} (ID={page_id})")
+                    return page_id
+                else:
+                    log.warning(f"Affiliate page update returned false for {slug}")
+                    return page_id  # page exists even if update had issues
             else:
                 # Create new page
-                resp = await infra.wordpress.client.request(
-                    method="POST",
-                    url=f"{infra.wordpress.api_url}/pages",
-                    json=page_data,
+                new_id = await infra.wordpress.create_page(
+                    title=title,
+                    slug=slug,
+                    status="PUBLISH",
+                    meta=page_meta,
                 )
-                new_id = resp.json().get("id")
-                log.info(f"Created affiliate page: {slug} (ID={new_id})")
+                if new_id:
+                    log.info(f"Created affiliate page: {slug} (ID={new_id})")
                 return new_id
 
         except Exception as exc:
