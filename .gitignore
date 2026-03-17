@@ -45,3 +45,5 @@ packages/react-devtools-timeline/dist
 # Frontend build - committed for deployment
 !assets/
 !index.html
+
+*.env
