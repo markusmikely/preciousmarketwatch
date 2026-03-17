@@ -247,6 +247,7 @@ class EventService:
                 error,
             )
         except Exception as exc:
+            print('[WORKFLOW STAGE ERROR LOG]', str(exc))
             log.error(
                 "workflow_stages write failed",
                 extra={
