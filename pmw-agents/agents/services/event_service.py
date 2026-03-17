@@ -188,6 +188,21 @@ class EventService:
             from infrastructure import get_infrastructure
             pg = get_infrastructure().postgres
 
+            print("[EVENT:SERVICE:TESTING]", 
+                run_id,
+                stage_name,
+                status,
+                attempt,
+                score,
+                passed_threshold,
+                json.dumps(output)         if output         else None,
+                json.dumps(judge_feedback) if judge_feedback else None,
+                prompt_hash,
+                model_used,
+                input_tokens,
+                output_tokens,
+                cost_usd,
+                error)
             await pg.execute(
                 """
                 INSERT INTO workflow_stages
