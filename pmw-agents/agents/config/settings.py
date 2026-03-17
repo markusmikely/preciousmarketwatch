@@ -53,10 +53,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
 
     # ── LLM Provider API Keys ─────────────────────────────────────────────
-    ANTHROPIC_API_KEY: str = os.getenviron("ANTHROPIC_API_KEY") 
-    OPENAI_API_KEY: str = os.getenviron("OPENAI_API_KEY")
-    DEEPSEEK_API_KEY: str = os.getenviron("DEEPSEEK_API_KEY")
-    HUGGINGFACE_API_KEY: str = os.getenviron("HUGGINGFACE_API_KEY")
+    ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "") 
+    OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.environ.get("DEEPSEEK_API_KEY", "")
+    HUGGINGFACE_API_KEY: str = os.environ.get("HUGGINGFACE_API_KEY", "")
 
     # ── WordPress REST API ────────────────────────────────────────────────
     # Used by infrastructure/owned/wordpress/wp_db_client.py
