@@ -46,4 +46,4 @@ packages/react-devtools-timeline/dist
 !assets/
 !index.html
 
-*.env
+# *.env
