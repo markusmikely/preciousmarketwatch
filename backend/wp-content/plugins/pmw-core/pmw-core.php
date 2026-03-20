@@ -248,6 +248,7 @@ function pmw_register_post_types() {
     register_post_type( 'pmw_topic', [
         'label'        => 'Content Topics',
         'public'       => false,
+        'publicly_queryable'  => true,
         'show_ui'      => true,
         'show_in_rest' => true,
         'rest_base'    => 'pmw-topics',
@@ -1180,7 +1181,7 @@ function pmw_seed_topics_from_json( array $items ) {
             'post_title'   => $title,
             'post_type'    => 'pmw_topic',
             'post_status'  => $status,
-            'post_content' => '',
+            'post_content' => ''
         ] );
         if ( ! $post_id || is_wp_error( $post_id ) ) continue;
         foreach ( $meta as $key => $val ) {
