@@ -212,7 +212,7 @@ class EventService:
                      input_tokens, output_tokens, cost_usd, error,
                      completed_at)
                 VALUES
-                    ($1, $2, $3, $4,
+                    ($1, $2, $3::text, $4,
                      $5, $6, $7::jsonb, $8::jsonb,
                      $9, $10,
                      $11, $12, $13, $14,
