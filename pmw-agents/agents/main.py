@@ -3,14 +3,16 @@ PMW Agents — background worker service.
 
 On container start:
   1. Run Alembic migrations
-  2. Run the workflow
+  2. Connect infrastructure (Postgres, Redis, LLM, HTTP)
+  3. Recover any stale tasks from previous crash
+  4. Start the continuous pipeline loop (runs every 5 minutes)
 """
 import asyncio
 import logging
 import os
 import subprocess
 import sys
- 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -40,14 +42,15 @@ def run_migrations() -> None:
         log.error(f"Migration failed: {exc}")
         raise
 
+
 # ── Entry point ────────────────────────────────────────────────────────────
 
 async def main() -> None:
     log.info("PMW Agents starting...")
-    
+
     # 1. Run migrations before connecting anything
     run_migrations()
- 
+
     # 2. Connect infrastructure (Postgres pool, Redis, LLM SDKs, HTTP session)
     from infrastructure import get_infrastructure
     infra = get_infrastructure()
@@ -63,21 +66,25 @@ async def main() -> None:
             log.warning("TaskQueueService not found — skipping stale recovery.")
         except Exception as exc:
             log.warning(f"Stale task recovery failed (non-fatal): {exc}")
- 
-        # 4. Run the workflow orchestrator
-        from orchestrator import run_workflow
-        log.info("Starting workflow execution...")
-        await run_workflow(triggered_by="scheduler")
- 
+
+        # 4. Start the continuous pipeline loop
+        #    This runs forever — one cycle every PIPELINE_INTERVAL_SECONDS
+        from orchestrator import run_pipeline_loop
+        log.info("Starting continuous pipeline loop...")
+        await run_pipeline_loop(triggered_by="scheduler")
+
+    except KeyboardInterrupt:
+        log.info("Received shutdown signal.")
+
     except Exception as exc:
-        log.error(f"Worker error: {exc}")
+        log.error(f"Worker error: {exc}", exc_info=True)
         raise
- 
+
     finally:
         # 5. Always close infrastructure cleanly, even on error
         await infra.close()
         log.info("PMW Agents shut down.")
- 
- 
+
+
 if __name__ == "__main__":
     asyncio.run(main())

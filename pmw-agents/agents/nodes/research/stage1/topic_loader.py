@@ -10,8 +10,9 @@ Flow:
   3. Query Postgres for unlocked topics (filter by workflow_runs locks)
   4. Return candidate_topics list
 
-Design: WP is the authoring UI. Postgres is the operational store.
-Only WP display status (pmw_agent_status) gets written back to WP.
+If no topics are found, sets status="failed" which triggers the
+conditional edge in research_graph to route to handle_failure.
+This is a normal condition — the pipeline loop will try again next cycle.
 """
 
 from __future__ import annotations
@@ -48,15 +49,9 @@ class TopicLoader(BaseAgent):
             wp_topics = await services.topics.get_eligible_topics()
             self.log.info(f"Fetched {len(wp_topics)} topics from WordPress", run_id=run_id)
 
-            # Step 2: Sync each WP topic to Postgres (upsert by WP post ID)
-            await self._sync_topics_to_postgres(wp_topics)
-
-            # Step 3: Filter out topics with active locks (uses Postgres)
-            unlocked = await services.topics.filter_locked_topics(wp_topics)
-
-            if not unlocked:
-                error_msg = "No eligible topics found after lock filtering"
-                self.log.warning(error_msg, run_id=run_id)
+            if not wp_topics:
+                error_msg = "No published topics found in WordPress"
+                self.log.info(error_msg, run_id=run_id)
                 await self._write_stage_record(
                     run_id, status="failed", attempt=1,
                     error=error_msg,
@@ -68,6 +63,34 @@ class TopicLoader(BaseAgent):
                     "errors": state.get("errors", []) + [{
                         "stage": "stage1.topic_loader",
                         "error": error_msg,
+                        "recoverable": True,  # pipeline loop will retry next cycle
+                    }],
+                }
+
+            # Step 2: Sync each WP topic to Postgres (upsert by WP post ID)
+            await self._sync_topics_to_postgres(wp_topics)
+
+            # Step 3: Filter out topics with active locks (uses Postgres)
+            unlocked = await services.topics.filter_locked_topics(wp_topics)
+
+            if not unlocked:
+                error_msg = (
+                    f"All {len(wp_topics)} topic(s) are currently locked by other runs. "
+                    "Will retry next cycle."
+                )
+                self.log.info(error_msg, run_id=run_id)
+                await self._write_stage_record(
+                    run_id, status="failed", attempt=1,
+                    error=error_msg,
+                )
+                return {
+                    "candidate_topics": [],
+                    "current_stage": "stage1.topic_loader",
+                    "status": "failed",
+                    "errors": state.get("errors", []) + [{
+                        "stage": "stage1.topic_loader",
+                        "error": error_msg,
+                        "recoverable": True,
                     }],
                 }
 
@@ -102,7 +125,6 @@ class TopicLoader(BaseAgent):
         """
         Upsert WP topics into the Postgres topics table.
         Uses the WP post ID as the primary key for matching.
-        New topics are inserted; existing topics get their definitions updated.
         """
         infra = get_infrastructure()
 

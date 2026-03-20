@@ -11,7 +11,7 @@ from nodes.research.stage1.affiliate_scorer import AffiliateScorer
 from nodes.research.stage1.topic_loader import TopicLoader
 from nodes.research.stage1.topic_selector import TopicSelector
 from nodes.research.stage1.brief_locker import BriefLocker
-# Stage 2 nodes 
+# Stage 2 nodes
 from nodes.research.stage2.keyword_research import KeywordResearch
 # Stage 3 nodes
 from nodes.research.stage3.market_context import MarketContext
@@ -29,7 +29,7 @@ from nodes.research.stage7.tool_mapping import ToolMapping
 from nodes.research.stage8.arc_coherence import ArcCoherence
 from nodes.research.stage8.bundle_assembler import BundleAssembler
 # Stage 9 nodes
-from nodes.research.stage9.intelligence_aggregation import IntelligenceAggregation 
+from nodes.research.stage9.intelligence_aggregation import IntelligenceAggregation
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +41,12 @@ class ResearchGraph(BaseGraph):
     Internal state: ResearchState (20+ fields, never seen by MainGraph)
     Public contract: run({"run_id", "triggered_by"}) -> PhaseResult
 
-    _make_input  : run_id + triggered_by in -> full ResearchState out
-    _make_result : full ResearchState in -> PhaseResult out (only boundary)
+    FIXES:
+      - Every Stage 1 node now has conditional routing: if the node sets
+        status="failed", the pipeline routes to handle_failure instead of
+        proceeding to the next node.
+      - This prevents the cascade where topic_loader fails but topic_selector
+        still runs with empty data.
     """
 
     _state_schema = ResearchState
@@ -71,6 +75,7 @@ class ResearchGraph(BaseGraph):
         tool_mapping = ToolMapping()
         arc_coherence = ArcCoherence()
         bundle_assembler = BundleAssembler()
+
         # Stage 1
         self.add_node("stage1.topic_loader",       topic_loader.run)
         self.add_node("stage1.topic_selector",     topic_selector.run)
@@ -102,16 +107,57 @@ class ResearchGraph(BaseGraph):
         self.add_node("hitl_gate",      self._hitl)
         self.add_node("handle_failure", self._failure)
 
-        # Stage 9 is NOT a graph node — dispatched as asyncio.create_task
-        # from within bundle_assembler
-
     def _build_edges(self):
-        # ── Stage 1 — sequential chain ────────────────────────────────
-        self.add_edge(self.START,                  "stage1.topic_loader")
-        self.add_edge("stage1.topic_loader",       "stage1.topic_selector")
-        self.add_edge("stage1.topic_selector",     "stage1.affiliate_loader")
-        self.add_edge("stage1.affiliate_loader",   "stage1.affiliate_scorer")
-        self.add_edge("stage1.affiliate_scorer",   "stage1.brief_locker")
+        # ══════════════════════════════════════════════════════════════
+        # Stage 1 — CONDITIONAL chain (each node can fail → handle_failure)
+        #
+        # Previously these were hard edges (add_edge). Now each Stage 1
+        # node routes through a check: if status=="failed", go to
+        # handle_failure. Otherwise continue to the next node.
+        # This is what prevents the pipeline from proceeding with empty data.
+        # ══════════════════════════════════════════════════════════════
+
+        self.add_edge(self.START, "stage1.topic_loader")
+
+        # After topic_loader: continue or fail
+        self.add_conditional_edges(
+            "stage1.topic_loader",
+            self._route_on_status,
+            {
+                "continue": "stage1.topic_selector",
+                "failed":   "handle_failure",
+            }
+        )
+
+        # After topic_selector: continue or fail
+        self.add_conditional_edges(
+            "stage1.topic_selector",
+            self._route_on_status,
+            {
+                "continue": "stage1.affiliate_loader",
+                "failed":   "handle_failure",
+            }
+        )
+
+        # After affiliate_loader: continue or fail
+        self.add_conditional_edges(
+            "stage1.affiliate_loader",
+            self._route_on_status,
+            {
+                "continue": "stage1.affiliate_scorer",
+                "failed":   "handle_failure",
+            }
+        )
+
+        # After affiliate_scorer: continue or fail
+        self.add_conditional_edges(
+            "stage1.affiliate_scorer",
+            self._route_on_status,
+            {
+                "continue": "stage1.brief_locker",
+                "failed":   "handle_failure",
+            }
+        )
 
         # ── After brief lock — conditional fan-out or HITL ────────────
         self.add_conditional_edges(
@@ -167,15 +213,28 @@ class ResearchGraph(BaseGraph):
         self.add_edge("hitl_gate",      self.END)
         self.add_edge("handle_failure", self.END)
 
+    # ── Generic status router — used by Stage 1 nodes ─────────────────
+
+    @staticmethod
+    def _route_on_status(state: dict) -> str:
+        """
+        Generic router: check if the previous node set status="failed".
+        If so, route to handle_failure. Otherwise continue.
+
+        This is the key fix — previously Stage 1 used hard edges
+        (add_edge) so a failed topic_loader would still proceed
+        to topic_selector with empty data.
+        """
+        if state.get("status") == "failed":
+            return "failed"
+        return "continue"
+
     # ── Terminal node implementations ─────────────────────────────────
 
     @staticmethod
     async def _hitl(state: dict) -> dict:
         """
         HITL gate — halts the pipeline for human review.
-        Sets status to 'hitl' so _make_result produces a PhaseResult
-        with needs_hitl=True. The operator reviews in the dashboard
-        and restarts the run from the failed stage.
         """
         log.warning(
             "Pipeline halted for human review",
@@ -268,10 +327,10 @@ class ResearchGraph(BaseGraph):
           - HITL: brief coherence failed → human review
           - Failed: hard error → pipeline stops
         """
-        if state.get("hitl_required"):
-            return "hitl"
         if state.get("status") == "failed":
             return "failed"
+        if state.get("hitl_required"):
+            return "hitl"
         # Fan-out — return list to trigger parallel execution
         return [
             "stage2.keyword_research",
@@ -281,31 +340,27 @@ class ResearchGraph(BaseGraph):
 
     def route_after_arc(self, state: ResearchState) -> str:
         """
-        Conditional edge function called after stage8.arc_coherence completes.
+        After stage8.arc_coherence completes.
 
         Three possible outcomes:
             "continue"  → arc is coherent, proceed to bundle assembly
-            "hitl"      → arc is incoherent but recoverable, suspend for human review
-            "failed"    → arc confidence too low to recover, hard failure
+            "hitl"      → arc is incoherent but recoverable
+            "failed"    → arc confidence too low to recover
         """
-        # Hard failure — arc_coherence node itself errored
         if state.get("status") == "failed":
             return "failed"
 
         arc = state.get("arc_validation")
 
-        # arc_validation missing entirely — node produced no output
         if not arc:
             return "failed"
 
         arc_coherent   = arc.get("arc_coherent", False)
         arc_confidence = arc.get("arc_confidence", 0.0)
 
-        # Happy path
         if arc_coherent:
             return "continue"
 
-        # Arc incoherent — high confidence → HITL, low confidence → hard fail
         if arc_confidence >= 0.3:
             return "hitl"
 
