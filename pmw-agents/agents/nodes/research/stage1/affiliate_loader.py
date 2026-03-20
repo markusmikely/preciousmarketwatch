@@ -15,8 +15,7 @@ Postgres — the pipeline doesn't fail just because WP is temporarily down.
 
 If no affiliates are found (neither from WP nor Postgres), sets
 status="failed" which triggers the conditional edge in research_graph
-to route to handle_failure. This is a genuine error — the pipeline
-cannot proceed without at least one affiliate.
+to route to handle_failure.
 """
 
 from __future__ import annotations
@@ -46,59 +45,56 @@ class AffiliateLoader(BaseAgent):
 
             # ── Step 1: Fetch dealers from WordPress ──────────────────
             #
-            # query_dealers() calls WPGraphQL for all published dealer
-            # CPT posts with pmwAffiliateActive=true. Returns normalised
-            # dicts matching the affiliates table columns.
-            #
-            # We fetch ALL dealers (active_only=False) for the sync step
-            # so that deactivated dealers also get their active=false
-            # status synced to Postgres. Only active ones are returned
-            # to the pipeline after sync.
-
-            wp_dealers = await services.affiliates.fetch_from_wordpress(
-                active_only=False,
-            )
-            self.log.info(
-                f"Fetched {len(wp_dealers)} dealer(s) from WordPress",
-                run_id=run_id,
-            )
-
-            # ── Step 2: Sync to Postgres (upsert by wp_dealer_id) ─────
-            #
-            # Each WP dealer is upserted into the affiliates table using
-            # wp_dealer_id as the conflict key. This means:
-            #   - New dealers in WP → inserted into Postgres
-            #   - Existing dealers → all fields updated from WP values
-            #   - Deactivated dealers → active=false synced to Postgres
-            #
-            # If WP returned nothing (network error, empty site), we
-            # skip the sync and fall back to existing Postgres data.
-
-            if wp_dealers:
-                synced = await services.affiliates.sync_to_postgres(wp_dealers)
+            # Non-fatal: if WP is down we fall back to Postgres.
+            wp_dealers = []
+            try:
+                wp_dealers = await services.affiliates.fetch_from_wordpress(
+                    active_only=False,
+                )
                 self.log.info(
-                    f"Synced {synced} dealer(s) to Postgres",
+                    f"Fetched {len(wp_dealers)} dealer(s) from WordPress",
                     run_id=run_id,
                 )
-            else:
+            except Exception as wp_exc:
                 self.log.warning(
+                    f"WordPress dealer fetch failed (falling back to Postgres): {wp_exc}",
+                    run_id=run_id,
+                )
+
+            # ── Step 2: Sync to Postgres ──────────────────────────────
+            #
+            # Non-fatal: if sync fails, Postgres may already have data
+            # from a previous successful sync.
+            if wp_dealers:
+                try:
+                    synced = await services.affiliates.sync_to_postgres(wp_dealers)
+                    self.log.info(
+                        f"Synced {synced} dealer(s) to Postgres",
+                        run_id=run_id,
+                    )
+                except Exception as sync_exc:
+                    self.log.warning(
+                        f"Postgres sync failed (using existing data): {sync_exc}",
+                        run_id=run_id,
+                    )
+            else:
+                self.log.info(
                     "No dealers from WordPress — using existing Postgres data",
                     run_id=run_id,
                 )
 
             # ── Step 3: Load active affiliates from Postgres ──────────
             #
-            # After sync, Postgres is the canonical source for the rest
-            # of the pipeline. This ensures affiliate IDs are stable
-            # Postgres integers (used as foreign keys in intelligence tables).
-
+            # This is the critical step. If THIS fails, the node fails.
             affiliates = await services.affiliates.get_active_affiliates()
 
             if not affiliates:
                 error_msg = (
-                    "No active affiliates found. "
-                    "Check WordPress dealer CPT has published dealers "
-                    "with 'Active in Pipeline' checked."
+                    "No active affiliates found in Postgres. "
+                    "Check: (1) WordPress dealer CPT has published dealers "
+                    "with 'Active in Pipeline' checked, (2) migration "
+                    "007_affiliates_wp_sync has been applied, (3) at least "
+                    "one previous sync succeeded."
                 )
                 self.log.warning(error_msg, run_id=run_id)
                 await self._write_stage_record(
@@ -118,7 +114,7 @@ class AffiliateLoader(BaseAgent):
             output = {
                 "count": len(affiliates),
                 "affiliate_names": [a["name"] for a in affiliates],
-                "wp_synced": len(wp_dealers) if wp_dealers else 0,
+                "wp_synced": len(wp_dealers),
             }
             await self._emit_event(EventType.STAGE_COMPLETE, run_id, output)
             await self._write_stage_record(
@@ -126,15 +122,29 @@ class AffiliateLoader(BaseAgent):
                 passed_threshold=True, output=output,
             )
 
+            self.log.info(
+                f"AffiliateLoader complete: {len(affiliates)} active affiliate(s)",
+                run_id=run_id,
+            )
+
             return {
                 "candidate_affiliates": affiliates,
                 "current_stage": "stage1.affiliate_loader",
+                # Do NOT return "status" on success.
+                # The initial state has status="running" which is correct.
+                # _route_on_status only checks for status=="failed".
+                # Not returning "status" means LangGraph keeps the existing
+                # value ("running"), and the router returns "continue".
             }
 
         except Exception as exc:
-            self.log.error(f"AffiliateLoader failed: {exc}", run_id=run_id)
+            error_str = str(exc)
+            self.log.error(
+                f"AffiliateLoader unexpected error: {error_str}",
+                run_id=run_id,
+            )
             await self._write_stage_record(
-                run_id, status="failed", attempt=1, error=str(exc),
+                run_id, status="failed", attempt=1, error=error_str,
             )
             return {
                 "candidate_affiliates": [],
@@ -142,6 +152,6 @@ class AffiliateLoader(BaseAgent):
                 "status": "failed",
                 "errors": state.get("errors", []) + [{
                     "stage": "stage1.affiliate_loader",
-                    "error": str(exc),
+                    "error": error_str,
                 }],
             }
