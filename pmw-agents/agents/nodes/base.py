@@ -1,21 +1,14 @@
 """
-PMW Content Pipeline — Base Agent
-==================================
+PMW Content Pipeline — Base Agent (v2)
 
-One function to call the LLM: call_llm().
-Tenacity retry is applied dynamically so each subclass's MAX_RETRIES is respected.
-Agents override run() and call it if they need it.
-No separate NonLLMAgent class — if your run() doesn't call call_llm(), that's fine.
+Simplified architecture:
+  - call_llm() calls infra.llm.generate() directly (2 hops, not 5)
+  - Cost recorded immediately after each call via cost_tracker
+  - Event emission is fire-and-forget via _emit()
+  - Stage records written via _write_stage()
+  - No dynamic tenacity — retry logic is explicit in call_llm()
 
-run() accepts (self, state: dict) -> dict to match LangGraph's
-node calling convention. Nodes extract run_id from state["run_id"] internally.
-
-FIXES applied:
-  - Removed stray _write_stage_record() call from __init__ (crashed on instantiation)
-  - call_llm() returns (text, input_tokens, output_tokens, cost_usd) tuple
-    so nodes can handle retry/failure themselves
-  - _handle_failure properly returns a dict of state updates (not AgentResult)
-    for consistency with LangGraph node convention
+Agents override run(state: dict) -> dict. That's the only contract.
 """
 
 from __future__ import annotations
@@ -28,49 +21,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-    RetryError,
-)
-
-from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError
+log = logging.getLogger("pmw.agent")
 
 
-# ---------------------------------------------------------------------------
-# Structured logger
-# ---------------------------------------------------------------------------
-
-class StructuredLogger:
-    def __init__(self, agent_name: str):
-        self._logger    = logging.getLogger(f"pmw.agent.{agent_name}")
-        self.agent_name = agent_name
-
-    def _emit(self, level: str, message: str, run_id: int | None = None, **kwargs):
-        record = {
-            "ts":      datetime.now(timezone.utc).isoformat(),
-            "level":   level,
-            "agent":   self.agent_name,
-            "message": message,
-            "run_id":  run_id,
-            **kwargs,
-        }
-        record = {k: v for k, v in record.items() if v is not None}
-        getattr(self._logger, level.lower())(json.dumps(record))
-
-    def info   (self, msg, run_id=None, **kw): self._emit("INFO",    msg, run_id, **kw)
-    def warning(self, msg, run_id=None, **kw): self._emit("WARNING", msg, run_id, **kw)
-    def error  (self, msg, run_id=None, **kw): self._emit("ERROR",   msg, run_id, **kw)
-    def debug  (self, msg, run_id=None, **kw): self._emit("DEBUG",   msg, run_id, **kw)
-
-
-# ---------------------------------------------------------------------------
-# Enums
-# ---------------------------------------------------------------------------
+# ── Enums ─────────────────────────────────────────────────────────────
 
 class ModelProvider(str, Enum):
     ANTHROPIC   = "anthropic"
@@ -87,419 +43,230 @@ class AgentStatus(str, Enum):
     WAITING_FOR_HUMAN = "awaiting_restart"
 
 
-class EventType(str, Enum):
-    STAGE_STARTED          = "stage.started"
-    STAGE_COMPLETE         = "stage.complete"
-    STAGE_RETRY            = "stage.retry"
-    STAGE_AWAITING_RESTART = "stage.awaiting_restart"
-    RUN_COMPLETE           = "run.complete"
-    RUN_FAILED             = "run.failed"
-    COST_UPDATE            = "cost.update"
-    MEDIA_GENERATED        = "media.generated"
-    MEDIA_WARNING          = "media.warning"
-    INTERVENTION_APPLIED   = "intervention.applied"
-
-
-# ---------------------------------------------------------------------------
-# Config dataclasses
-# ---------------------------------------------------------------------------
+# ── Config ────────────────────────────────────────────────────────────
 
 @dataclass
 class ModelConfig:
-    """Provider + model settings. Only needed when call_llm() will be used."""
     provider:    ModelProvider
     model_id:    str
     temperature: float = 0.2
     max_tokens:  int   = 4096
-    extra_params: dict = field(default_factory=dict)
-    # Fallback costs — used by CostTrackingService only if DB price lookup fails
-    cost_per_1k_input_tokens:  float = 0.0
-    cost_per_1k_output_tokens: float = 0.0
 
+
+# ── Result ────────────────────────────────────────────────────────────
 
 @dataclass
-class FailureConfig:
-    """
-    Defines behaviour when all retries are exhausted.
-
-    human_in_the_loop:   True  → WAITING_FOR_HUMAN + stage.awaiting_restart
-                         False → FAILED + run.failed
-    on_failure_callback: Optional callable for alerting (Slack, PagerDuty).
-    """
-    failure_message:     str                               = "Agent failed after maximum retries."
-    human_in_the_loop:   bool                              = False
-    on_failure_callback: Callable[[AgentResult], None] | None = None
+class LLMResult:
+    """What call_llm() returns. Flat, no nesting."""
+    text:          str
+    input_tokens:  int
+    output_tokens: int
+    cost_usd:      float
+    model:         str
+    attempts:      int = 1
 
 
-# ---------------------------------------------------------------------------
-# Result dataclass
-# ---------------------------------------------------------------------------
-
-@dataclass
-class AgentResult:
-    status:         AgentStatus
-    output:         Any
-    raw_llm_output: str | None = None
-    attempts:       int        = 0
-    error:          str | None = None
-    input_tokens:   int        = 0
-    output_tokens:  int        = 0
-    cost_usd:       float      = 0.0
-    model_used:     str | None = None
-    meta:           dict       = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Base Agent
-# ---------------------------------------------------------------------------
+# ── Base Agent ────────────────────────────────────────────────────────
 
 class BaseAgent(ABC):
     """
-    Abstract base for all PMW pipeline agents.
+    Abstract base for all pipeline agents.
 
-    Every agent overrides run(state). LLM agents call self.call_llm() inside run().
+    Every agent implements run(state: dict) -> dict.
+    LLM agents call self.call_llm() inside run().
     Non-LLM agents simply don't — no separate class needed.
 
-    run() accepts a single state dict (LangGraph convention).
-    run() returns a dict of state updates (LangGraph merges these into state).
+    LLM call path (2 hops):
+      call_llm() → infra.llm.generate() + cost_tracker.record_usage()
 
-    Override MAX_RETRIES on the subclass to change the attempt ceiling:
-
-        class KeywordResearchAgent(JSONOutputMixin, BaseAgent):
-            MAX_RETRIES = 3   # 4 total attempts
+    Override MAX_RETRIES to change attempt ceiling per subclass.
     """
 
-    # Override per subclass to change total attempt count.
-    MAX_RETRIES: int = 2  # default: 3 total attempts (1 + 2 retries)
+    MAX_RETRIES: int = 2  # 3 total attempts
 
     def __init__(
         self,
-        *,
-        agent_name:      str,
-        stage_name:      str,
-        model_config:    ModelConfig   | None = None,
-        failure_config:  FailureConfig | None = None,
-        prompt_template: str           | None = None,
+        agent_name:   str,
+        stage_name:   str,
+        model_config: ModelConfig | None = None,
     ):
-        self.agent_name      = agent_name
-        self.stage_name      = stage_name
-        self.model_config    = model_config
-        self.failure_config  = failure_config or FailureConfig()
-        self.prompt_template = prompt_template
+        self.agent_name   = agent_name
+        self.stage_name   = stage_name
+        self.model_config = model_config
+        self.log          = logging.getLogger(f"pmw.agent.{agent_name}")
 
-        self.log = StructuredLogger(agent_name)
+    # ── THE LLM call — flat, explicit retry ───────────────────────────
 
-        # LangSmith tracer — only initialised if model_config is provided
-        self._tracer = self._init_tracer() if model_config else None
+    async def call_llm(
+        self,
+        prompt:      str,
+        run_id:      int,
+        temperature: float | None = None,
+        system_prompt: str | None = None,
+    ) -> LLMResult:
+        """
+        Call LLM with retry. Returns LLMResult on success.
+        Raises on exhaustion (caller handles failure in run()).
 
-        self.log.info(
-            "Agent initialised",
-            provider = model_config.provider.value if model_config else "none",
-            model    = model_config.model_id       if model_config else "none",
-        )
+        Call path:
+          1. infra.llm.generate()       — the actual API call
+          2. cost_tracker.record_usage() — writes to llm_call_logs
 
-        # NOTE: No _write_stage_record() call here.
-        # Stage records are written by the node's run() method when it starts.
+        That's it. No service layer in between.
+        """
+        if not self.model_config:
+            raise RuntimeError(f"[{self.agent_name}] call_llm() requires model_config")
 
-    # ------------------------------------------------------------------
-    # LangSmith tracer
-    # ------------------------------------------------------------------
+        from infrastructure import get_infrastructure
+        from services.cost_tracking_service import CostTrackingService
 
-    def _init_tracer(self):
-        if os.environ.get("LANGCHAIN_TRACING_V2", "false").lower() != "true":
-            return None
+        infra = get_infrastructure()
+        tracker = CostTrackingService()
+        temp = temperature if temperature is not None else self.model_config.temperature
+
+        last_error = None
+        total_cost = 0.0
+        total_in = 0
+        total_out = 0
+
+        for attempt in range(1, self.MAX_RETRIES + 2):  # +2 because range is exclusive
+            try:
+                response = await infra.llm.generate(
+                    provider    = self.model_config.provider.value,
+                    model       = self.model_config.model_id,
+                    prompt      = prompt,
+                    temperature = temp,
+                    max_tokens  = self.model_config.max_tokens,
+                    system_prompt = system_prompt,
+                )
+
+                # Record cost immediately
+                cost = await tracker.record_usage(
+                    run_id       = run_id,
+                    stage_name   = self.stage_name,
+                    attempt      = attempt,
+                    provider     = self.model_config.provider.value,
+                    model        = self.model_config.model_id,
+                    input_tokens = response.input_tokens,
+                    output_tokens = response.output_tokens,
+                )
+
+                total_cost += cost
+                total_in += response.input_tokens
+                total_out += response.output_tokens
+
+                # Validate output (subclass can override to parse JSON, etc.)
+                validated = self.validate_output(response.text)
+
+                return LLMResult(
+                    text          = validated if isinstance(validated, str) else json.dumps(validated),
+                    input_tokens  = total_in,
+                    output_tokens = total_out,
+                    cost_usd      = total_cost,
+                    model         = self.model_config.model_id,
+                    attempts      = attempt,
+                )
+
+            except ValueError as ve:
+                # Validation error — retry with same prompt
+                last_error = ve
+                self.log.warning(
+                    f"Validation failed (attempt {attempt}): {ve}",
+                    extra={"run_id": run_id},
+                )
+                if attempt > self.MAX_RETRIES:
+                    raise
+
+            except Exception as exc:
+                last_error = exc
+                self.log.warning(
+                    f"LLM call failed (attempt {attempt}): {exc}",
+                    extra={"run_id": run_id},
+                )
+                if attempt > self.MAX_RETRIES:
+                    raise
+
+                # Brief backoff before retry
+                import asyncio
+                await asyncio.sleep(min(2 ** attempt, 10))
+
+        # Should not reach here, but just in case
+        raise last_error or RuntimeError("call_llm exhausted retries")
+
+    # ── Output validation — override in subclasses ────────────────────
+
+    def validate_output(self, raw_output: str) -> Any:
+        """
+        Parse and validate raw LLM output.
+        Raise ValueError to trigger a retry.
+        Default: return raw string unchanged.
+        """
+        return raw_output
+
+    # ── Event + stage record helpers (fire-and-forget) ────────────────
+
+    async def _emit(self, event_type: str, run_id: int, payload: dict) -> None:
+        """Publish event to Redis + vault. Never raises."""
         try:
-            from langsmith import Client
-            return Client()
-        except ImportError:
-            self.log.warning("LangSmith not installed — tracing disabled")
-            return None
-
-    # ------------------------------------------------------------------
-    # Event helpers
-    # ------------------------------------------------------------------
-
-    async def _emit_event(self, event_type: EventType, run_id: int, payload: dict) -> None:
-        try:
-            from services import services
-            await services.events.emit(
-                event_type = event_type.value,
+            from services.event_service import EventService
+            await EventService().emit(
+                event_type = event_type,
                 run_id     = run_id,
                 agent_name = self.agent_name,
                 stage_name = self.stage_name,
                 payload    = payload,
             )
         except Exception as exc:
-            self.log.warning(f"Event emission failed (non-blocking): {exc}", run_id=run_id)
+            self.log.debug(f"Event emission failed: {exc}")
 
-    async def _write_stage_record(
+    async def _write_stage(
         self,
-        run_id:           int,
-        status:           str,
-        attempt:          int,
-        score:            float | None = None,
-        passed_threshold: bool  | None = None,
-        output:           dict  | None = None,
-        judge_feedback:   dict  | None = None,
-        prompt_hash:      str   | None = None,
-        input_tokens:     int          = 0,
-        output_tokens:    int          = 0,
-        cost_usd:         float        = 0.0,
-        error:            str   | None = None,
+        run_id:  int,
+        status:  str,
+        attempt: int = 1,
+        *,
+        score:     float | None = None,
+        passed:    bool  | None = None,
+        output:    dict  | None = None,
+        feedback:  dict  | None = None,
+        in_tok:    int          = 0,
+        out_tok:   int          = 0,
+        cost_usd:  float        = 0.0,
+        error:     str   | None = None,
+        topic_wp_id: int | None = None,
     ) -> None:
+        """Write/upsert workflow_stages row. Never raises."""
         try:
-            from services import services
-            await services.events.write_stage_record(
+            from services.event_service import EventService
+            await EventService().write_stage_record(
                 run_id           = run_id,
                 stage_name       = self.stage_name,
                 status           = status,
                 attempt          = attempt,
                 model_used       = self.model_config.model_id if self.model_config else None,
                 score            = score,
-                passed_threshold = passed_threshold,
+                passed_threshold = passed,
                 output           = output,
-                judge_feedback   = judge_feedback,
-                prompt_hash      = prompt_hash,
-                input_tokens     = input_tokens,
-                output_tokens    = output_tokens,
+                judge_feedback   = feedback,
+                input_tokens     = in_tok,
+                output_tokens    = out_tok,
                 cost_usd         = cost_usd,
                 error            = error,
             )
         except Exception as exc:
-            self.log.warning(f"Stage record write failed (non-blocking): {exc}", run_id=run_id)
+            self.log.debug(f"Stage record write failed: {exc}")
 
-    # ------------------------------------------------------------------
-    # THE LLM call — tenacity applied dynamically so MAX_RETRIES works
-    # ------------------------------------------------------------------
-
-    async def call_llm(
-        self,
-        prompt:      str,
-        run_id:      int,
-        attempt:     int = 1,
-        temperature: float | None = None,
-    ) -> AgentResult:
-        """
-        Call the LLM, record cost, validate output.
-
-        Tenacity retry is built fresh on every call using self.MAX_RETRIES,
-        so subclass overrides always take effect.
-
-        Returns:
-            AgentResult with status=SUCCESS, output=validated, tokens, cost.
-
-        Raises (on exhaustion, reraise=True):
-            LLMTimeoutError / LLMRateLimitError / LLMProviderError / ValueError
-            Catch these in run() and pass to _handle_failure().
-        """
-        if self.model_config is None:
-            raise RuntimeError(
-                f"[{self.agent_name}] call_llm() requires model_config — "
-                "pass it to __init__ or don't call call_llm() in this agent."
-            )
-
-        from services import services
-
-        temp = temperature if temperature is not None else self.model_config.temperature
-
-        # Track cumulative tokens/cost across retries
-        total_in_tok = 0
-        total_out_tok = 0
-        total_cost = 0.0
-        last_attempt = 0
-
-        # ── Build tenacity decorator dynamically from self.MAX_RETRIES ──
-        @retry(
-            stop    = stop_after_attempt(self.MAX_RETRIES + 1),
-            wait    = wait_exponential(multiplier=1, min=2, max=10),
-            retry   = retry_if_exception_type((
-                LLMTimeoutError,
-                LLMRateLimitError,
-                LLMProviderError,
-                ValueError,          # raised by validate_output() on bad LLM output
-            )),
-            reraise = True,
-        )
-        async def _attempt() -> AgentResult:
-            nonlocal total_in_tok, total_out_tok, total_cost, last_attempt
-            last_attempt += 1
-
-            result = await services.llm.generate(
-                model_config = self.model_config,
-                prompt       = prompt,
-                run_id       = run_id,
-                stage_name   = self.stage_name,
-                attempt      = last_attempt,
-                temperature  = temp,
-                tracer       = self._tracer,
-            )
-
-            total_in_tok += result.input_tokens
-            total_out_tok += result.output_tokens
-            total_cost += result.cost_usd
-
-            # Emit cost.update so dashboard shows running total
-            await self._emit_event(EventType.COST_UPDATE, run_id, {
-                "attempt":       last_attempt,
-                "model":         self.model_config.model_id,
-                "input_tokens":  result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd":      result.cost_usd,
-            })
-
-            self.log.debug(
-                "LLM response received",
-                run_id   = run_id,
-                attempt  = last_attempt,
-                in_tok   = result.input_tokens,
-                out_tok  = result.output_tokens,
-                cost_usd = result.cost_usd,
-                preview  = result.text[:120].replace("\n", " "),
-            )
-
-            # validate_output() raising ValueError → tenacity retries
-            validated = self.validate_output(result.text)
-
-            return AgentResult(
-                status         = AgentStatus.SUCCESS,
-                output         = validated,
-                raw_llm_output = result.text,
-                attempts       = last_attempt,
-                input_tokens   = total_in_tok,
-                output_tokens  = total_out_tok,
-                cost_usd       = total_cost,
-                model_used     = self.model_config.model_id,
-            )
-
-        return await _attempt()
-
-    # ------------------------------------------------------------------
-    # Failure handler — call from run() when call_llm() raises on exhaustion
-    # ------------------------------------------------------------------
-
-    async def _handle_failure(
-        self,
-        run_id:       int,
-        error:        str,
-        total_cost:   float        = 0.0,
-        in_tok:       int          = 0,
-        out_tok:      int          = 0,
-        raw_output:   str | None   = None,
-        prompt_hash:  str | None   = None,
-    ) -> AgentResult:
-        """
-        Route to HITL or hard failure based on FailureConfig.
-        Call this in run() when call_llm() raises after exhausting retries.
-        """
-        total_attempts = self.MAX_RETRIES + 1
-        final_message  = f"{self.failure_config.failure_message} | {error}"
-
-        if self.failure_config.human_in_the_loop:
-            status     = AgentStatus.WAITING_FOR_HUMAN
-            event_type = EventType.STAGE_AWAITING_RESTART
-            db_status  = "awaiting_restart"
-            self.log.warning(
-                "Stage awaiting human restart",
-                run_id   = run_id,
-                attempts = total_attempts,
-                error    = final_message,
-            )
-        else:
-            status     = AgentStatus.FAILED
-            event_type = EventType.RUN_FAILED
-            db_status  = "failed"
-            self.log.error(
-                "Stage failed — pipeline halted",
-                run_id   = run_id,
-                attempts = total_attempts,
-                error    = final_message,
-            )
-
-        await self._emit_event(event_type, run_id, {
-            "attempts":       total_attempts,
-            "final_error":    error,
-            "judge_feedback": {"message": final_message},
-            "cost_usd":       total_cost,
-        })
-        await self._write_stage_record(
-            run_id           = run_id,
-            status           = db_status,
-            attempt          = total_attempts,
-            passed_threshold = False,
-            error            = final_message,
-            input_tokens     = in_tok,
-            output_tokens    = out_tok,
-            cost_usd         = total_cost,
-            prompt_hash      = prompt_hash,
-        )
-
-        result = AgentResult(
-            status         = status,
-            output         = None,
-            raw_llm_output = raw_output,
-            attempts       = total_attempts,
-            error          = final_message,
-            input_tokens   = in_tok,
-            output_tokens  = out_tok,
-            cost_usd       = total_cost,
-            model_used     = self.model_config.model_id if self.model_config else None,
-            meta           = {"human_in_the_loop": self.failure_config.human_in_the_loop},
-        )
-
-        if self.failure_config.on_failure_callback:
-            try:
-                self.failure_config.on_failure_callback(result)
-            except Exception as cb_exc:
-                self.log.warning("Failure callback raised", run_id=run_id, error=str(cb_exc))
-
-        return result
-
-    # ------------------------------------------------------------------
-    # Hooks — override in subclasses as needed
-    # ------------------------------------------------------------------
-
-    def build_prompt(self, input_data: Any) -> str:
-        """Build the prompt string. Override to fill {{PLACEHOLDER}} tokens."""
-        if self.prompt_template is None:
-            raise NotImplementedError(
-                f"[{self.agent_name}] Override build_prompt() or set prompt_template"
-            )
-        return self.prompt_template
-
-    def validate_output(self, raw_output: str) -> Any:
-        """
-        Parse and validate raw LLM output.
-        Raise ValueError to trigger a tenacity retry.
-        Default: return the raw string unchanged.
-        """
-        return raw_output
-
-    def preprocess(self, input_data: Any) -> Any:
-        return input_data
-
-    def postprocess(self, result: AgentResult) -> AgentResult:
-        return result
-
-    # ------------------------------------------------------------------
-    # The only abstract method — every agent implements this
-    # ------------------------------------------------------------------
+    # ── The only abstract method ──────────────────────────────────────
 
     @abstractmethod
     async def run(self, state: dict) -> dict:
         """
         LangGraph node entry point.
-
-        Accepts the full LangGraph state dict.
-        Returns a dict of state field updates (LangGraph merges these into state).
-
-        Extract run_id internally:
-            run_id = state["run_id"]
+        Accepts state dict, returns dict of state updates.
         """
 
 
-# ---------------------------------------------------------------------------
-# JSON output mixin
-# ---------------------------------------------------------------------------
+# ── JSON output mixin ─────────────────────────────────────────────────
 
 class JSONOutputMixin:
     """
@@ -517,5 +284,6 @@ class JSONOutputMixin:
             return json.loads(cleaned.strip())
         except json.JSONDecodeError as exc:
             raise ValueError(
-                f"LLM did not return valid JSON: {exc}\n\nRaw (first 300):\n{raw_output[:300]}"
+                f"LLM did not return valid JSON: {exc}\n"
+                f"Raw (first 300): {raw_output[:300]}"
             )
