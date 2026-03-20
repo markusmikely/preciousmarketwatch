@@ -2,10 +2,20 @@
 Stage 1c — BriefBuilder
 
 For each topic in all_topics:
-  1. Score all affiliates → pick best primary + secondary
-  2. If fit_score >= threshold → lock topic + LLM coherence check
-  3. If coherence >= threshold → brief passes → locked_briefs
-  4. Otherwise → saved to topic_briefs table (dashboard HITL review)
+  1. Score ALL affiliates (all 21+) against the topic
+  2. All affiliates scoring >= threshold are attached to the brief
+  3. If at least 1 qualifies → lock topic + LLM coherence check
+  4. If coherence >= threshold → brief passes with full affiliate list
+  5. Otherwise → saved to topic_briefs table for HITL review
+
+The brief contains:
+  - primary_affiliate: highest-scoring affiliate
+  - secondary_affiliate: second-highest (or None)
+  - all_affiliates: full ranked list of ALL qualifying affiliates
+
+Downstream stages (content, planning) use primary_affiliate for the
+main CTA but can reference all_affiliates for comparison sections,
+dealer tables, and alternative recommendations.
 """
 
 from __future__ import annotations
@@ -76,7 +86,12 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
                     locked.append(result["brief"])
                     if result.get("usage"):
                         usage.append(result["usage"])
-                    self.log.info(f"✓ '{title}' passed")
+                    qualifying = result.get("qualifying_count", 0)
+                    self.log.info(
+                        f"✓ '{title}' passed — {qualifying} affiliate(s) qualifying, "
+                        f"primary={result.get('affiliate_name')}, "
+                        f"coherence={result.get('coherence', 0):.2f}"
+                    )
                 elif result["status"] == "skipped":
                     self.log.info(f"⊘ '{title}' skipped (locked)")
                 else:
@@ -103,51 +118,99 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
     async def _process_one(self, topic, affiliates, run_id, services):
         tid = topic.get("id")
 
-        # 1. Score
+        # ── 1. Score ALL affiliates against this topic ────────────────
+        # Returns every affiliate with a score, sorted descending.
+        # We then split into qualifying (>= threshold) and below.
         scored = await services.affiliates.score_affiliates_for_topic(topic, affiliates)
+
+        # scored is already sorted by fit_score descending and filtered
+        # to only those >= threshold. If empty, no affiliate qualifies.
         if not scored:
-            return {"status": "needs_review", "topic": topic,
-                    "reason": f"No affiliate above {settings.AFFILIATE_FIT_THRESHOLD}",
-                    "review_item": {"topic": topic, "reason": "No qualifying affiliate"}}
+            return {
+                "status": "needs_review", "topic": topic,
+                "reason": (
+                    f"No affiliate scored above {settings.AFFILIATE_FIT_THRESHOLD} "
+                    f"(scored {len(affiliates)} affiliates)"
+                ),
+                "review_item": {
+                    "topic": topic,
+                    "reason": "No qualifying affiliate",
+                    "affiliates_scored": len(affiliates),
+                },
+            }
 
-        primary = _clean(scored[0])
-        secondary = _clean(scored[1]) if len(scored) > 1 else None
+        # Clean all Decimals from scored affiliates
+        qualifying = [_clean(a) for a in scored]
+        primary = qualifying[0]
+        secondary = qualifying[1] if len(qualifying) > 1 else None
 
-        # 2. Lock
-        acquired = await services.workflows.acquire_topic_lock(topic_wp_id=tid, run_id=run_id)
+        self.log.info(
+            f"Topic '{topic.get('title')}': {len(qualifying)}/{len(affiliates)} "
+            f"affiliates qualify (threshold={settings.AFFILIATE_FIT_THRESHOLD})"
+        )
+
+        # ── 2. Acquire topic lock ─────────────────────────────────────
+        acquired = await services.workflows.acquire_topic_lock(
+            topic_wp_id=tid, run_id=run_id,
+        )
         if not acquired:
             return {"status": "skipped", "topic": topic}
 
-        # 3. LLM coherence
+        # ── 3. LLM coherence check (uses primary affiliate) ──────────
         try:
             prompt = self._coherence_prompt(topic, primary)
             result = await self.call_llm(prompt, run_id)
             enrichments = json.loads(result.text) if isinstance(result.text, str) else result.text
             coherence = float(enrichments.get("coherence_score", 0))
         except Exception as exc:
-            await services.workflows.release_topic_lock(topic_wp_id=tid, run_id=run_id, success=False)
-            return {"status": "needs_review", "topic": topic,
-                    "reason": f"LLM failed: {exc}",
-                    "review_item": {"topic": topic, "reason": str(exc)}}
+            await services.workflows.release_topic_lock(
+                topic_wp_id=tid, run_id=run_id, success=False,
+            )
+            return {
+                "status": "needs_review", "topic": topic,
+                "reason": f"LLM failed: {exc}",
+                "review_item": {"topic": topic, "reason": str(exc)},
+            }
 
-        # 4. Threshold check
+        # ── 4. Coherence threshold check ──────────────────────────────
         if coherence < settings.COHERENCE_THRESHOLD:
-            await services.workflows.release_topic_lock(topic_wp_id=tid, run_id=run_id, success=False)
-            return {"status": "needs_review", "topic": topic,
-                    "reason": f"Coherence {coherence:.2f} < {settings.COHERENCE_THRESHOLD}",
-                    "coherence": coherence, "fit_score": float(primary.get("fit_score", 0)),
-                    "affiliate_name": primary.get("name", ""),
-                    "review_item": {"topic": topic, "coherence": coherence}}
+            await services.workflows.release_topic_lock(
+                topic_wp_id=tid, run_id=run_id, success=False,
+            )
+            return {
+                "status": "needs_review", "topic": topic,
+                "reason": f"Coherence {coherence:.2f} < {settings.COHERENCE_THRESHOLD}",
+                "coherence": coherence,
+                "fit_score": float(primary.get("fit_score", 0)),
+                "affiliate_name": primary.get("name", ""),
+                "review_item": {"topic": topic, "coherence": coherence},
+            }
 
-        # 5. Passed — build brief
+        # ── 5. Build brief with ALL qualifying affiliates ─────────────
         brief = {
             "topic": topic,
-            "affiliate": {"primary": primary, "secondary": secondary},
+            "affiliate": {
+                # Primary = highest scoring affiliate (used for main CTA)
+                "primary": primary,
+                # Secondary = second-highest (used for comparison/alternative)
+                "secondary": secondary,
+                # All qualifying affiliates, ranked by score.
+                # Planning/content stages can use this for:
+                #   - Dealer comparison sections
+                #   - "Other options" blocks
+                #   - Diversified CTA strategy
+                "all_qualifying": qualifying,
+                "qualifying_count": len(qualifying),
+                "total_scored": len(affiliates),
+            },
             "meta": {
                 "run_id": run_id,
                 "coherence_score": coherence,
                 "validation_passed": True,
-                "warnings": [i for i in enrichments.get("issues", []) if i.get("severity") == "warning"],
+                "warnings": [
+                    i for i in enrichments.get("issues", [])
+                    if i.get("severity") == "warning"
+                ],
             },
             "reader": {
                 "profile": enrichments.get("enriched_reader_profile", ""),
@@ -156,16 +219,19 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
             },
         }
 
-        # Mark running in Postgres only (no WP write)
+        # Mark running in Postgres (no WP write)
         asyncio.create_task(services.topics.mark_topic_running(tid, run_id))
 
         return {
-            "status": "passed", "brief": brief, "topic": topic,
+            "status": "passed",
+            "brief": brief,
+            "topic": topic,
             "coherence": coherence,
             "fit_score": float(primary.get("fit_score", 0)),
             "affiliate_name": primary.get("name", ""),
             "affiliate_id": primary.get("id"),
             "secondary_id": secondary.get("id") if secondary else None,
+            "qualifying_count": len(qualifying),
             "usage": {
                 "stage": f"{self.stage_name}.{tid}",
                 "model": self.model_config.model_id,
@@ -174,6 +240,8 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
                 "cost_usd": result.cost_usd,
             },
         }
+
+    # ── Prompt ────────────────────────────────────────────────────────
 
     def _coherence_prompt(self, topic, affiliate):
         return PromptRegistry.render("stage1_5_brief_validation", {
@@ -196,6 +264,8 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
         if "coherence_score" not in data:
             raise ValueError("Missing 'coherence_score'")
         return data
+
+    # ── DB write ──────────────────────────────────────────────────────
 
     async def _save_to_db(self, run_id, result):
         try:

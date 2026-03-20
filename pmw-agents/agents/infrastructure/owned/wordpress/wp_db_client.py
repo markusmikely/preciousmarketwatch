@@ -338,9 +338,8 @@ class WordpressClient:
 
         dealers = []
         for node in nodes:
-            is_active = node.get("pmwAffiliateActive", False)
-
-            # Skip inactive dealers if active_only is set
+            raw_active = node.get("pmwAffiliateActive")
+            is_active = True if raw_active is None else bool(raw_active)
             if active_only and not is_active:
                 continue
 
