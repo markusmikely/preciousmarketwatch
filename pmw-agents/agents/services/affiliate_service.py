@@ -1,22 +1,31 @@
 """
-AffiliateService — load, score, and manage affiliate intelligence.
+AffiliateService — load, score, sync, and manage affiliate intelligence.
 
 Owns:
+  - Syncing dealer CPT entries from WordPress → Postgres affiliates table
   - Loading active affiliates from Postgres
   - Scoring affiliates against a topic (geo × 0.4 + product × 0.4 + commission × 0.2)
   - Appending intelligence runs (append-only ledger)
   - Rebuilding aggregate intelligence summary (atomic upsert)
 
 Does NOT own:
-  - Affiliate CRUD (dashboard/admin UI owns that)
+  - Affiliate CRUD (WordPress dealer CPT admin UI owns that)
   - WP affiliate page rendering (PageManagementService owns that)
   - Compliance review workflow (dashboard owns that)
 
 Usage:
     from services import services
+
+    # Sync from WordPress and return all active affiliates
+    affiliates = await services.affiliates.sync_and_get_active()
+
+    # Or step by step:
+    wp_dealers = await services.affiliates.fetch_from_wordpress()
+    await services.affiliates.sync_to_postgres(wp_dealers)
     affiliates = await services.affiliates.get_active_affiliates()
-    scored     = await services.affiliates.score_affiliates_for_topic(topic, affiliates)
-    primary    = scored[0]
+
+    # Score against a topic
+    scored = await services.affiliates.score_affiliates_for_topic(topic, affiliates)
 """
 
 from __future__ import annotations
@@ -31,21 +40,168 @@ log = logging.getLogger("pmw.services.affiliate")
 
 
 class AffiliateService:
-    """Stateless service — Postgres access via get_infrastructure()."""
+    """Stateless service — WordPress + Postgres access via get_infrastructure()."""
 
-    # ── Load affiliates ────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # WORDPRESS → POSTGRES SYNC (mirrors TopicService/TopicLoader pattern)
+    # ══════════════════════════════════════════════════════════════════════
+
+    async def fetch_from_wordpress(self, active_only: bool = True) -> list[dict]:
+        """
+        Fetch dealer CPT posts from WordPress via GraphQL.
+
+        Returns normalised affiliate dicts ready for Postgres upsert.
+        Each dict has keys matching the affiliates table columns.
+
+        Args:
+            active_only: If True, only return dealers with pmwAffiliateActive=true.
+
+        Returns:
+            List of affiliate dicts from WordPress.
+        """
+        infra = get_infrastructure()
+
+        try:
+            dealers = await infra.wordpress.query_dealers(
+                status="PUBLISH",
+                active_only=active_only,
+                first=100,
+            )
+            log.info(f"Fetched {len(dealers)} dealer(s) from WordPress")
+            return dealers
+        except Exception as exc:
+            log.error(f"Failed to fetch dealers from WordPress: {exc}")
+            return []
+
+    async def sync_to_postgres(self, wp_dealers: list[dict]) -> int:
+        """
+        Upsert WordPress dealer data into the Postgres affiliates table.
+
+        Uses wp_dealer_id as the conflict key. If a row with that
+        wp_dealer_id already exists, it updates all fields from WordPress.
+        If not, it inserts a new row.
+
+        This is the affiliate equivalent of TopicLoader._sync_topics_to_postgres().
+
+        Args:
+            wp_dealers: List of dealer dicts from fetch_from_wordpress().
+
+        Returns:
+            Number of dealers synced (inserted or updated).
+        """
+        if not wp_dealers:
+            return 0
+
+        infra = get_infrastructure()
+        synced = 0
+
+        for d in wp_dealers:
+            wp_id = d.get("wp_dealer_id")
+            if not wp_id:
+                log.warning(f"Dealer missing wp_dealer_id, skipping: {d.get('name')}")
+                continue
+
+            try:
+                await infra.postgres.execute(
+                    """
+                    INSERT INTO affiliates (
+                        wp_dealer_id, name, partner_key, url, value_prop,
+                        commission_type, commission_rate, cookie_days,
+                        geo_focus, min_transaction, faq_url,
+                        asset_classes, product_types,
+                        buy_side, sell_side, intent_stages,
+                        active
+                    ) VALUES (
+                        $1, $2, $3, $4, $5,
+                        $6, $7, $8,
+                        $9, $10, $11,
+                        $12, $13,
+                        $14, $15, $16,
+                        $17
+                    )
+                    ON CONFLICT (wp_dealer_id) DO UPDATE SET
+                        name             = EXCLUDED.name,
+                        partner_key      = EXCLUDED.partner_key,
+                        url              = EXCLUDED.url,
+                        value_prop       = EXCLUDED.value_prop,
+                        commission_type  = EXCLUDED.commission_type,
+                        commission_rate  = EXCLUDED.commission_rate,
+                        cookie_days      = EXCLUDED.cookie_days,
+                        geo_focus        = EXCLUDED.geo_focus,
+                        min_transaction  = EXCLUDED.min_transaction,
+                        faq_url          = EXCLUDED.faq_url,
+                        asset_classes    = EXCLUDED.asset_classes,
+                        product_types    = EXCLUDED.product_types,
+                        buy_side         = EXCLUDED.buy_side,
+                        sell_side        = EXCLUDED.sell_side,
+                        intent_stages    = EXCLUDED.intent_stages,
+                        active           = EXCLUDED.active
+                    """,
+                    wp_id,
+                    d.get("name", ""),
+                    d.get("partner_key", ""),
+                    d.get("url", ""),
+                    d.get("value_prop", ""),
+                    d.get("commission_type", ""),
+                    float(d.get("commission_rate", 0) or 0),
+                    int(d.get("cookie_days", 0) or 0),
+                    d.get("geo_focus", ""),
+                    float(d.get("min_transaction", 0) or 0),
+                    d.get("faq_url", ""),
+                    # Store comma-separated lists as-is (or JSON arrays)
+                    d.get("asset_classes", ""),
+                    d.get("product_types", ""),
+                    bool(d.get("buy_side", True)),
+                    bool(d.get("sell_side", False)),
+                    d.get("intent_stages", ""),
+                    bool(d.get("active", True)),
+                )
+                synced += 1
+            except Exception as exc:
+                log.warning(
+                    f"Affiliate sync failed for WP dealer ID {wp_id} ({d.get('name')}): {exc}"
+                )
+
+        log.info(f"Synced {synced}/{len(wp_dealers)} dealer(s) to Postgres affiliates table")
+        return synced
+
+    async def sync_and_get_active(self) -> list[dict]:
+        """
+        Combined convenience method: fetch from WP → sync to Postgres → return active.
+
+        This is the primary method called by the affiliate_loader node.
+        Mirrors the topic_loader pattern: WP is source of truth, Postgres
+        is the working copy used by the pipeline.
+
+        Returns:
+            List of active affiliate dicts from Postgres (after sync).
+        """
+        wp_dealers = await self.fetch_from_wordpress(active_only=False)
+
+        if wp_dealers:
+            await self.sync_to_postgres(wp_dealers)
+        else:
+            log.warning("No dealers fetched from WordPress — using existing Postgres data")
+
+        return await self.get_active_affiliates()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # POSTGRES READS
+    # ══════════════════════════════════════════════════════════════════════
 
     async def get_active_affiliates(self) -> list[dict]:
         """
-        SELECT all active affiliates.
-        Returns list of affiliate dicts.
+        SELECT all active affiliates from Postgres.
+        Returns list of affiliate dicts with all columns.
         """
         infra = get_infrastructure()
         rows = await infra.postgres.fetch(
             """
-            SELECT id, name, url, value_prop, faq_url,
-                   commission_type, commission_rate, cookie_days,
-                   geo_focus, min_transaction, active
+            SELECT id, wp_dealer_id, name, partner_key, url, value_prop,
+                   faq_url, commission_type, commission_rate, cookie_days,
+                   geo_focus, min_transaction, active,
+                   asset_classes, product_types, buy_side, sell_side,
+                   intent_stages
             FROM affiliates
             WHERE active = true
             ORDER BY name
@@ -62,7 +218,18 @@ class AffiliateService:
         )
         return dict(row) if row else None
 
-    # ── Score affiliates against a topic ───────────────────────────────────
+    async def get_affiliate_by_wp_id(self, wp_dealer_id: int) -> dict | None:
+        """Fetch a single affiliate by its WordPress dealer post ID."""
+        infra = get_infrastructure()
+        row = await infra.postgres.fetchrow(
+            "SELECT * FROM affiliates WHERE wp_dealer_id = $1",
+            wp_dealer_id,
+        )
+        return dict(row) if row else None
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SCORING
+    # ══════════════════════════════════════════════════════════════════════
 
     async def score_affiliates_for_topic(
         self,
@@ -75,14 +242,6 @@ class AffiliateService:
         Scoring formula:
           fit_score = (geo_match × 0.40) + (product_match × 0.40) + (commission_score × 0.20)
 
-        geo_match:     1.0 if affiliate.geo_focus == topic.geography or affiliate.geo_focus == "global"
-                       0.5 if partial overlap
-                       0.0 if no match
-        product_match: 1.0 if affiliate supports topic.asset_class
-                       0.5 if affiliate supports related class
-                       0.0 if no match
-        commission_score: normalised 0-1 based on commission_rate relative to max in list
-
         Returns:
             List of affiliate dicts with 'fit_score' added, sorted descending.
             Affiliates with fit_score < 0.40 are excluded.
@@ -93,45 +252,49 @@ class AffiliateService:
         topic_geo = (topic.get("geography") or "uk").lower()
         topic_asset = (topic.get("asset_class") or "").lower()
 
-        # Find max commission for normalisation
         max_commission = max(
             (float(a.get("commission_rate") or 0) for a in affiliates),
             default=1.0,
-        ) or 1.0  # avoid division by zero
+        ) or 1.0
 
         scored = []
         for aff in affiliates:
             aff_geo = (aff.get("geo_focus") or "").lower()
             aff_commission = float(aff.get("commission_rate") or 0)
 
-            # Geo match
+            # ── Geo match ──────────────────────────────────────────
             if aff_geo == topic_geo or aff_geo == "global":
                 geo_score = 1.0
             elif aff_geo in ("uk", "us", "global") and topic_geo in ("uk", "us", "global"):
-                geo_score = 0.3  # some overlap for English-speaking markets
+                geo_score = 0.3
             else:
                 geo_score = 0.0
 
-            # Product/asset match — check if affiliate name/value_prop mentions the asset
+            # ── Product/asset match ────────────────────────────────
+            # Check asset_classes field (comma-separated string from WP)
+            aff_assets = (aff.get("asset_classes") or "").lower()
             value_prop = (aff.get("value_prop") or "").lower()
             aff_name = (aff.get("name") or "").lower()
-            combined_text = f"{value_prop} {aff_name}"
+            combined_text = f"{aff_assets} {value_prop} {aff_name}"
 
-            if topic_asset and topic_asset in combined_text:
+            if topic_asset and topic_asset in aff_assets.split(","):
+                # Direct match in the asset_classes list
                 product_score = 1.0
+            elif topic_asset and topic_asset in combined_text:
+                product_score = 0.9
             elif topic_asset in ("gold", "silver", "platinum") and "precious metal" in combined_text:
                 product_score = 0.8
             elif topic_asset == "ira" and ("ira" in combined_text or "retirement" in combined_text):
                 product_score = 1.0
             elif any(metal in combined_text for metal in ("gold", "silver", "platinum", "bullion")):
-                product_score = 0.5  # general precious metals affiliate
+                product_score = 0.5
             else:
                 product_score = 0.0
 
-            # Commission score (normalised)
+            # ── Commission score (normalised) ──────────────────────
             commission_score = aff_commission / max_commission if max_commission > 0 else 0
 
-            # Weighted total
+            # ── Weighted total ─────────────────────────────────────
             fit_score = round(
                 (geo_score * 0.40) + (product_score * 0.40) + (commission_score * 0.20),
                 3,
@@ -147,7 +310,6 @@ class AffiliateService:
                 },
             })
 
-        # Sort by fit_score descending, filter out poor fits
         scored.sort(key=lambda a: a["fit_score"], reverse=True)
         qualified = [a for a in scored if a["fit_score"] >= 0.40]
 
@@ -162,7 +324,9 @@ class AffiliateService:
 
         return qualified
 
-    # ── Intelligence Store — append run ────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # INTELLIGENCE STORE
+    # ══════════════════════════════════════════════════════════════════════
 
     async def append_intelligence_run(
         self,
@@ -173,11 +337,6 @@ class AffiliateService:
         """
         INSERT INTO affiliate_intelligence_runs (append-only ledger).
         ON CONFLICT DO NOTHING ensures idempotency on re-runs.
-
-        Args:
-            affiliate_id: affiliates.id
-            run_id: workflow_runs.id
-            data: Dict containing topic, market, factors, psychology, keyword fields.
         """
         infra = get_infrastructure()
 
@@ -230,18 +389,13 @@ class AffiliateService:
             extra={"affiliate_id": affiliate_id, "run_id": run_id},
         )
 
-    # ── Intelligence Store — rebuild summary ───────────────────────────────
-
     async def rebuild_intelligence_summary(self, affiliate_id: int) -> dict:
         """
         Rebuild affiliate_intelligence_summary from all runs in the ledger.
         Uses atomic UPSERT — no read-modify-write race condition.
-
-        Returns the computed summary dict.
         """
         infra = get_infrastructure()
 
-        # Fetch all runs for this affiliate
         rows = await infra.postgres.fetch(
             """
             SELECT * FROM affiliate_intelligence_runs
@@ -258,7 +412,7 @@ class AffiliateService:
         all_runs = [dict(r) for r in rows]
         latest = all_runs[0]
 
-        # ── Aggregate objections by frequency ──────────────────────────
+        # ── Aggregate objections by frequency ──────────────────────
         objection_counts: dict[str, dict] = {}
         for run in all_runs:
             for obj in json.loads(run.get("objections_json") or "[]"):
@@ -276,15 +430,12 @@ class AffiliateService:
                 objection_counts[key]["sources"].add(obj.get("source", ""))
 
         top_objections = sorted(
-            [
-                {**v, "sources": list(v["sources"])}
-                for v in objection_counts.values()
-            ],
+            [{**v, "sources": list(v["sources"])} for v in objection_counts.values()],
             key=lambda x: x["run_count"],
             reverse=True,
         )[:8]
 
-        # ── Aggregate motivations ──────────────────────────────────────
+        # ── Aggregate motivations ──────────────────────────────────
         motivation_counts: dict[str, dict] = {}
         for run in all_runs:
             for mot in json.loads(run.get("motivations_json") or "[]"):
@@ -292,10 +443,7 @@ class AffiliateService:
                 if not key:
                     continue
                 if key not in motivation_counts:
-                    motivation_counts[key] = {
-                        "motivation": mot["motivation"],
-                        "run_count": 0,
-                    }
+                    motivation_counts[key] = {"motivation": mot["motivation"], "run_count": 0}
                 motivation_counts[key]["run_count"] += 1
 
         top_motivations = sorted(
@@ -304,7 +452,7 @@ class AffiliateService:
             reverse=True,
         )[:6]
 
-        # ── Deduplicated verbatim pool ─────────────────────────────────
+        # ── Verbatim pool ──────────────────────────────────────────
         phrase_seen: dict[str, dict] = {}
         for run in all_runs:
             for phrase in json.loads(run.get("verbatim_phrases") or "[]"):
@@ -312,51 +460,42 @@ class AffiliateService:
                 if normalised not in phrase_seen:
                     phrase_seen[normalised] = {
                         "phrase": phrase,
-                        "first_seen": (run.get("ran_at") or "").isoformat()
-                            if hasattr(run.get("ran_at"), "isoformat") else str(run.get("ran_at", "")),
+                        "first_seen": (
+                            run.get("ran_at").isoformat()
+                            if hasattr(run.get("ran_at"), "isoformat")
+                            else str(run.get("ran_at", ""))
+                        ),
                         "run_count": 0,
                     }
                 phrase_seen[normalised]["run_count"] += 1
 
         verbatim_pool = sorted(
-            list(phrase_seen.values()),
-            key=lambda x: x["run_count"],
-            reverse=True,
+            list(phrase_seen.values()), key=lambda x: x["run_count"], reverse=True
         )[:20]
 
-        # ── PAA pool ───────────────────────────────────────────────────
+        # ── PAA pool ───────────────────────────────────────────────
         paa_seen: dict[str, dict] = {}
         for run in all_runs:
             for q in json.loads(run.get("paa_questions") or "[]"):
                 normalised = " ".join(q.lower().split())
                 if normalised not in paa_seen:
-                    paa_seen[normalised] = {
-                        "question": q,
-                        "run_count": 0,
-                    }
+                    paa_seen[normalised] = {"question": q, "run_count": 0}
                 paa_seen[normalised]["run_count"] += 1
 
         paa_pool = sorted(
-            list(paa_seen.values()),
-            key=lambda x: x["run_count"],
-            reverse=True,
+            list(paa_seen.values()), key=lambda x: x["run_count"], reverse=True
         )[:15]
 
-        # ── Pending compliance review check ────────────────────────────
         has_pending = any(
             r.get("compliance_review_required") and not r.get("compliance_reviewed_at")
             for r in all_runs
         )
 
-        # ── Helper for safe ISO string ─────────────────────────────────
         def to_iso(val):
             if val is None:
                 return None
-            if hasattr(val, "isoformat"):
-                return val.isoformat()
-            return str(val)
+            return val.isoformat() if hasattr(val, "isoformat") else str(val)
 
-        # ── Atomic UPSERT to summary ───────────────────────────────────
         summary = {
             "affiliate_id": affiliate_id,
             "total_runs": len(all_runs),
@@ -374,9 +513,8 @@ class AffiliateService:
             "has_pending_review": has_pending,
         }
 
-        # Get partner_key from affiliates table
         aff = await self.get_affiliate(affiliate_id)
-        partner_key = aff.get("name", "").lower().replace(" ", "-") if aff else "unknown"
+        partner_key = aff.get("partner_key") or aff.get("name", "").lower().replace(" ", "-") if aff else "unknown"
 
         await infra.postgres.execute(
             """
@@ -436,8 +574,6 @@ class AffiliateService:
             extra={"affiliate_id": affiliate_id, "total_runs": summary["total_runs"]},
         )
         return summary
-
-    # ── Read summary ───────────────────────────────────────────────────────
 
     async def get_intelligence_summary(self, affiliate_id: int) -> dict | None:
         """Read the current summary row for an affiliate."""

@@ -28,7 +28,7 @@ Usage:
         password="xxxx xxxx xxxx xxxx",
     )
     topics = await client.query_topics(status="PUBLISH")
-    await client.update_topic_meta(topic_id=101, meta={...})
+    dealers = await client.query_dealers(active_only=True)
     await client.close()
 """
 
@@ -177,8 +177,7 @@ class WordpressClient:
         return body.get("data", {})
 
     # ══════════════════════════════════════════════════════════════════════
-    # HIGH-LEVEL HELPERS — these replace the REST get_all / _request calls
-    # that topic_service.py and page_service.py were using.
+    # HIGH-LEVEL HELPERS
     # ══════════════════════════════════════════════════════════════════════
 
     # ── Topics (pmw_topic CPT) ─────────────────────────────────────────────
@@ -271,6 +270,106 @@ class WordpressClient:
         logger.info(f"GraphQL: fetched {len(topics)} topics (status={status})")
         return topics
 
+    # ── Dealers / Affiliates (dealer CPT) ──────────────────────────────────
+
+    async def query_dealers(
+        self,
+        status: str = "PUBLISH",
+        active_only: bool = True,
+        first: int = 100,
+    ) -> list[dict]:
+        """
+        Fetch dealer CPT posts with affiliate pipeline meta fields via GraphQL.
+
+        The dealer CPT has 'show_in_graphql' => true with
+        graphql_single_name='dealer', graphql_plural_name='dealers'.
+
+        Affiliate-specific meta fields are registered by
+        pmw_register_dealer_affiliate_graphql() in pmw-core.php.
+
+        Args:
+            status: WP post status filter (default PUBLISH).
+            active_only: If True, only return dealers with pmwAffiliateActive=true.
+            first: Max results to fetch.
+
+        Returns:
+            List of affiliate dicts normalised for the Postgres affiliates table.
+            Each dict has keys matching the affiliates table columns:
+                wp_dealer_id, name, partner_key, url, value_prop,
+                commission_type, commission_rate, cookie_days, geo_focus,
+                min_transaction, faq_url, asset_classes, product_types,
+                buy_side, sell_side, intent_stages, active
+        """
+        query = """
+        query GetDealers($status: PostStatusEnum, $first: Int) {
+            dealers(
+                where: { status: $status }
+                first: $first
+            ) {
+                nodes {
+                    databaseId
+                    title
+                    status
+                    pmwPartnerKey
+                    pmwValueProp
+                    pmwCommissionType
+                    pmwCommissionRate
+                    pmwCookieDays
+                    pmwGeoFocus
+                    pmwMinTransaction
+                    pmwFaqUrl
+                    pmwAssetClasses
+                    pmwProductTypes
+                    pmwBuySide
+                    pmwSellSide
+                    pmwIntentStages
+                    pmwAffiliateActive
+                    pmwAffiliateUrl
+                }
+            }
+        }
+        """
+        data = await self.execute(query, variables={
+            "status": status,
+            "first": first,
+        })
+
+        nodes = (data.get("dealers") or {}).get("nodes", [])
+
+        dealers = []
+        for node in nodes:
+            is_active = node.get("pmwAffiliateActive", False)
+
+            # Skip inactive dealers if active_only is set
+            if active_only and not is_active:
+                continue
+
+            dealers.append({
+                "wp_dealer_id":    node.get("databaseId"),
+                "name":            node.get("title", ""),
+                "partner_key":     node.get("pmwPartnerKey", ""),
+                "url":             node.get("pmwAffiliateUrl", ""),
+                "value_prop":      node.get("pmwValueProp", ""),
+                "commission_type": node.get("pmwCommissionType", ""),
+                "commission_rate": node.get("pmwCommissionRate", 0.0),
+                "cookie_days":     node.get("pmwCookieDays", 0),
+                "geo_focus":       node.get("pmwGeoFocus", ""),
+                "min_transaction": node.get("pmwMinTransaction", 0.0),
+                "faq_url":         node.get("pmwFaqUrl", ""),
+                "asset_classes":   node.get("pmwAssetClasses", ""),
+                "product_types":   node.get("pmwProductTypes", ""),
+                "buy_side":        node.get("pmwBuySide", True),
+                "sell_side":       node.get("pmwSellSide", False),
+                "intent_stages":   node.get("pmwIntentStages", ""),
+                "active":          is_active,
+            })
+
+        logger.info(
+            f"GraphQL: fetched {len(dealers)} dealer(s) "
+            f"(status={status}, active_only={active_only})"
+        )
+        return dealers
+
     async def get_topic_meta(self, topic_id: int) -> dict:
         """
         Fetch a single topic's meta fields by database ID.
@@ -304,25 +403,18 @@ class WordpressClient:
         """
         Update meta fields on a pmw_topic post via GraphQL mutation.
 
-        Requires a custom mutation registered via register_graphql_mutation()
-        or uses the WPGraphQL built-in updatePmwTopic mutation.
-
         Args:
             topic_id: WordPress database ID of the pmw_topic post.
-            meta: Dict of meta fields to update. Keys use pmw_ prefix format
-                  (e.g. "pmw_agent_status") — they're converted to camelCase
-                  for the GraphQL mutation.
+            meta: Dict of meta fields to update. Keys use pmw_ prefix format.
 
         Returns:
             True if mutation succeeded.
         """
-        # Convert pmw_snake_case to pmwCamelCase for GraphQL
         gql_meta = {}
         for key, value in meta.items():
             camel = self._snake_to_camel(key)
             gql_meta[camel] = value
 
-        # Build dynamic mutation input fields
         input_fields = ", ".join(f"{k}: {json.dumps(v)}" for k, v in gql_meta.items())
 
         mutation = f"""
@@ -361,9 +453,7 @@ class WordpressClient:
     # ── Pages ──────────────────────────────────────────────────────────────
 
     async def find_page_by_slug(self, slug: str) -> dict | None:
-        """
-        Find a WP page by slug. Returns {id, title, slug} or None.
-        """
+        """Find a WP page by slug. Returns {id, title, slug} or None."""
         query = """
         query FindPage($slug: String!) {
             pageBy(uri: $slug) {
@@ -374,8 +464,6 @@ class WordpressClient:
             }
         }
         """
-        # WPGraphQL pageBy uses URI — try slug directly
-        # Fallback: query pages and filter
         try:
             data = await self.execute(query, variables={"slug": slug})
             page = data.get("pageBy")
@@ -388,7 +476,6 @@ class WordpressClient:
         except WordpressGraphQLError:
             pass
 
-        # Fallback: search pages by slug using where filter
         fallback_query = """
         query FindPageBySlug($slug: String!) {
             pages(where: { name: $slug }, first: 1) {
@@ -418,15 +505,9 @@ class WordpressClient:
         content: str = "",
         meta: dict | None = None,
     ) -> int | None:
-        """
-        Create a new WordPress page via GraphQL mutation.
-
-        Returns the new page's database ID, or None on failure.
-        """
-        # Build meta input if provided
+        """Create a new WordPress page via GraphQL mutation."""
         meta_input = ""
         if meta:
-            # Meta stored as JSON string in a custom field
             meta_json = json.dumps(meta).replace('"', '\\"')
             meta_input = f', pmwIntelligenceData: "{meta_json}"'
 
@@ -467,11 +548,7 @@ class WordpressClient:
         status: str | None = None,
         meta: dict | None = None,
     ) -> bool:
-        """
-        Update an existing WordPress page via GraphQL mutation.
-
-        Returns True on success.
-        """
+        """Update an existing WordPress page via GraphQL mutation."""
         fields = []
         if title is not None:
             fields.append(f'title: {json.dumps(title)}')
@@ -484,7 +561,7 @@ class WordpressClient:
             fields.append(f'pmwIntelligenceData: "{meta_json}"')
 
         if not fields:
-            return True  # Nothing to update
+            return True
 
         fields_str = ", ".join(fields)
         mutation = f"""
@@ -519,10 +596,7 @@ class WordpressClient:
         search: str,
         first: int = 5,
     ) -> list[dict]:
-        """
-        Search published posts by keyword. Used for internal link discovery.
-        Returns list of {id, title, slug, url, excerpt}.
-        """
+        """Search published posts by keyword."""
         query = """
         query SearchPosts($search: String!, $first: Int) {
             posts(
@@ -553,9 +627,7 @@ class WordpressClient:
         ]
 
     # ══════════════════════════════════════════════════════════════════════
-    # COMPATIBILITY LAYER — thin wrappers so existing service code
-    # continues to work during migration. These can be removed once
-    # all services use the high-level helpers directly.
+    # COMPATIBILITY LAYER
     # ══════════════════════════════════════════════════════════════════════
 
     async def get_all(
@@ -566,9 +638,7 @@ class WordpressClient:
     ) -> list[dict]:
         """
         Compatibility wrapper replacing the old REST get_all().
-
         Routes to the appropriate GraphQL query based on the endpoint path.
-        Services should migrate to the high-level helpers directly.
         """
         params = params or {}
 
@@ -582,6 +652,14 @@ class WordpressClient:
             topic_id = int(endpoint.rstrip("/").split("/")[-1])
             meta = await self.get_topic_meta(topic_id)
             return [{"id": topic_id, "meta": meta}] if meta else []
+
+        # Route: /dealers → query_dealers
+        if "dealers" in endpoint and "/" not in endpoint.strip("/").replace("dealers", ""):
+            return await self.query_dealers(
+                status=params.get("status", "publish").upper(),
+                active_only=params.get("active_only", True),
+                first=per_page,
+            )
 
         # Route: /pages with slug filter → find_page_by_slug
         if "pages" in endpoint and params.get("slug"):
@@ -602,11 +680,6 @@ class WordpressClient:
 
     @staticmethod
     def _snake_to_camel(snake_str: str) -> str:
-        """
-        Convert pmw_snake_case to pmwCamelCase.
-        e.g. "pmw_agent_status" → "pmwAgentStatus"
-              "pmw_last_run_at" → "pmwLastRunAt"
-        """
+        """Convert pmw_snake_case to pmwCamelCase."""
         parts = snake_str.split("_")
-        # First part stays lowercase, rest are capitalised
         return parts[0] + "".join(p.capitalize() for p in parts[1:])

@@ -3730,4 +3730,455 @@ function pmw_render_gem_index_overdue_widget() {
 }
 
 
+// Register meta fields for REST + GraphQL
+add_action( 'init', 'pmw_register_dealer_affiliate_meta', 20 );
+ 
+// Admin meta box for affiliate fields
+add_action( 'add_meta_boxes', 'pmw_dealer_affiliate_meta_box' );
+add_action( 'save_post_dealer', 'pmw_save_dealer_affiliate_meta', 10, 2 );
+ 
+// GraphQL fields for WPGraphQL
+add_action( 'graphql_register_types', 'pmw_register_dealer_affiliate_graphql', 20 );
+ 
+// Seed menu item
+add_action( 'admin_menu', 'pmw_seed_affiliate_dealers_menu' );
+add_action( 'admin_init', 'pmw_seed_affiliate_dealers_action' );
+ 
+ 
+// ═══════════════════════════════════════════════════════════════════════
+// STEP 2: Register affiliate meta fields on the dealer CPT
+// ═══════════════════════════════════════════════════════════════════════
+ 
+function pmw_register_dealer_affiliate_meta() {
+    $fields = [
+        'pmw_partner_key'       => [ 'type' => 'string',  'description' => 'URL-safe slug e.g. bullionvault' ],
+        'pmw_value_prop'        => [ 'type' => 'string',  'description' => 'One-line value proposition for prompts' ],
+        'pmw_commission_type'   => [ 'type' => 'string',  'description' => 'revenue_share | per_lead | cpc' ],
+        'pmw_commission_rate'   => [ 'type' => 'number',  'description' => 'Commission rate (% or flat amount)' ],
+        'pmw_cookie_days'       => [ 'type' => 'integer', 'description' => 'Affiliate cookie duration in days' ],
+        'pmw_geo_focus'         => [ 'type' => 'string',  'description' => 'uk | us | global' ],
+        'pmw_min_transaction'   => [ 'type' => 'number',  'description' => 'Minimum qualifying transaction value' ],
+        'pmw_faq_url'           => [ 'type' => 'string',  'description' => 'URL to affiliate FAQ/help page for Stage 6' ],
+        'pmw_asset_classes'     => [ 'type' => 'string',  'description' => 'Comma-separated: gold,silver,platinum' ],
+        'pmw_product_types'     => [ 'type' => 'string',  'description' => 'Comma-separated: bars,coins,ETF' ],
+        'pmw_buy_side'          => [ 'type' => 'boolean', 'description' => 'Supports buy-side content' ],
+        'pmw_sell_side'         => [ 'type' => 'boolean', 'description' => 'Supports sell-side content' ],
+        'pmw_intent_stages'     => [ 'type' => 'string',  'description' => 'Comma-separated: awareness,consideration,decision' ],
+        'pmw_affiliate_active'  => [ 'type' => 'boolean', 'description' => 'Active in pipeline (inactive = skipped)' ],
+    ];
+ 
+    foreach ( $fields as $key => $config ) {
+        register_post_meta( 'dealer', $key, [
+            'type'         => $config['type'],
+            'single'       => true,
+            'show_in_rest' => true,
+            'description'  => $config['description'],
+            'default'      => $config['type'] === 'integer' ? 0
+                            : ( $config['type'] === 'number' ? 0
+                            : ( $config['type'] === 'boolean' ? false : '' ) ),
+        ] );
+    }
+}
+ 
+ 
+// ═══════════════════════════════════════════════════════════════════════
+// STEP 3: Admin meta box for dealer affiliate fields
+// ═══════════════════════════════════════════════════════════════════════
+ 
+function pmw_dealer_affiliate_meta_box() {
+    add_meta_box(
+        'pmw_dealer_affiliate',
+        __( 'Affiliate Pipeline Settings', 'pmw-core' ),
+        'pmw_dealer_affiliate_meta_box_cb',
+        'dealer',
+        'normal'
+    );
+}
+ 
+function pmw_dealer_affiliate_meta_box_cb( $post ) {
+    wp_nonce_field( 'pmw_dealer_affiliate_save', 'pmw_dealer_affiliate_nonce' );
+ 
+    $fields = [
+        'pmw_partner_key'      => [ 'label' => 'Partner Key (slug)',    'type' => 'text',     'placeholder' => 'e.g. bullionvault' ],
+        'pmw_value_prop'       => [ 'label' => 'Value Proposition',     'type' => 'textarea', 'placeholder' => 'One-line value prop for LLM prompts' ],
+        'pmw_commission_type'  => [ 'label' => 'Commission Type',      'type' => 'select',   'choices' => [ '' => '— Select —', 'revenue_share' => 'Revenue Share', 'per_lead' => 'Per Lead', 'cpc' => 'CPC' ] ],
+        'pmw_commission_rate'  => [ 'label' => 'Commission Rate',      'type' => 'number',   'step' => '0.01', 'placeholder' => '% or flat amount' ],
+        'pmw_cookie_days'      => [ 'label' => 'Cookie Days',          'type' => 'number',   'step' => '1' ],
+        'pmw_geo_focus'        => [ 'label' => 'Geo Focus',            'type' => 'select',   'choices' => [ '' => '— Select —', 'uk' => 'UK', 'us' => 'US', 'global' => 'Global' ] ],
+        'pmw_min_transaction'  => [ 'label' => 'Min Transaction (£/$)','type' => 'number',   'step' => '0.01' ],
+        'pmw_faq_url'          => [ 'label' => 'FAQ / Help URL',       'type' => 'url',      'placeholder' => 'https://example.com/faq' ],
+        'pmw_asset_classes'    => [ 'label' => 'Asset Classes',        'type' => 'text',     'placeholder' => 'gold,silver,platinum (comma-separated)' ],
+        'pmw_product_types'    => [ 'label' => 'Product Types',        'type' => 'text',     'placeholder' => 'bars,coins,ETF (comma-separated)' ],
+        'pmw_buy_side'         => [ 'label' => 'Buy-side Content',     'type' => 'checkbox' ],
+        'pmw_sell_side'        => [ 'label' => 'Sell-side Content',    'type' => 'checkbox' ],
+        'pmw_intent_stages'    => [ 'label' => 'Intent Stages',       'type' => 'text',     'placeholder' => 'awareness,consideration,decision' ],
+        'pmw_affiliate_active' => [ 'label' => 'Active in Pipeline',   'type' => 'checkbox' ],
+    ];
+ 
+    echo '<p class="description">These fields are synced to the agent pipeline database. Changes here are picked up on the next pipeline run.</p>';
+    echo '<table class="form-table"><tbody>';
+ 
+    foreach ( $fields as $key => $f ) {
+        $val = get_post_meta( $post->ID, $key, true );
+        echo '<tr><th scope="row"><label for="' . esc_attr( $key ) . '">' . esc_html( $f['label'] ) . '</label></th><td>';
+ 
+        if ( $f['type'] === 'textarea' ) {
+            echo '<textarea id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" rows="2" class="large-text" placeholder="' . esc_attr( $f['placeholder'] ?? '' ) . '">' . esc_textarea( $val ) . '</textarea>';
+        } elseif ( $f['type'] === 'select' ) {
+            echo '<select id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '">';
+            foreach ( $f['choices'] ?? [] as $opt => $lbl ) {
+                echo '<option value="' . esc_attr( $opt ) . '" ' . selected( $val, $opt, false ) . '>' . esc_html( $lbl ) . '</option>';
+            }
+            echo '</select>';
+        } elseif ( $f['type'] === 'checkbox' ) {
+            echo '<input type="checkbox" id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" value="1" ' . checked( $val, '1', false ) . ' />';
+        } elseif ( $f['type'] === 'url' ) {
+            echo '<input type="url" id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" class="regular-text" placeholder="' . esc_attr( $f['placeholder'] ?? '' ) . '" />';
+        } elseif ( $f['type'] === 'number' ) {
+            echo '<input type="number" id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" step="' . esc_attr( $f['step'] ?? '1' ) . '" class="small-text" placeholder="' . esc_attr( $f['placeholder'] ?? '' ) . '" />';
+        } else {
+            echo '<input type="text" id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $val ) . '" class="regular-text" placeholder="' . esc_attr( $f['placeholder'] ?? '' ) . '" />';
+        }
+ 
+        echo '</td></tr>';
+    }
+ 
+    echo '</tbody></table>';
+}
+ 
+function pmw_save_dealer_affiliate_meta( $post_id, $post ) {
+    if ( ! isset( $_POST['pmw_dealer_affiliate_nonce'] ) || ! wp_verify_nonce( $_POST['pmw_dealer_affiliate_nonce'], 'pmw_dealer_affiliate_save' ) ) return;
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) return;
+    if ( ! current_user_can( 'edit_post', $post_id ) ) return;
+ 
+    $text_keys = [
+        'pmw_partner_key', 'pmw_value_prop', 'pmw_commission_type',
+        'pmw_geo_focus', 'pmw_faq_url', 'pmw_asset_classes',
+        'pmw_product_types', 'pmw_intent_stages',
+    ];
+    foreach ( $text_keys as $key ) {
+        if ( isset( $_POST[ $key ] ) ) {
+            $v = sanitize_text_field( wp_unslash( $_POST[ $key ] ) );
+            if ( $key === 'pmw_value_prop' ) {
+                $v = sanitize_textarea_field( wp_unslash( $_POST[ $key ] ) );
+            }
+            if ( $key === 'pmw_faq_url' ) {
+                $v = esc_url_raw( wp_unslash( $_POST[ $key ] ) );
+            }
+            update_post_meta( $post_id, $key, $v );
+        }
+    }
+ 
+    // Numeric fields
+    foreach ( [ 'pmw_commission_rate', 'pmw_min_transaction' ] as $key ) {
+        if ( isset( $_POST[ $key ] ) && is_numeric( $_POST[ $key ] ) ) {
+            update_post_meta( $post_id, $key, (float) $_POST[ $key ] );
+        }
+    }
+    if ( isset( $_POST['pmw_cookie_days'] ) && is_numeric( $_POST['pmw_cookie_days'] ) ) {
+        update_post_meta( $post_id, 'pmw_cookie_days', (int) $_POST['pmw_cookie_days'] );
+    }
+ 
+    // Checkboxes
+    foreach ( [ 'pmw_buy_side', 'pmw_sell_side', 'pmw_affiliate_active' ] as $key ) {
+        update_post_meta( $post_id, $key, isset( $_POST[ $key ] ) && $_POST[ $key ] === '1' ? '1' : '0' );
+    }
+}
+ 
+ 
+// ═══════════════════════════════════════════════════════════════════════
+// STEP 4: WPGraphQL fields for dealer affiliate meta
+// ═══════════════════════════════════════════════════════════════════════
+ 
+function pmw_register_dealer_affiliate_graphql() {
+    if ( ! function_exists( 'register_graphql_field' ) ) return;
+ 
+    $dealer_id = function( $source ) {
+        return isset( $source->databaseId )
+            ? (int) $source->databaseId
+            : ( isset( $source->ID ) ? (int) $source->ID : 0 );
+    };
+ 
+    // String fields
+    $string_fields = [
+        'pmw_partner_key'     => 'pmwPartnerKey',
+        'pmw_value_prop'      => 'pmwValueProp',
+        'pmw_commission_type' => 'pmwCommissionType',
+        'pmw_geo_focus'       => 'pmwGeoFocus',
+        'pmw_faq_url'         => 'pmwFaqUrl',
+        'pmw_asset_classes'   => 'pmwAssetClasses',
+        'pmw_product_types'   => 'pmwProductTypes',
+        'pmw_intent_stages'   => 'pmwIntentStages',
+    ];
+ 
+    foreach ( $string_fields as $meta_key => $gql_name ) {
+        register_graphql_field( 'Dealer', $gql_name, [
+            'type'    => 'String',
+            'resolve' => function( $post ) use ( $meta_key, $dealer_id ) {
+                $id = $dealer_id( $post );
+                return $id ? (string) get_post_meta( $id, $meta_key, true ) : '';
+            },
+        ] );
+    }
+ 
+    // Float fields
+    register_graphql_field( 'Dealer', 'pmwCommissionRate', [
+        'type'    => 'Float',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (float) get_post_meta( $id, 'pmw_commission_rate', true ) : 0.0;
+        },
+    ] );
+    register_graphql_field( 'Dealer', 'pmwMinTransaction', [
+        'type'    => 'Float',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (float) get_post_meta( $id, 'pmw_min_transaction', true ) : 0.0;
+        },
+    ] );
+ 
+    // Integer fields
+    register_graphql_field( 'Dealer', 'pmwCookieDays', [
+        'type'    => 'Int',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (int) get_post_meta( $id, 'pmw_cookie_days', true ) : 0;
+        },
+    ] );
+ 
+    // Boolean fields
+    register_graphql_field( 'Dealer', 'pmwBuySide', [
+        'type'    => 'Boolean',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (bool) get_post_meta( $id, 'pmw_buy_side', true ) : true;
+        },
+    ] );
+    register_graphql_field( 'Dealer', 'pmwSellSide', [
+        'type'    => 'Boolean',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (bool) get_post_meta( $id, 'pmw_sell_side', true ) : false;
+        },
+    ] );
+    register_graphql_field( 'Dealer', 'pmwAffiliateActive', [
+        'type'    => 'Boolean',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            return $id ? (bool) get_post_meta( $id, 'pmw_affiliate_active', true ) : false;
+        },
+    ] );
+ 
+    // Also expose the existing ACF affiliate_link field as a convenience
+    register_graphql_field( 'Dealer', 'pmwAffiliateUrl', [
+        'type'    => 'String',
+        'resolve' => function( $post ) use ( $dealer_id ) {
+            $id = $dealer_id( $post );
+            if ( ! $id ) return '';
+            // Try ACF field first, fall back to meta
+            $url = function_exists( 'get_field' ) ? get_field( 'affiliate_link', $id ) : '';
+            return $url ?: (string) get_post_meta( $id, 'affiliate_link', true );
+        },
+    ] );
+}
+ 
+ 
+// ═══════════════════════════════════════════════════════════════════════
+// STEP 5: Seed affiliate dealers from implementation plan Appendix B
+// ═══════════════════════════════════════════════════════════════════════
+ 
+function pmw_seed_affiliate_dealers_menu() {
+    add_management_page(
+        'Seed Affiliate Dealers',
+        'Seed Affiliate Dealers',
+        'manage_options',
+        'pmw-seed-affiliate-dealers',
+        'pmw_seed_affiliate_dealers_page'
+    );
+}
+ 
+function pmw_seed_affiliate_dealers_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = isset( $_GET['pmw_seed_affiliate_dealers'] ) && $_GET['pmw_seed_affiliate_dealers'] === '1';
+    echo '<div class="wrap"><h1>Seed Affiliate Dealers</h1>';
+    if ( $done ) {
+        echo '<div class="notice notice-success"><p>Affiliate dealers seeded. <a href="' . esc_url( admin_url( 'edit.php?post_type=dealer' ) ) . '">View dealers</a>.</p></div>';
+    } else {
+        echo '<p>Creates the 5 affiliate dealer records from the implementation plan (BullionVault, Royal Mint, Chards, Augusta, GoldBroker) with full pipeline meta fields.</p>';
+        echo '<p><a href="' . esc_url( admin_url( 'tools.php?page=pmw-seed-affiliate-dealers&pmw_seed_affiliate_dealers=1&_wpnonce=' . wp_create_nonce( 'pmw_seed_affiliate_dealers' ) ) ) . '" class="button button-primary">Run Seed</a></p>';
+    }
+    echo '</div>';
+}
+ 
+function pmw_seed_affiliate_dealers_action() {
+    if ( ! isset( $_GET['pmw_seed_affiliate_dealers'] ) || $_GET['pmw_seed_affiliate_dealers'] !== '1' ) return;
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'pmw_seed_affiliate_dealers' ) ) return;
+ 
+    pmw_seed_affiliate_dealer_data();
+}
+ 
+function pmw_seed_affiliate_dealer_data() {
+    $dealers = [
+        [
+            'post_title'   => 'BullionVault',
+            'post_content' => 'Buy, sell and store gold, silver and platinum at wholesale prices online. UK regulated.',
+            'post_excerpt' => 'UK\'s most trusted bullion platform. Buy from £25.',
+            'meta' => [
+                'pmw_partner_key'      => 'bullionvault',
+                'pmw_value_prop'       => 'Buy, sell and store gold, silver and platinum at wholesale prices online. UK regulated.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 25.0,
+                'pmw_faq_url'          => 'https://www.bullionvault.com/help/',
+                'pmw_asset_classes'    => 'gold,silver,platinum',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.bullionvault.com/?utm_source=pmw',
+                'rating'         => 4.8,
+            ],
+        ],
+        [
+            'post_title'   => 'The Royal Mint',
+            'post_content' => 'The UK government mint. Investment gold and silver coins. FCA regulated. Free secure storage.',
+            'post_excerpt' => 'Official UK mint. Investment gold from the source.',
+            'meta' => [
+                'pmw_partner_key'      => 'royal-mint',
+                'pmw_value_prop'       => 'The UK government mint. Investment gold and silver coins. FCA regulated. Free secure storage.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.royalmint.com/help/',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'coins,bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.royalmint.com/?utm_source=pmw',
+                'rating'         => 4.7,
+            ],
+        ],
+        [
+            'post_title'   => 'Chards',
+            'post_content' => 'One of the UK\'s oldest coin dealers. Specialist gold, silver, and platinum bullion since 1964.',
+            'post_excerpt' => 'Family-run bullion dealer since 1964.',
+            'meta' => [
+                'pmw_partner_key'      => 'chards',
+                'pmw_value_prop'       => 'One of the UK\'s oldest coin dealers. Specialist gold, silver, and platinum bullion since 1964.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.chards.co.uk/help',
+                'pmw_asset_classes'    => 'gold,silver,platinum',
+                'pmw_product_types'    => 'coins,bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.chards.co.uk/?utm_source=pmw',
+                'rating'         => 4.5,
+            ],
+        ],
+        [
+            'post_title'   => 'Augusta Precious Metals',
+            'post_content' => 'America\'s most transparent gold IRA company 2022-2024. Harvard-trained economist onboarding.',
+            'post_excerpt' => 'Gold IRA specialists. $500/qualified lead.',
+            'meta' => [
+                'pmw_partner_key'      => 'augusta-precious-metals',
+                'pmw_value_prop'       => 'America\'s most transparent gold IRA company 2022-2024. Harvard-trained economist onboarding.',
+                'pmw_commission_type'  => 'per_lead',
+                'pmw_commission_rate'  => 500.0,
+                'pmw_cookie_days'      => 90,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 50000.0,
+                'pmw_faq_url'          => 'https://www.augustapreciousmetals.com/faq/',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'ira',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.augustapreciousmetals.com/?utm_source=pmw',
+                'rating'         => 4.9,
+            ],
+        ],
+        [
+            'post_title'   => 'GoldBroker',
+            'post_content' => 'Physical gold and silver with vault storage in Zurich, New York, and Singapore.',
+            'post_excerpt' => 'International vault storage for physical bullion.',
+            'meta' => [
+                'pmw_partner_key'      => 'goldbroker',
+                'pmw_value_prop'       => 'Physical gold and silver with vault storage in Zurich, New York, and Singapore.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.25,
+                'pmw_cookie_days'      => 60,
+                'pmw_geo_focus'        => 'global',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://goldbroker.com/faq',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://goldbroker.com/?utm_source=pmw',
+                'rating'         => 4.3,
+            ],
+        ],
+    ];
+ 
+    foreach ( $dealers as $d ) {
+        // Check if dealer already exists by partner_key
+        $existing = get_posts( [
+            'post_type'      => 'dealer',
+            'post_status'    => 'any',
+            'posts_per_page' => 1,
+            'meta_key'       => 'pmw_partner_key',
+            'meta_value'     => $d['meta']['pmw_partner_key'],
+        ] );
+        if ( ! empty( $existing ) ) continue;
+ 
+        $post_id = wp_insert_post( [
+            'post_type'    => 'dealer',
+            'post_title'   => $d['post_title'],
+            'post_content' => $d['post_content'],
+            'post_excerpt' => $d['post_excerpt'],
+            'post_status'  => 'publish',
+        ], true );
+ 
+        if ( ! $post_id || is_wp_error( $post_id ) ) continue;
+ 
+        // Set pipeline meta fields
+        foreach ( $d['meta'] as $key => $val ) {
+            update_post_meta( $post_id, $key, $val );
+        }
+ 
+        // Set ACF fields if available
+        if ( function_exists( 'update_field' ) && ! empty( $d['acf'] ) ) {
+            foreach ( $d['acf'] as $field => $val ) {
+                update_field( $field, $val, $post_id );
+            }
+        }
+    }
+}
 
