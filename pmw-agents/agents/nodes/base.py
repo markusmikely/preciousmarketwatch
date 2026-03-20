@@ -197,6 +197,12 @@ class BaseAgent(ABC):
             model    = model_config.model_id       if model_config else "none",
         )
 
+        self._write_stage_record(
+            run_id=run_id,
+            status=AgentStatus.PENDING,
+            attempt=attempt
+        )
+
     # ------------------------------------------------------------------
     # LangSmith tracer
     # ------------------------------------------------------------------
