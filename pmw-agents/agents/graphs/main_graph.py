@@ -1,9 +1,18 @@
 # graphs/main_graph.py
+"""
+Top-level workflow orchestrator — multi-topic architecture.
+
+Research phase now returns a LIST of research_bundles (one per topic).
+Planning and generation phases process each bundle independently,
+all sharing the same pipeline run_id.
+
+Flow:
+  research → [list of bundles] → for each bundle: planning → generation
+"""
 
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -20,19 +29,14 @@ log = logging.getLogger(__name__)
 
 class MainGraph(BaseGraph):
     """
-    Top-level workflow orchestrator.
+    Top-level orchestrator — multi-topic.
 
-    Chains three phase subgraphs:
-        research -> planning -> generation -> END
+    research_node: produces a list of research_bundles
+    planning_node: processes each bundle through planning
+    generation_node: processes each planned bundle through generation
 
-    Each phase node does exactly three things:
-        1. Call subgraph.run(input)    — complete black box
-        2. Check result.succeeded      — route on failure
-        3. Return dict of PipelineState updates only
-
-    The parent knows nothing about what happens inside a phase.
-    Token usage, internal stages, retries — all invisible here.
-    Adding a phase = one new node + one new edge + one run() call.
+    All bundles share the same run_id. Per-topic tracking is done via
+    the topic_wp_id recorded in workflow_stages and topic_briefs.
     """
 
     _state_schema = PipelineState
@@ -47,11 +51,6 @@ class MainGraph(BaseGraph):
     async def create_with_checkpointer(
         cls, checkpointer: AsyncPostgresSaver
     ) -> "MainGraph":
-        """
-        Build MainGraph and all phase subgraphs using an existing checkpointer.
-        Use this when the checkpointer is provided by a context manager
-        (e.g. AsyncPostgresSaver.from_conn_string).
-        """
         instance = cls(checkpointer)
         instance._research = await ResearchGraph.create_with_checkpointer(checkpointer)
         instance._planning = await PlanningGraph.create_with_checkpointer(checkpointer)
@@ -66,7 +65,6 @@ class MainGraph(BaseGraph):
 
     @classmethod
     async def create(cls) -> "MainGraph":
-        """Create MainGraph with a new checkpointer (for tests)."""
         import os
         from psycopg_pool import AsyncConnectionPool
         from psycopg.rows import dict_row
@@ -93,14 +91,20 @@ class MainGraph(BaseGraph):
 
     def _build_nodes(self):
         self.add_node("research",   self._research_node)
-        self.add_node("planning",   self._planning_node)
-        self.add_node("generation", self._generation_node)
+        self.add_node("process_bundles", self._process_bundles_node)
 
     def _build_edges(self):
-        self.add_edge(self.START,   "research")
-        self.add_edge("research",   "planning")
-        self.add_edge("planning",   "generation")
-        self.add_edge("generation", self.END)
+        self.add_edge(self.START, "research")
+        self.add_conditional_edges(
+            "research",
+            self._route_after_research,
+            {
+                "process": "process_bundles",
+                "empty":   self.END,
+                "failed":  self.END,
+            },
+        )
+        self.add_edge("process_bundles", self.END)
 
     # ── Input / output translation ────────────────────────────────────
 
@@ -118,93 +122,180 @@ class MainGraph(BaseGraph):
             "errors":            [],
             "status":            "running",
             "wp_post_id":        None,
+            # Multi-topic fields
+            "research_bundles":  [],
+            "planning_results":  [],
+            "generation_results": [],
         }
 
     def _make_result(self, final_state: dict) -> PhaseResult:
+        bundles = final_state.get("research_bundles") or []
+        planning = final_state.get("planning_results") or []
+        generation = final_state.get("generation_results") or []
+
         return PhaseResult(
             run_id   = final_state.get("run_id"),
             status   = final_state.get("status", "failed"),
             output   = {
-                "research_bundle":   final_state.get("research_bundle"),
-                "content_plan":      final_state.get("content_plan"),
-                "generation_result": final_state.get("generation_result"),
-                "wp_post_id":        final_state.get("wp_post_id"),
-                "phase_statuses":    final_state.get("phase_statuses", {}),
+                "research_bundles":   bundles,
+                "planning_results":   planning,
+                "generation_results": generation,
+                "phase_statuses":     final_state.get("phase_statuses", {}),
+                "topics_processed":   len(bundles),
             },
             cost_usd = final_state.get("total_cost_usd", 0.0),
             errors   = final_state.get("errors", []),
             meta     = {
-                "topic_title": final_state.get("topic_title"),
-                "topic_wp_id": final_state.get("topic_wp_id"),
+                "topics_researched": len(bundles),
+                "topics_planned":    len(planning),
+                "topics_generated":  len(generation),
+                "topic_titles":      [
+                    b.get("topic", {}).get("title", "")
+                    for b in bundles
+                ],
             },
         )
 
+    # ── Routing ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _route_after_research(state: dict) -> str:
+        if state.get("status") == "failed":
+            return "failed"
+        bundles = state.get("research_bundles") or []
+        if len(bundles) == 0:
+            return "empty"
+        return "process"
+
     # ── Phase nodes ───────────────────────────────────────────────────
-    #
-    # Pattern is identical for every node:
-    #   result = await self._subgraph.run({only what this phase needs})
-    #   if not result.succeeded: return self._phase_failure(...)
-    #   return {only the PipelineState fields that changed}
-    #
-    # The node does NOT know:
-    #   - How many internal stages the subgraph has
-    #   - What the subgraph's internal state fields are called
-    #   - How the subgraph handles retries or HITL internally
 
     async def _research_node(self, state: PipelineState) -> dict:
+        """
+        Run research phase — produces a LIST of research_bundles.
+        """
         result: PhaseResult = await self._research.run({
             "run_id":       state["run_id"],
             "triggered_by": state.get("triggered_by", "scheduler"),
         })
 
-        if not result.succeeded:
-            return self._phase_failure(state, "research", result)
+        bundles = result.output if result.succeeded and isinstance(result.output, list) else []
 
         return {
-            "run_id": state["run_id"],
-            "research_bundle": result.output,
-            "topic_wp_id":     result.meta.get("topic_wp_id"),
-            "topic_title":     result.meta.get("topic_title"),
-            "phase_statuses":  {**state.get("phase_statuses", {}), "research": "complete"},
-            "total_cost_usd":  state.get("total_cost_usd", 0.0) + result.cost_usd,
-            "errors":          state.get("errors", []) + result.errors,
+            "run_id":           state["run_id"],
+            "research_bundles": bundles,
+            "phase_statuses":   {
+                **state.get("phase_statuses", {}),
+                "research": "complete" if result.succeeded else result.status,
+            },
+            "total_cost_usd":   state.get("total_cost_usd", 0.0) + result.cost_usd,
+            "errors":           state.get("errors", []) + result.errors,
+            "status":           "running" if bundles else result.status,
         }
 
-    async def _planning_node(self, state: PipelineState) -> dict:
-        result: PhaseResult = await self._planning.run({
-            "run_id":         state["run_id"],
-            "research_bundle": state.get("research_bundle"),
-        })
+    async def _process_bundles_node(self, state: PipelineState) -> dict:
+        """
+        For each research_bundle, run planning → generation.
 
-        if not result.succeeded:
-            return self._phase_failure(state, "planning", result)
+        All bundles share the same run_id. Each bundle produces
+        independent planning_result and generation_result.
+        """
+        run_id = state["run_id"]
+        bundles = state.get("research_bundles") or []
+        planning_results = []
+        generation_results = []
+        total_cost = state.get("total_cost_usd", 0.0)
+        all_errors = list(state.get("errors", []))
+
+        log.info(
+            f"Processing {len(bundles)} bundle(s) through planning → generation",
+            extra={"run_id": run_id},
+        )
+
+        for i, bundle in enumerate(bundles):
+            topic_title = bundle.get("topic", {}).get("title", f"Bundle #{i}")
+            log.info(
+                f"━━━ Bundle {i+1}/{len(bundles)}: '{topic_title}' ━━━",
+                extra={"run_id": run_id},
+            )
+
+            # ── Planning ──────────────────────────────────────────────
+            try:
+                planning_result: PhaseResult = await self._planning.run({
+                    "run_id":          run_id,
+                    "research_bundle": bundle,
+                })
+                total_cost += planning_result.cost_usd
+
+                if planning_result.succeeded:
+                    planning_results.append({
+                        "topic_title": topic_title,
+                        "content_plan": planning_result.output,
+                        "cost_usd": planning_result.cost_usd,
+                    })
+                else:
+                    all_errors.append({
+                        "phase": "planning",
+                        "topic_title": topic_title,
+                        "error": f"Planning failed: {planning_result.errors}",
+                    })
+                    continue  # Skip generation for this bundle
+
+            except Exception as exc:
+                all_errors.append({
+                    "phase": "planning",
+                    "topic_title": topic_title,
+                    "error": str(exc),
+                })
+                continue
+
+            # ── Generation ────────────────────────────────────────────
+            try:
+                gen_result: PhaseResult = await self._generation.run({
+                    "run_id":          run_id,
+                    "research_bundle": bundle,
+                    "content_plan":    planning_result.output,
+                })
+                total_cost += gen_result.cost_usd
+
+                if gen_result.succeeded:
+                    generation_results.append({
+                        "topic_title": topic_title,
+                        "generation_result": gen_result.output,
+                        "wp_post_id": (gen_result.output or {}).get("wp_post_id"),
+                        "cost_usd": gen_result.cost_usd,
+                    })
+                else:
+                    all_errors.append({
+                        "phase": "generation",
+                        "topic_title": topic_title,
+                        "error": f"Generation failed: {gen_result.errors}",
+                    })
+
+            except Exception as exc:
+                all_errors.append({
+                    "phase": "generation",
+                    "topic_title": topic_title,
+                    "error": str(exc),
+                })
+
+        log.info(
+            f"Bundle processing complete: "
+            f"{len(planning_results)} planned, {len(generation_results)} generated",
+            extra={"run_id": run_id},
+        )
 
         return {
-            "run_id": state["run_id"],
-            "content_plan":   result.output,
-            "phase_statuses": {**state.get("phase_statuses", {}), "planning": "complete"},
-            "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
-            "errors":         state.get("errors", []) + result.errors,
-        }
-
-    async def _generation_node(self, state: PipelineState) -> dict:
-        result: PhaseResult = await self._generation.run({
-            "run_id":          state["run_id"],
-            "research_bundle": state.get("research_bundle"),
-            "content_plan":    state.get("content_plan"),
-        })
-
-        if not result.succeeded:
-            return self._phase_failure(state, "generation", result)
-
-        return {
-            "run_id": state["run_id"],
-            "generation_result": result.output,
-            "wp_post_id":        (result.output or {}).get("wp_post_id"),
-            "phase_statuses":    {**state.get("phase_statuses", {}), "generation": "complete"},
-            "total_cost_usd":    state.get("total_cost_usd", 0.0) + result.cost_usd,
-            "errors":            state.get("errors", []) + result.errors,
-            "status":            "complete",
+            "run_id":             run_id,
+            "planning_results":   planning_results,
+            "generation_results": generation_results,
+            "total_cost_usd":     total_cost,
+            "errors":             all_errors,
+            "phase_statuses":     {
+                **state.get("phase_statuses", {}),
+                "planning":   "complete",
+                "generation": "complete",
+            },
+            "status": "complete",
         }
 
     # ── Shared failure handler ────────────────────────────────────────
@@ -213,9 +304,9 @@ class MainGraph(BaseGraph):
     def _phase_failure(state: PipelineState, phase: str, result: PhaseResult) -> dict:
         log.error(f"Phase '{phase}' failed | status={result.status}")
         return {
-            "run_id": state["run_id"],
-            "phase_statuses": {**state.get("phase_statuses", {}), phase: result.status},
-            "total_cost_usd": state.get("total_cost_usd", 0.0) + result.cost_usd,
-            "errors":         state.get("errors", []) + result.errors,
-            "status":         "failed",
+            "run_id":          state["run_id"],
+            "phase_statuses":  {**state.get("phase_statuses", {}), phase: result.status},
+            "total_cost_usd":  state.get("total_cost_usd", 0.0) + result.cost_usd,
+            "errors":          state.get("errors", []) + result.errors,
+            "status":          "failed",
         }

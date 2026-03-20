@@ -1,26 +1,18 @@
 """
-Stage 1.1 — TopicLoader
+Stage 1a — TopicLoader
 
-Fetches candidate topics from WordPress, syncs new ones to Postgres,
-filters out locked topics, returns candidates from Postgres.
+Fetches ALL eligible topics from WordPress, syncs to Postgres,
+filters out locked topics, returns the full list in all_topics.
 
-Flow:
-  1. GET /wp/v2/pmw-topics?status=publish from WordPress
-  2. For each WP topic, UPSERT into Postgres topics table (sync)
-  3. Query Postgres for unlocked topics (filter by workflow_runs locks)
-  4. Return candidate_topics list
-
-If no topics are found, sets status="failed" which triggers the
-conditional edge in research_graph to route to handle_failure.
-This is a normal condition — the pipeline loop will try again next cycle.
+This is the first node in the research graph. It populates all_topics
+which is then used by brief_builder to process every topic.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 
-from nodes.base import BaseAgent, AgentStatus, AgentResult, EventType
+from nodes.base import BaseAgent, EventType
 from infrastructure import get_infrastructure
 
 log = logging.getLogger("pmw.node.topic_loader")
@@ -34,9 +26,6 @@ class TopicLoader(BaseAgent):
         )
 
     async def run(self, state: dict) -> dict:
-        """
-        LangGraph node entry point. Accepts state dict, returns state updates.
-        """
         run_id = state["run_id"]
 
         await self._emit_event(EventType.STAGE_STARTED, run_id, {})
@@ -53,24 +42,23 @@ class TopicLoader(BaseAgent):
                 error_msg = "No published topics found in WordPress"
                 self.log.info(error_msg, run_id=run_id)
                 await self._write_stage_record(
-                    run_id, status="failed", attempt=1,
-                    error=error_msg,
+                    run_id, status="failed", attempt=1, error=error_msg,
                 )
                 return {
-                    "candidate_topics": [],
+                    "all_topics": [],
                     "current_stage": "stage1.topic_loader",
                     "status": "failed",
                     "errors": state.get("errors", []) + [{
                         "stage": "stage1.topic_loader",
                         "error": error_msg,
-                        "recoverable": True,  # pipeline loop will retry next cycle
+                        "recoverable": True,
                     }],
                 }
 
-            # Step 2: Sync each WP topic to Postgres (upsert by WP post ID)
+            # Step 2: Sync each WP topic to Postgres
             await self._sync_topics_to_postgres(wp_topics)
 
-            # Step 3: Filter out topics with active locks (uses Postgres)
+            # Step 3: Filter out topics with active locks
             unlocked = await services.topics.filter_locked_topics(wp_topics)
 
             if not unlocked:
@@ -80,11 +68,10 @@ class TopicLoader(BaseAgent):
                 )
                 self.log.info(error_msg, run_id=run_id)
                 await self._write_stage_record(
-                    run_id, status="failed", attempt=1,
-                    error=error_msg,
+                    run_id, status="failed", attempt=1, error=error_msg,
                 )
                 return {
-                    "candidate_topics": [],
+                    "all_topics": [],
                     "current_stage": "stage1.topic_loader",
                     "status": "failed",
                     "errors": state.get("errors", []) + [{
@@ -102,7 +89,7 @@ class TopicLoader(BaseAgent):
             )
 
             return {
-                "candidate_topics": unlocked,
+                "all_topics": unlocked,
                 "current_stage": "stage1.topic_loader",
             }
 
@@ -112,7 +99,7 @@ class TopicLoader(BaseAgent):
                 run_id, status="failed", attempt=1, error=str(exc),
             )
             return {
-                "candidate_topics": [],
+                "all_topics": [],
                 "current_stage": "stage1.topic_loader",
                 "status": "failed",
                 "errors": state.get("errors", []) + [{
@@ -122,12 +109,8 @@ class TopicLoader(BaseAgent):
             }
 
     async def _sync_topics_to_postgres(self, wp_topics: list[dict]) -> None:
-        """
-        Upsert WP topics into the Postgres topics table.
-        Uses the WP post ID as the primary key for matching.
-        """
+        """Upsert WP topics into the Postgres topics table."""
         infra = get_infrastructure()
-
         for t in wp_topics:
             try:
                 await infra.postgres.execute(
@@ -141,13 +124,9 @@ class TopicLoader(BaseAgent):
                         last_run_at, run_count, last_run_id,
                         last_wp_post_id, wp_category_id, affiliate_page_id
                     ) VALUES (
-                        $1, $2, $3, $4,
-                        $5, $6,
-                        $7, $8, $9,
-                        $10, $11, $12,
-                        $13, $14,
-                        $15::timestamptz, $16, $17,
-                        $18, $19, $20
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                        $10, $11, $12, $13, $14,
+                        $15::timestamptz, $16, $17, $18, $19, $20
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         topic_name       = EXCLUDED.topic_name,

@@ -1,298 +1,367 @@
 # graphs/research_graph.py
+"""
+Research subgraph — multi-topic architecture.
+
+Stage 1 processes ALL eligible topics in a single pass:
+  topic_loader → affiliate_loader → brief_builder
+
+This produces:
+  locked_briefs:  list of briefs that passed scoring + coherence
+  review_items:   list of topics saved to DB for human review
+
+Then for each locked brief, stages 2-8 run sequentially:
+  keyword_research → market_context → competitor_analysis →
+  top_factors → data_fetcher → psychology_synthesis →
+  tool_loader → tool_mapping → arc_coherence → bundle_assembler
+
+Each completed brief's research_bundle is appended to completed_bundles.
+The parent graph receives the full list.
+
+If a brief fails during stages 2-8, it's logged and skipped — other
+briefs continue processing. A single bad topic doesn't halt the run.
+"""
 
 import logging
 from graphs.base_graph import BaseGraph
 from graphs.phase_result import PhaseResult
-from state.research_state import ResearchState  # internal — never seen by parent
+from state.research_state import ResearchState
 
 # Stage 1 nodes
-from nodes.research.stage1.affiliate_loader import AffiliateLoader
-from nodes.research.stage1.affiliate_scorer import AffiliateScorer
 from nodes.research.stage1.topic_loader import TopicLoader
-from nodes.research.stage1.topic_selector import TopicSelector
-from nodes.research.stage1.brief_locker import BriefLocker
-# Stage 2 nodes
+from nodes.research.stage1.affiliate_loader import AffiliateLoader
+from nodes.research.stage1.brief_builder import BriefBuilder
+# Stages 2-8 nodes
 from nodes.research.stage2.keyword_research import KeywordResearch
-# Stage 3 nodes
 from nodes.research.stage3.market_context import MarketContext
-# Stage 4 nodes
 from nodes.research.stage4.top_factors import TopFactors
-# Stage 5 nodes
 from nodes.research.stage5.competitor_analysis import CompetitorAnalysis
-# Stage 6 nodes
 from nodes.research.stage6.data_fetcher import DataFetcher
 from nodes.research.stage6.psychology_synthesis import PsychologySynthesis
-# Stage 7 nodes
 from nodes.research.stage7.tool_loader import ToolLoader
 from nodes.research.stage7.tool_mapping import ToolMapping
-# Stage 8 nodes
 from nodes.research.stage8.arc_coherence import ArcCoherence
 from nodes.research.stage8.bundle_assembler import BundleAssembler
-# Stage 9 nodes
-from nodes.research.stage9.intelligence_aggregation import IntelligenceAggregation
 
 log = logging.getLogger(__name__)
 
 
 class ResearchGraph(BaseGraph):
     """
-    Phase 1 — Research subgraph.
+    Phase 1 — Research subgraph (multi-topic).
 
-    Internal state: ResearchState (20+ fields, never seen by MainGraph)
+    Internal state: ResearchState
     Public contract: run({"run_id", "triggered_by"}) -> PhaseResult
-
-    FIXES:
-      - Every Stage 1 node now has conditional routing: if the node sets
-        status="failed", the pipeline routes to handle_failure instead of
-        proceeding to the next node.
-      - This prevents the cascade where topic_loader fails but topic_selector
-        still runs with empty data.
+      where PhaseResult.output = list of research_bundles
     """
 
     _state_schema = ResearchState
 
     @classmethod
     async def create(cls) -> "ResearchGraph":
-        """Create ResearchGraph instance with proper connection pool."""
         log.info("Creating ResearchGraph...")
         instance = await super().create()
         log.info("ResearchGraph created successfully")
         return instance
 
     def _build_nodes(self):
-        topic_loader = TopicLoader()
-        topic_selector = TopicSelector()
-        affiliate_loader = AffiliateLoader()
-        affiliate_scorer = AffiliateScorer()
-        brief_locker = BriefLocker()
+        # Stage 1: load everything + build briefs
+        self.add_node("topic_loader",    TopicLoader().run)
+        self.add_node("affiliate_loader", AffiliateLoader().run)
+        self.add_node("brief_builder",   BriefBuilder().run)
+
+        # Per-brief research stages (2-8)
+        self.add_node("process_briefs",  self._process_all_briefs)
+
+        # Terminal nodes
+        self.add_node("handle_failure",  self._failure)
+
+    def _build_edges(self):
+        # Stage 1: sequential loading
+        self.add_edge(self.START, "topic_loader")
+
+        self.add_conditional_edges(
+            "topic_loader",
+            self._route_on_status,
+            {"continue": "affiliate_loader", "failed": "handle_failure"},
+        )
+        self.add_conditional_edges(
+            "affiliate_loader",
+            self._route_on_status,
+            {"continue": "brief_builder", "failed": "handle_failure"},
+        )
+
+        # After brief_builder: process all locked briefs
+        self.add_conditional_edges(
+            "brief_builder",
+            self._route_after_brief_builder,
+            {
+                "process": "process_briefs",
+                "empty":   self.END,     # No briefs passed — valid, run ends
+                "failed":  "handle_failure",
+            },
+        )
+
+        # After processing all briefs → END
+        self.add_edge("process_briefs", self.END)
+        self.add_edge("handle_failure", self.END)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PER-BRIEF PROCESSING (stages 2-8 loop)
+    # ══════════════════════════════════════════════════════════════════════
+
+    async def _process_all_briefs(self, state: dict) -> dict:
+        """
+        Process each locked brief through stages 2-8.
+
+        This is a single LangGraph node that internally loops over
+        locked_briefs. Each brief gets its own stages 2-8 run.
+        Failed briefs are logged and skipped — others continue.
+
+        The result is a list of completed_bundles in state.
+        """
+        run_id = state["run_id"]
+        locked_briefs = state.get("locked_briefs") or []
+        completed_bundles = []
+        all_model_usage = list(state.get("model_usage", []))
+        all_errors = list(state.get("errors", []))
+
+        log.info(
+            f"Processing {len(locked_briefs)} brief(s) through stages 2-8",
+            extra={"run_id": run_id},
+        )
+
+        # Instantiate stage nodes once
         keyword_research = KeywordResearch()
         market_context = MarketContext()
         competitor_analysis = CompetitorAnalysis()
-        data_fetcher = DataFetcher()
         top_factors = TopFactors()
+        data_fetcher = DataFetcher()
         psychology_synthesis = PsychologySynthesis()
         tool_loader = ToolLoader()
         tool_mapping = ToolMapping()
         arc_coherence = ArcCoherence()
         bundle_assembler = BundleAssembler()
 
-        # Stage 1
-        self.add_node("stage1.topic_loader",       topic_loader.run)
-        self.add_node("stage1.topic_selector",     topic_selector.run)
-        self.add_node("stage1.affiliate_loader",   affiliate_loader.run)
-        self.add_node("stage1.affiliate_scorer",   affiliate_scorer.run)
-        self.add_node("stage1.brief_locker",       brief_locker.run)
+        for i, brief in enumerate(locked_briefs):
+            topic = brief.get("topic", {})
+            topic_title = topic.get("title", f"Brief #{i}")
+            topic_id = topic.get("id")
 
-        # Parallel wave 1
-        self.add_node("stage2.keyword_research",    keyword_research.run)
-        self.add_node("stage3.market_context",      market_context.run)
-        self.add_node("stage5.competitor_analysis", competitor_analysis.run)
+            log.info(
+                f"━━━ Brief {i+1}/{len(locked_briefs)}: '{topic_title}' ━━━",
+                extra={"run_id": run_id, "topic_id": topic_id},
+            )
 
-        # Barriers (named no-ops — inherited from BaseGraph)
-        self.add_node("barrier.stage4", self._noop)
-        self.add_node("barrier.stage6", self._noop)
-        self.add_node("barrier.stage7", self._noop)
-        self.add_node("barrier.stage8", self._noop)
-
-        # Stage 4, 6, 7, 8
-        self.add_node("stage4.top_factors",          top_factors.run)
-        self.add_node("stage6.data_fetcher",         data_fetcher.run)
-        self.add_node("stage6.psychology_synthesis", psychology_synthesis.run)
-        self.add_node("stage7.tool_loader",          tool_loader.run)
-        self.add_node("stage7.tool_mapping",         tool_mapping.run)
-        self.add_node("stage8.arc_coherence",        arc_coherence.run)
-        self.add_node("stage8.bundle_assembler",     bundle_assembler.run)
-
-        # Control nodes
-        self.add_node("hitl_gate",      self._hitl)
-        self.add_node("handle_failure", self._failure)
-
-    def _build_edges(self):
-        # ══════════════════════════════════════════════════════════════
-        # Stage 1 — CONDITIONAL chain (each node can fail → handle_failure)
-        #
-        # Previously these were hard edges (add_edge). Now each Stage 1
-        # node routes through a check: if status=="failed", go to
-        # handle_failure. Otherwise continue to the next node.
-        # This is what prevents the pipeline from proceeding with empty data.
-        # ══════════════════════════════════════════════════════════════
-
-        self.add_edge(self.START, "stage1.topic_loader")
-
-        # After topic_loader: continue or fail
-        self.add_conditional_edges(
-            "stage1.topic_loader",
-            self._route_on_status,
-            {
-                "continue": "stage1.topic_selector",
-                "failed":   "handle_failure",
+            # Build per-brief state (starts with the brief + empty stage outputs)
+            brief_state = {
+                "run_id": run_id,
+                "triggered_by": state.get("triggered_by", "scheduler"),
+                "brief": brief,
+                "selected_topic": topic,
+                "primary_affiliate": brief.get("affiliate", {}).get("primary"),
+                "secondary_affiliate": brief.get("affiliate", {}).get("secondary"),
+                "keyword_research": None,
+                "market_context": None,
+                "competitor_analysis": None,
+                "top_factors": None,
+                "raw_sources_cache_key": None,
+                "buyer_psychology": None,
+                "tool_mapping": None,
+                "arc_validation": None,
+                "research_bundle": None,
+                "available_tools": None,
+                "current_stage": "stage2",
+                "status": "running",
+                "errors": [],
+                "retry_counts": {},
+                "model_usage": [],
             }
+
+            try:
+                # ── Stage 2: Keyword Research ─────────────────────────
+                brief_state = self._merge(brief_state, await keyword_research.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage2.keyword_research", brief_state)
+
+                # ── Stage 3: Market Context ───────────────────────────
+                brief_state = self._merge(brief_state, await market_context.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage3.market_context", brief_state)
+
+                # ── Stage 5: Competitor Analysis (parallel with 2+3 in theory,
+                #    but sequential here for simplicity — concurrency in Phase 2)
+                brief_state = self._merge(brief_state, await competitor_analysis.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage5.competitor_analysis", brief_state)
+
+                # ── Stage 4: Top Factors (needs 2+3) ──────────────────
+                brief_state = self._merge(brief_state, await top_factors.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage4.top_factors", brief_state)
+
+                # ── Stage 6a: Data Fetcher ────────────────────────────
+                brief_state = self._merge(brief_state, await data_fetcher.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage6.data_fetcher", brief_state)
+
+                # ── Stage 6b: Psychology Synthesis ────────────────────
+                brief_state = self._merge(brief_state, await psychology_synthesis.run(brief_state))
+                if brief_state.get("status") == "failed":
+                    raise _BriefStageError("stage6.psychology_synthesis", brief_state)
+
+                # ── Stage 7a: Tool Loader ─────────────────────────────
+                brief_state = self._merge(brief_state, await tool_loader.run(brief_state))
+                # Tool loader failure is non-fatal — proceed with empty tools
+
+                # ── Stage 7b: Tool Mapping ────────────────────────────
+                brief_state = self._merge(brief_state, await tool_mapping.run(brief_state))
+                # Tool mapping failure is non-fatal
+
+                # ── Stage 8a: Arc Coherence ───────────────────────────
+                brief_state = self._merge(brief_state, await arc_coherence.run(brief_state))
+                arc = brief_state.get("arc_validation") or {}
+                if not arc.get("arc_coherent", False):
+                    log.warning(
+                        f"Brief '{topic_title}' failed arc coherence — skipping",
+                        extra={"run_id": run_id, "arc": arc},
+                    )
+                    all_errors.append({
+                        "stage": "stage8.arc_coherence",
+                        "topic_id": topic_id,
+                        "topic_title": topic_title,
+                        "error": f"Arc coherence failed: {arc.get('arc_summary', 'unknown')}",
+                    })
+                    continue
+
+                # ── Stage 8b: Bundle Assembler ────────────────────────
+                brief_state = self._merge(brief_state, await bundle_assembler.run(brief_state))
+                bundle = brief_state.get("research_bundle")
+
+                if bundle:
+                    completed_bundles.append(bundle)
+                    all_model_usage.extend(brief_state.get("model_usage", []))
+                    log.info(
+                        f"Brief '{topic_title}' → research_bundle COMPLETE",
+                        extra={"run_id": run_id},
+                    )
+                else:
+                    all_errors.append({
+                        "stage": "stage8.bundle_assembler",
+                        "topic_id": topic_id,
+                        "topic_title": topic_title,
+                        "error": "Bundle assembler produced no output",
+                    })
+
+            except _BriefStageError as bse:
+                log.warning(
+                    f"Brief '{topic_title}' failed at {bse.stage} — skipping",
+                    extra={"run_id": run_id},
+                )
+                all_errors.append({
+                    "stage": bse.stage,
+                    "topic_id": topic_id,
+                    "topic_title": topic_title,
+                    "error": str(bse),
+                })
+                # Release the topic lock so it can be retried next cycle
+                try:
+                    from services import services
+                    await services.workflows.release_topic_lock(
+                        topic_wp_id=topic_id, run_id=run_id, success=False,
+                    )
+                except Exception:
+                    pass
+                continue
+
+            except Exception as exc:
+                log.error(
+                    f"Unexpected error processing brief '{topic_title}': {exc}",
+                    extra={"run_id": run_id},
+                    exc_info=True,
+                )
+                all_errors.append({
+                    "stage": "process_briefs",
+                    "topic_id": topic_id,
+                    "topic_title": topic_title,
+                    "error": str(exc),
+                })
+                continue
+
+        log.info(
+            f"Brief processing complete: {len(completed_bundles)}/{len(locked_briefs)} succeeded",
+            extra={"run_id": run_id},
         )
 
-        # After topic_selector: continue or fail
-        self.add_conditional_edges(
-            "stage1.topic_selector",
-            self._route_on_status,
-            {
-                "continue": "stage1.affiliate_loader",
-                "failed":   "handle_failure",
-            }
-        )
+        return {
+            "completed_bundles": completed_bundles,
+            "current_stage": "process_briefs",
+            "status": "complete",
+            "model_usage": all_model_usage,
+            "errors": all_errors,
+        }
 
-        # After affiliate_loader: continue or fail
-        self.add_conditional_edges(
-            "stage1.affiliate_loader",
-            self._route_on_status,
-            {
-                "continue": "stage1.affiliate_scorer",
-                "failed":   "handle_failure",
-            }
-        )
-
-        # After affiliate_scorer: continue or fail
-        self.add_conditional_edges(
-            "stage1.affiliate_scorer",
-            self._route_on_status,
-            {
-                "continue": "stage1.brief_locker",
-                "failed":   "handle_failure",
-            }
-        )
-
-        # ── After brief lock — conditional fan-out or HITL ────────────
-        self.add_conditional_edges(
-            "stage1.brief_locker",
-            self.route_after_brief_lock,
-            {
-                "stage2.keyword_research":    "stage2.keyword_research",
-                "stage3.market_context":      "stage3.market_context",
-                "stage5.competitor_analysis": "stage5.competitor_analysis",
-                "hitl":                       "hitl_gate",
-                "failed":                     "handle_failure",
-            }
-        )
-
-        # ── Stage 4 barrier — waits for stage2 + stage3 ───────────────
-        self.add_edge("stage2.keyword_research", "barrier.stage4")
-        self.add_edge("stage3.market_context",   "barrier.stage4")
-        self.add_edge("barrier.stage4",          "stage4.top_factors")
-
-        # ── Stage 6 barrier — waits for stage4 + stage5 ───────────────
-        self.add_edge("stage4.top_factors",           "barrier.stage6")
-        self.add_edge("stage5.competitor_analysis",   "barrier.stage6")
-        self.add_edge("barrier.stage6",               "stage6.data_fetcher")
-        self.add_edge("stage6.data_fetcher",          "stage6.psychology_synthesis")
-
-        # ── Stage 7 barrier — waits for stage2 + stage4 + stage6b ────
-        self.add_edge("stage2.keyword_research",     "barrier.stage7")
-        self.add_edge("stage4.top_factors",          "barrier.stage7")
-        self.add_edge("stage6.psychology_synthesis", "barrier.stage7")
-        self.add_edge("barrier.stage7",              "stage7.tool_loader")
-        self.add_edge("stage7.tool_loader",          "stage7.tool_mapping")
-
-        # ── Stage 8 barrier — waits for stage5 + stage7 ──────────────
-        self.add_edge("stage5.competitor_analysis", "barrier.stage8")
-        self.add_edge("stage7.tool_mapping",        "barrier.stage8")
-        self.add_edge("barrier.stage8",             "stage8.arc_coherence")
-
-        # ── Arc coherence — conditional: pass or HITL ─────────────────
-        self.add_conditional_edges(
-            "stage8.arc_coherence",
-            self.route_after_arc,
-            {
-                "continue": "stage8.bundle_assembler",
-                "hitl":     "hitl_gate",
-                "failed":   "handle_failure",
-            }
-        )
-
-        # ── END — pipeline completes at bundle assembler ───────────────
-        self.add_edge("stage8.bundle_assembler", self.END)
-
-        # ── Terminal nodes ─────────────────────────────────────────────
-        self.add_edge("hitl_gate",      self.END)
-        self.add_edge("handle_failure", self.END)
-
-    # ── Generic status router — used by Stage 1 nodes ─────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # ROUTING
+    # ══════════════════════════════════════════════════════════════════════
 
     @staticmethod
     def _route_on_status(state: dict) -> str:
-        """
-        Generic router: check if the previous node set status="failed".
-        If so, route to handle_failure. Otherwise continue.
-
-        This is the key fix — previously Stage 1 used hard edges
-        (add_edge) so a failed topic_loader would still proceed
-        to topic_selector with empty data.
-        """
         if state.get("status") == "failed":
             return "failed"
         return "continue"
 
-    # ── Terminal node implementations ─────────────────────────────────
-
     @staticmethod
-    async def _hitl(state: dict) -> dict:
+    def _route_after_brief_builder(state: dict) -> str:
         """
-        HITL gate — halts the pipeline for human review.
+        After brief_builder:
+          - "process" if there are locked briefs to research
+          - "empty" if zero briefs passed (valid — run ends cleanly)
+          - "failed" if brief_builder itself failed
         """
-        log.warning(
-            "Pipeline halted for human review",
-            extra={
-                "run_id":     state.get("run_id"),
-                "hitl_stage": state.get("hitl_stage"),
-                "hitl_reason": state.get("hitl_reason"),
-            },
-        )
-        return {
-            "status":     "hitl",
-            "errors":     state.get("errors", []) + [{
-                "stage":  state.get("hitl_stage", "unknown"),
-                "error":  state.get("hitl_reason", "Human review required"),
-                "source": "hitl_gate",
-            }],
-        }
+        if state.get("status") == "failed":
+            return "failed"
+
+        locked = state.get("locked_briefs") or []
+        if len(locked) == 0:
+            return "empty"
+
+        return "process"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TERMINALS
+    # ══════════════════════════════════════════════════════════════════════
 
     @staticmethod
     async def _failure(state: dict) -> dict:
-        """
-        Hard failure — pipeline cannot continue.
-        Records the failure in state so _make_result produces a
-        PhaseResult with succeeded=False.
-        """
-        log.error(
-            "Pipeline failed — cannot continue",
-            extra={
-                "run_id": state.get("run_id"),
-                "errors": state.get("errors", []),
-            },
-        )
-        return {
-            "status": "failed",
-        }
+        log.error("Research pipeline failed", extra={
+            "run_id": state.get("run_id"),
+            "errors": state.get("errors", []),
+        })
+        return {"status": "failed"}
 
-    # ── Input / output translation ────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # INPUT / OUTPUT TRANSLATION
+    # ══════════════════════════════════════════════════════════════════════
 
     def _make_input(self, input_data: dict) -> dict:
-        """
-        The parent passes run_id and triggered_by.
-        run_id = workflow_runs.id, same value throughout the pipeline.
-        """
         return {
             "run_id":              input_data["run_id"],
             "triggered_by":        input_data.get("triggered_by", "scheduler"),
-            "candidate_topics":    None,
-            "selected_topic":      None,
-            "topic_lock_acquired": None,
-            "brief":               None,
+            "all_topics":          None,
+            "all_affiliates":      None,
+            "locked_briefs":       None,
+            "review_items":        None,
+            "current_brief_index": None,
+            "current_brief":       None,
             "keyword_research":    None,
             "market_context":      None,
             "competitor_analysis": None,
             "top_factors":         None,
+            "raw_sources_cache_key": None,
             "buyer_psychology":    None,
             "tool_mapping":        None,
             "arc_validation":      None,
-            "research_bundle":     None,
+            "completed_bundles":   [],
             "current_stage":       "start",
             "status":              "running",
             "errors":              [],
@@ -302,66 +371,52 @@ class ResearchGraph(BaseGraph):
 
     def _make_result(self, final_state: dict) -> PhaseResult:
         """
-        Only research_bundle and a small meta dict escape this method.
-        All 20+ ResearchState fields are discarded here.
+        Returns PhaseResult where output = list of research_bundles.
+
+        The parent graph (MainGraph) iterates this list and creates
+        independent planning pipelines for each bundle.
         """
-        selected_topic = final_state.get("selected_topic") or {}
+        completed = final_state.get("completed_bundles") or []
+        review = final_state.get("review_items") or []
+
         return PhaseResult(
             run_id   = final_state.get("run_id", 0),
             status   = final_state.get("status", "failed"),
-            output   = final_state.get("research_bundle"),
+            output   = completed if completed else None,
             cost_usd = self._sum_cost(final_state.get("model_usage", [])),
             errors   = final_state.get("errors", []),
             meta     = {
-                "topic_wp_id": selected_topic.get("id"),
-                "topic_title": selected_topic.get("title"),
+                "bundles_completed": len(completed),
+                "topics_for_review": len(review),
+                "topic_titles": [
+                    b.get("topic", {}).get("title", "")
+                    for b in completed
+                ],
             },
         )
 
-    # ── Conditional routing functions ─────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # HELPERS
+    # ══════════════════════════════════════════════════════════════════════
 
-    def route_after_brief_lock(self, state: ResearchState) -> list[str] | str:
+    @staticmethod
+    def _merge(base: dict, updates: dict) -> dict:
         """
-        After Stage 1.5 completes:
-          - Happy path: fan-out to parallel stages 2, 3, 5
-          - HITL: brief coherence failed → human review
-          - Failed: hard error → pipeline stops
+        Merge node output into the per-brief state dict.
+        Only overwrites keys that are present in updates.
+        This mimics LangGraph's state merging but for the inner loop.
         """
-        if state.get("status") == "failed":
-            return "failed"
-        if state.get("hitl_required"):
-            return "hitl"
-        # Fan-out — return list to trigger parallel execution
-        return [
-            "stage2.keyword_research",
-            "stage3.market_context",
-            "stage5.competitor_analysis",
-        ]
+        merged = {**base}
+        for key, value in updates.items():
+            if value is not None or key in ("status", "errors"):
+                merged[key] = value
+        return merged
 
-    def route_after_arc(self, state: ResearchState) -> str:
-        """
-        After stage8.arc_coherence completes.
 
-        Three possible outcomes:
-            "continue"  → arc is coherent, proceed to bundle assembly
-            "hitl"      → arc is incoherent but recoverable
-            "failed"    → arc confidence too low to recover
-        """
-        if state.get("status") == "failed":
-            return "failed"
-
-        arc = state.get("arc_validation")
-
-        if not arc:
-            return "failed"
-
-        arc_coherent   = arc.get("arc_coherent", False)
-        arc_confidence = arc.get("arc_confidence", 0.0)
-
-        if arc_coherent:
-            return "continue"
-
-        if arc_confidence >= 0.3:
-            return "hitl"
-
-        return "failed"
+class _BriefStageError(Exception):
+    """Raised when a stage fails for a specific brief."""
+    def __init__(self, stage: str, state: dict):
+        self.stage = stage
+        errors = state.get("errors", [])
+        last_error = errors[-1]["error"] if errors else "Unknown error"
+        super().__init__(f"Stage {stage} failed: {last_error}")
