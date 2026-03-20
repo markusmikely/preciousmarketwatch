@@ -4,6 +4,7 @@ Revision ID: 006
 Revises: 005b
 """
 from alembic import op
+import sqlalchemy as sa
 from typing import Sequence, Union
 
 revision = '006_error_column'
@@ -33,4 +34,4 @@ def downgrade() -> None:
         "workflow_stages",
         type_="unique",
     )
-    op.drop_column("workflow_stages", "error")
+    op.drop_column("workflow_stages", "error") 
