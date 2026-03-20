@@ -1,8 +1,10 @@
 """
 Stage 1a — TopicLoader
 
-Fetches eligible topics from WordPress, syncs to Postgres, filters
-locked topics, applies TOPICS_PER_RUN batch limit, returns all_topics.
+Smart sync:
+  - First run (empty Postgres): full WP fetch → sync all
+  - Subsequent runs: load from Postgres, only check WP for new topics
+  - Applies TOPICS_PER_RUN batch limit + 24h cooldown
 """
 
 from __future__ import annotations
@@ -25,44 +27,71 @@ class TopicLoader(BaseAgent):
         try:
             from services import services
 
-            wp_topics = await services.topics.get_eligible_topics()
-            self.log.info(f"Fetched {len(wp_topics)} topics from WordPress")
+            # ── Smart sync ────────────────────────────────────────────
+            known_ids = await services.topics.get_known_topic_ids()
 
-            if not wp_topics:
-                await self._write_stage(run_id, "failed", error="No published topics found")
-                return {"all_topics": [], "status": "failed",
-                        "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": "No published topics"}]}
+            if known_ids:
+                self.log.info(f"{len(known_ids)} topics in Postgres — loading locally")
 
-            await self._sync_topics(wp_topics)
-            unlocked = await services.topics.filter_locked_topics(wp_topics)
+                # Check for new WP topics (non-fatal)
+                try:
+                    new_topics = await services.topics.get_new_topics_only(known_ids)
+                    if new_topics:
+                        await self._sync_topics(new_topics)
+                        self.log.info(f"Synced {len(new_topics)} new topic(s)")
+                except Exception as exc:
+                    self.log.warning(f"WP new-topic check failed: {exc}")
 
+                all_topics = await services.topics.load_from_postgres()
+            else:
+                self.log.info("Empty Postgres — full WP fetch")
+                wp_topics = await services.topics.get_eligible_topics()
+
+                if not wp_topics:
+                    return self._fail(state, run_id, "No published topics in WordPress")
+
+                await self._sync_topics(wp_topics)
+                all_topics = wp_topics
+
+            if not all_topics:
+                return self._fail(state, run_id, "No topics available")
+
+            # ── Filter locked + batch select ──────────────────────────
+            unlocked = await services.topics.filter_locked_topics(all_topics)
             if not unlocked:
-                await self._write_stage(run_id, "failed", error="All topics locked")
-                return {"all_topics": [], "status": "failed",
-                        "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": "All topics locked"}]}
+                return self._fail(state, run_id, f"All {len(all_topics)} topic(s) locked")
 
-            # Apply batch limit from settings
-            batch_size = settings.TOPICS_PER_RUN
-            if batch_size > 0:
-                # Sort by priority (lower = higher priority) then by least-run
-                unlocked.sort(key=lambda t: (t.get("priority", 5), t.get("run_count", 0)))
-                unlocked = unlocked[:batch_size]
-                self.log.info(f"Batch limited to {len(unlocked)} topics (TOPICS_PER_RUN={batch_size})")
+            batch = await services.topics.select_batch(unlocked, settings.TOPICS_PER_RUN)
+            if not batch:
+                # Not a failure — just nothing eligible after cooldown
+                self.log.info("No topics eligible after 24h cooldown")
+                await self._write_stage(run_id, "complete", passed=False, output={"count": 0})
+                return {"all_topics": [], "status": "complete", "current_stage": self.stage_name}
 
+            self.log.info(
+                f"Selected {len(batch)} topic(s) "
+                f"(from {len(unlocked)} unlocked, {len(all_topics)} total)"
+            )
             await self._write_stage(run_id, "complete", passed=True,
-                                    output={"count": len(unlocked), "ids": [t["id"] for t in unlocked]})
+                                    output={"count": len(batch)})
 
-            return {"all_topics": unlocked, "current_stage": self.stage_name}
+            return {"all_topics": batch, "current_stage": self.stage_name}
 
         except Exception as exc:
-            self.log.error(f"TopicLoader failed: {exc}")
-            await self._write_stage(run_id, "failed", error=str(exc))
-            return {"all_topics": [], "status": "failed",
-                    "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": str(exc)}]}
+            return self._fail(state, run_id, str(exc))
 
-    async def _sync_topics(self, wp_topics: list[dict]) -> None:
+    def _fail(self, state, run_id, msg):
+        self.log.error(f"TopicLoader: {msg}")
+        import asyncio
+        asyncio.ensure_future(self._write_stage(run_id, "failed", error=msg))
+        return {
+            "all_topics": [], "status": "failed",
+            "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": msg}],
+        }
+
+    async def _sync_topics(self, topics: list[dict]) -> None:
         infra = get_infrastructure()
-        for t in wp_topics:
+        for t in topics:
             try:
                 await infra.postgres.execute(
                     """
@@ -81,12 +110,14 @@ class TopicLoader(BaseAgent):
                         is_buy_side=EXCLUDED.is_buy_side, intent_stage=EXCLUDED.intent_stage,
                         priority=EXCLUDED.priority, schedule_cron=EXCLUDED.schedule_cron
                     """,
-                    t["id"], t.get("title",""), t.get("target_keyword",""), t.get("summary",""),
-                    t.get("include_keywords",""), t.get("exclude_keywords",""),
-                    t.get("asset_class",""), t.get("product_type",""), t.get("geography","uk"),
-                    t.get("is_buy_side",False), t.get("intent_stage","consideration"),
-                    t.get("priority",5), t.get("schedule_cron",""), t.get("agent_status","idle"),
-                    t.get("last_run_at") or None, t.get("run_count",0),
+                    t["id"], t.get("title", ""), t.get("target_keyword", ""),
+                    t.get("summary", ""), t.get("include_keywords", ""),
+                    t.get("exclude_keywords", ""), t.get("asset_class", ""),
+                    t.get("product_type", ""), t.get("geography", "uk"),
+                    t.get("is_buy_side", False), t.get("intent_stage", "consideration"),
+                    t.get("priority", 5), t.get("schedule_cron", ""),
+                    t.get("agent_status", "idle"),
+                    t.get("last_run_at") or None, t.get("run_count", 0),
                     t.get("last_run_id") or None, t.get("last_wp_post_id") or None,
                     t.get("wp_category_id") or None, t.get("affiliate_page_id") or None,
                 )
