@@ -4018,26 +4018,70 @@ function pmw_seed_affiliate_dealers_action() {
     pmw_seed_affiliate_dealer_data();
 }
  
-function pmw_seed_affiliate_dealer_data() {
-    $dealers = [
+<?php
+/**
+ * PMW Core — Complete Affiliate Dealer Seed Data (21 dealers)
+ *
+ * Replaces the original 5-dealer seed with fully populated affiliate
+ * pipeline fields for all 21 dealers. Data sourced from each dealer's
+ * official affiliate program pages, affiliate network listings, and
+ * industry directories (March 2026).
+ *
+ * USAGE:
+ *   Replace the $dealers array inside pmw_seed_affiliate_dealer_data()
+ *   in pmw-dealer-affiliate-extensions.php with this one, then re-run
+ *   the "Seed Affiliate Dealers" tool from WP admin → Tools.
+ *
+ *   Because the seed checks for existing posts by pmw_partner_key,
+ *   the 5 existing dealers will be SKIPPED (already seeded).
+ *   Only the 16 new dealers will be created.
+ *
+ *   To UPDATE existing dealers with corrected data, either:
+ *     a) Edit them manually in WP admin (recommended for small fixes), or
+ *     b) Set $update_existing = true below (see bottom of file)
+ *
+ * FIELD REFERENCE:
+ *   pmw_partner_key       — URL-safe slug (used as upsert key)
+ *   pmw_value_prop        — One-line description for LLM prompts
+ *   pmw_commission_type   — revenue_share | per_lead | cpc | hybrid
+ *   pmw_commission_rate   — Primary rate (% for rev share, £/$ for per_lead)
+ *   pmw_cookie_days       — Affiliate cookie duration
+ *   pmw_geo_focus         — uk | us | global
+ *   pmw_min_transaction   — Minimum qualifying transaction (0 = none)
+ *   pmw_faq_url           — Help/FAQ page URL for Stage 6 content
+ *   pmw_asset_classes     — Comma-sep: gold,silver,platinum,palladium
+ *   pmw_product_types     — Comma-sep: bars,coins,ira,storage,etf
+ *   pmw_buy_side          — 1/0: dealer supports buy-side content
+ *   pmw_sell_side         — 1/0: dealer supports sell-side content
+ *   pmw_intent_stages     — Comma-sep: awareness,consideration,decision
+ *   pmw_affiliate_active  — 1/0: active in pipeline
+ */
+
+function pmw_get_complete_dealer_seed_data() {
+    return [
+
+        // ═══════════════════════════════════════════════════
+        // UK DEALERS
+        // ═══════════════════════════════════════════════════
+
         [
             'post_title'   => 'BullionVault',
-            'post_content' => 'Buy, sell and store gold, silver and platinum at wholesale prices online. UK regulated.',
-            'post_excerpt' => 'UK\'s most trusted bullion platform. Buy from £25.',
+            'post_content' => 'The world\'s largest online investment gold service. Buy, sell and store physical gold, silver, platinum and palladium at wholesale prices. Vaults in Zurich, London, Toronto, Singapore and New York.',
+            'post_excerpt' => 'World\'s largest online bullion platform. 25% revenue share, 60-day cookie.',
             'meta' => [
                 'pmw_partner_key'      => 'bullionvault',
-                'pmw_value_prop'       => 'Buy, sell and store gold, silver and platinum at wholesale prices online. UK regulated.',
+                'pmw_value_prop'       => 'World\'s largest online gold service. Buy, sell and store gold, silver, platinum and palladium at wholesale prices. UK regulated, LBMA vaults.',
                 'pmw_commission_type'  => 'revenue_share',
-                'pmw_commission_rate'  => 0.5,
-                'pmw_cookie_days'      => 30,
-                'pmw_geo_focus'        => 'uk',
-                'pmw_min_transaction'  => 25.0,
+                'pmw_commission_rate'  => 25.0,
+                'pmw_cookie_days'      => 60,
+                'pmw_geo_focus'        => 'global',
+                'pmw_min_transaction'  => 0,
                 'pmw_faq_url'          => 'https://www.bullionvault.com/help/',
-                'pmw_asset_classes'    => 'gold,silver,platinum',
-                'pmw_product_types'    => 'bars,coins',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,storage',
                 'pmw_buy_side'         => '1',
                 'pmw_sell_side'        => '1',
-                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
                 'pmw_affiliate_active' => '1',
             ],
             'acf' => [
@@ -4045,24 +4089,25 @@ function pmw_seed_affiliate_dealer_data() {
                 'rating'         => 4.8,
             ],
         ],
+
         [
             'post_title'   => 'The Royal Mint',
-            'post_content' => 'The UK government mint. Investment gold and silver coins. FCA regulated. Free secure storage.',
-            'post_excerpt' => 'Official UK mint. Investment gold from the source.',
+            'post_content' => 'The official UK government mint with over 1,100 years of history. Investment gold, silver, platinum and palladium coins and bars. FCA regulated. DigiGold digital platform and vault storage.',
+            'post_excerpt' => 'Official UK mint. 1-7% tiered commission, 30-day cookie.',
             'meta' => [
                 'pmw_partner_key'      => 'royal-mint',
-                'pmw_value_prop'       => 'The UK government mint. Investment gold and silver coins. FCA regulated. Free secure storage.',
+                'pmw_value_prop'       => 'The UK government mint. Investment gold and silver coins and bars. FCA regulated. DigiGold digital platform and vault storage. 1,100+ years heritage.',
                 'pmw_commission_type'  => 'revenue_share',
-                'pmw_commission_rate'  => 1.5,
+                'pmw_commission_rate'  => 3.0,
                 'pmw_cookie_days'      => 30,
                 'pmw_geo_focus'        => 'uk',
                 'pmw_min_transaction'  => 0,
                 'pmw_faq_url'          => 'https://www.royalmint.com/help/',
-                'pmw_asset_classes'    => 'gold,silver',
-                'pmw_product_types'    => 'coins,bars',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'coins,bars,storage',
                 'pmw_buy_side'         => '1',
-                'pmw_sell_side'        => '0',
-                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
                 'pmw_affiliate_active' => '1',
             ],
             'acf' => [
@@ -4070,13 +4115,14 @@ function pmw_seed_affiliate_dealer_data() {
                 'rating'         => 4.7,
             ],
         ],
+
         [
             'post_title'   => 'Chards',
-            'post_content' => 'One of the UK\'s oldest coin dealers. Specialist gold, silver, and platinum bullion since 1964.',
-            'post_excerpt' => 'Family-run bullion dealer since 1964.',
+            'post_content' => 'One of the UK\'s oldest coin dealers, established in 1964. Family-run specialist in gold, silver and platinum bullion coins and bars. Based in Blackpool.',
+            'post_excerpt' => 'Family-run bullion dealer since 1964. Buy and sell.',
             'meta' => [
                 'pmw_partner_key'      => 'chards',
-                'pmw_value_prop'       => 'One of the UK\'s oldest coin dealers. Specialist gold, silver, and platinum bullion since 1964.',
+                'pmw_value_prop'       => 'One of the UK\'s oldest coin dealers. Specialist gold, silver and platinum bullion since 1964. Family-run, trusted, buy-back service.',
                 'pmw_commission_type'  => 'revenue_share',
                 'pmw_commission_rate'  => 1.0,
                 'pmw_cookie_days'      => 30,
@@ -4095,21 +4141,290 @@ function pmw_seed_affiliate_dealer_data() {
                 'rating'         => 4.5,
             ],
         ],
+
+        [
+            'post_title'   => 'BullionByPost',
+            'post_content' => 'The UK\'s largest online bullion dealer by volume. Trading as Jewellery Quarter Bullion Ltd. Royal Mint authorised distributor. LBMA approved bars. Free insured next-day delivery.',
+            'post_excerpt' => 'UK\'s No.1 online bullion dealer. Free next-day delivery.',
+            'meta' => [
+                'pmw_partner_key'      => 'bullionbypost',
+                'pmw_value_prop'       => 'UK\'s No.1 online bullion dealer. LBMA approved, Royal Mint authorised. Free insured next-day delivery. Live spot-based pricing.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.bullionbypost.co.uk/help/',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.bullionbypost.co.uk/?utm_source=pmw',
+                'rating'         => 4.6,
+            ],
+        ],
+
+        [
+            'post_title'   => 'GOLD.co.uk',
+            'post_content' => 'Sister site of BullionByPost. Specialist gold investment information and purchasing platform. Part of Jewellery Quarter Bullion Ltd.',
+            'post_excerpt' => 'Gold investment platform. Part of BullionByPost group.',
+            'meta' => [
+                'pmw_partner_key'      => 'gold-co-uk',
+                'pmw_value_prop'       => 'Specialist gold investment platform. Part of Jewellery Quarter Bullion (BullionByPost). Competitive pricing, free insured delivery.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.gold.co.uk/help/',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'awareness,consideration',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.gold.co.uk/?utm_source=pmw',
+                'rating'         => 4.5,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Atkinsons Bullion',
+            'post_content' => 'UK\'s premium online precious metals retailer since 1990. LBMA affiliate member. Specialist in pre-owned bullion at 5-10% savings. A-Mark Precious Metals backed. 4.9/5 Trustpilot from 22,800+ reviews.',
+            'post_excerpt' => 'Premium UK bullion dealer since 1990. Pre-owned specialists.',
+            'meta' => [
+                'pmw_partner_key'      => 'atkinsons-bullion',
+                'pmw_value_prop'       => 'UK\'s premium bullion retailer since 1990. LBMA affiliate member. Best pre-owned bullion section in UK (5-10% savings). 4.9/5 Trustpilot.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://atkinsonsbullion.com/help',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'coins,bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://atkinsonsbullion.com/?utm_source=pmw',
+                'rating'         => 4.9,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Baird & Co',
+            'post_content' => 'UK\'s only LBMA-accredited gold refinery. Based in Hatton Garden, London. Manufactures and retails gold, silver, platinum and palladium bars and coins.',
+            'post_excerpt' => 'UK\'s only LBMA-accredited gold refinery. Hatton Garden.',
+            'meta' => [
+                'pmw_partner_key'      => 'baird-and-co',
+                'pmw_value_prop'       => 'UK\'s only LBMA-accredited gold refinery. Buy direct from the manufacturer. Hatton Garden, London. Gold, silver, platinum and palladium.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.bairdmint.com/help/',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.bairdmint.com/?utm_source=pmw',
+                'rating'         => 4.4,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Bleyer Bullion',
+            'post_content' => 'Independent UK bullion dealer based in Devon. Specialists in gold and silver bars and coins with personal service. Family-run business.',
+            'post_excerpt' => 'Independent Devon-based bullion dealer. Personal service.',
+            'meta' => [
+                'pmw_partner_key'      => 'bleyer-bullion',
+                'pmw_value_prop'       => 'Independent UK bullion dealer based in Devon. Personal service, competitive pricing on gold and silver bars and coins.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.bleyerbullion.co.uk/help',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.bleyerbullion.co.uk/?utm_source=pmw',
+                'rating'         => 4.7,
+            ],
+        ],
+
+        [
+            'post_title'   => 'ATS Bullion',
+            'post_content' => 'London-based bullion dealer on Savoy Court, near the Strand. Specialists in investment gold and silver. Walk-in shop and online ordering.',
+            'post_excerpt' => 'Central London bullion dealer. Walk-in and online.',
+            'meta' => [
+                'pmw_partner_key'      => 'ats-bullion',
+                'pmw_value_prop'       => 'Central London bullion dealer on Savoy Court. Walk-in shop and online ordering. Investment gold and silver bars and coins.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.atsbullion.com/help',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.atsbullion.com/?utm_source=pmw',
+                'rating'         => 4.3,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Hatton Garden Metals',
+            'post_content' => 'London Hatton Garden precious metals dealer. Investment gold and silver bars and coins. Established dealer in London\'s historic jewellery quarter.',
+            'post_excerpt' => 'Hatton Garden precious metals dealer.',
+            'meta' => [
+                'pmw_partner_key'      => 'hatton-garden-metals',
+                'pmw_value_prop'       => 'Hatton Garden precious metals dealer. Investment gold and silver in London\'s historic jewellery quarter. Competitive pricing.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 0.5,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'uk',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.hattongardenmetals.com/help',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.hattongardenmetals.com/?utm_source=pmw',
+                'rating'         => 4.3,
+            ],
+        ],
+
+        // ═══════════════════════════════════════════════════
+        // INTERNATIONAL / GLOBAL DEALERS
+        // ═══════════════════════════════════════════════════
+
+        [
+            'post_title'   => 'GoldBroker',
+            'post_content' => 'International physical gold and silver platform with direct ownership and vault storage in Zurich, New York, Singapore and London. Malca-Amit independent vaults.',
+            'post_excerpt' => 'International vault storage. 365-day cookie.',
+            'meta' => [
+                'pmw_partner_key'      => 'goldbroker',
+                'pmw_value_prop'       => 'Physical gold and silver with direct ownership and vault storage in Zurich, New York, Singapore and London. Guaranteed buy-back policy.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.0,
+                'pmw_cookie_days'      => 365,
+                'pmw_geo_focus'        => 'global',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://goldbroker.com/faq',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,storage',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://goldbroker.com/?utm_source=pmw',
+                'rating'         => 4.3,
+            ],
+        ],
+
+        [
+            'post_title'   => 'GoldRepublic',
+            'post_content' => 'Amsterdam-based precious metals retailer and storage company. Buy and sell gold, silver and platinum against real-time prices. Vault storage with insurance and buy-back guarantee.',
+            'post_excerpt' => 'Dutch bullion platform. 25% of fees for 2 years.',
+            'meta' => [
+                'pmw_partner_key'      => 'goldrepublic',
+                'pmw_value_prop'       => 'Amsterdam-based precious metals platform. Buy and sell against real-time prices. Vault storage with insurance and guaranteed buy-back.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 25.0,
+                'pmw_cookie_days'      => 60,
+                'pmw_geo_focus'        => 'global',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.goldrepublic.com/faq',
+                'pmw_asset_classes'    => 'gold,silver,platinum',
+                'pmw_product_types'    => 'bars,coins,storage',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.goldrepublic.com/?utm_source=pmw',
+                'rating'         => 4.2,
+            ],
+        ],
+
+        [
+            'post_title'   => 'BullionStar',
+            'post_content' => 'Singapore-based precious metals dealer. Buy, sell and store gold and silver. Showroom in Singapore. International shipping. Transparent pricing.',
+            'post_excerpt' => 'Singapore bullion dealer. Showroom + global delivery.',
+            'meta' => [
+                'pmw_partner_key'      => 'bullionstar',
+                'pmw_value_prop'       => 'Singapore-based precious metals dealer. Buy, sell and store gold and silver. Physical showroom. International shipping. Transparent live pricing.',
+                'pmw_commission_type'  => 'revenue_share',
+                'pmw_commission_rate'  => 1.0,
+                'pmw_cookie_days'      => 90,
+                'pmw_geo_focus'        => 'global',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.bullionstar.com/faq',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'bars,coins,storage',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.bullionstar.com/?utm_source=pmw',
+                'rating'         => 4.5,
+            ],
+        ],
+
+        // ═══════════════════════════════════════════════════
+        // US DEALERS
+        // ═══════════════════════════════════════════════════
+
         [
             'post_title'   => 'Augusta Precious Metals',
-            'post_content' => 'America\'s most transparent gold IRA company 2022-2024. Harvard-trained economist onboarding.',
-            'post_excerpt' => 'Gold IRA specialists. $500/qualified lead.',
+            'post_content' => 'Leading US gold IRA company. Harvard-trained economist onboarding. Lifetime commissions. High conversion rates. Endorsed by Joe Montana.',
+            'post_excerpt' => 'Top US gold IRA company. $500/qualified lead.',
             'meta' => [
                 'pmw_partner_key'      => 'augusta-precious-metals',
-                'pmw_value_prop'       => 'America\'s most transparent gold IRA company 2022-2024. Harvard-trained economist onboarding.',
-                'pmw_commission_type'  => 'per_lead',
+                'pmw_value_prop'       => 'Leading US gold IRA company. Harvard-trained economist onboarding. Lifetime commissions on transactions. High conversion rates.',
+                'pmw_commission_type'  => 'hybrid',
                 'pmw_commission_rate'  => 500.0,
                 'pmw_cookie_days'      => 90,
                 'pmw_geo_focus'        => 'us',
                 'pmw_min_transaction'  => 50000.0,
                 'pmw_faq_url'          => 'https://www.augustapreciousmetals.com/faq/',
                 'pmw_asset_classes'    => 'gold,silver',
-                'pmw_product_types'    => 'ira',
+                'pmw_product_types'    => 'ira,coins',
                 'pmw_buy_side'         => '1',
                 'pmw_sell_side'        => '0',
                 'pmw_intent_stages'    => 'consideration,decision',
@@ -4120,33 +4435,205 @@ function pmw_seed_affiliate_dealer_data() {
                 'rating'         => 4.9,
             ],
         ],
+
         [
-            'post_title'   => 'GoldBroker',
-            'post_content' => 'Physical gold and silver with vault storage in Zurich, New York, and Singapore.',
-            'post_excerpt' => 'International vault storage for physical bullion.',
+            'post_title'   => 'Goldco',
+            'post_content' => 'Major US precious metals IRA company. A+ BBB rated. Endorsed by Sean Hannity. Pays millions monthly to affiliates. $165-$200 per qualified lead plus 8-10% commission on sales.',
+            'post_excerpt' => 'Top US gold IRA. $165/lead + 8% commission.',
             'meta' => [
-                'pmw_partner_key'      => 'goldbroker',
-                'pmw_value_prop'       => 'Physical gold and silver with vault storage in Zurich, New York, and Singapore.',
-                'pmw_commission_type'  => 'revenue_share',
-                'pmw_commission_rate'  => 0.25,
-                'pmw_cookie_days'      => 60,
-                'pmw_geo_focus'        => 'global',
-                'pmw_min_transaction'  => 0,
-                'pmw_faq_url'          => 'https://goldbroker.com/faq',
+                'pmw_partner_key'      => 'goldco',
+                'pmw_value_prop'       => 'Major US gold IRA company. A+ BBB rated. $165-$200 per qualified lead plus 8-10% commission on sales. Celebrity endorsed.',
+                'pmw_commission_type'  => 'hybrid',
+                'pmw_commission_rate'  => 165.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 25000.0,
+                'pmw_faq_url'          => 'https://goldco.com/faqs/',
                 'pmw_asset_classes'    => 'gold,silver',
-                'pmw_product_types'    => 'bars',
+                'pmw_product_types'    => 'ira,coins,bars',
                 'pmw_buy_side'         => '1',
                 'pmw_sell_side'        => '0',
                 'pmw_intent_stages'    => 'consideration,decision',
                 'pmw_affiliate_active' => '1',
             ],
             'acf' => [
-                'affiliate_link' => 'https://goldbroker.com/?utm_source=pmw',
-                'rating'         => 4.3,
+                'affiliate_link' => 'https://goldco.com/?utm_source=pmw',
+                'rating'         => 4.8,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Birch Gold Group',
+            'post_content' => 'US precious metals dealer serving all 50 states. Gold, silver, platinum and palladium. A+ BBB, AAA BCA rated. Endorsed by Ben Shapiro and Ron Paul.',
+            'post_excerpt' => 'US dealer all 50 states. $25/lead + 2-5% lifetime.',
+            'meta' => [
+                'pmw_partner_key'      => 'birch-gold-group',
+                'pmw_value_prop'       => 'US precious metals dealer serving all 50 states. A+ BBB rated. $25 per qualified lead plus 2-5% commission on all purchases including bullion.',
+                'pmw_commission_type'  => 'hybrid',
+                'pmw_commission_rate'  => 25.0,
+                'pmw_cookie_days'      => 90,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 10000.0,
+                'pmw_faq_url'          => 'https://www.birchgold.com/faq/',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'ira,coins,bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.birchgold.com/?utm_source=pmw',
+                'rating'         => 4.7,
+            ],
+        ],
+
+        [
+            'post_title'   => 'American Hartford Gold',
+            'post_content' => 'Family-run US gold dealer. Ranked #1 on Inc. 5000 fastest-growing private companies. Gold and silver IRAs plus direct delivery.',
+            'post_excerpt' => 'Inc. 5000 #1 fastest-growing gold dealer.',
+            'meta' => [
+                'pmw_partner_key'      => 'american-hartford-gold',
+                'pmw_value_prop'       => 'Family-run US gold dealer. Ranked #1 on Inc. 5000 fastest-growing private companies. Gold and silver IRAs plus direct delivery.',
+                'pmw_commission_type'  => 'hybrid',
+                'pmw_commission_rate'  => 40.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 10000.0,
+                'pmw_faq_url'          => 'https://www.americanhartfordgold.com/faq/',
+                'pmw_asset_classes'    => 'gold,silver',
+                'pmw_product_types'    => 'ira,coins,bars',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '0',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.americanhartfordgold.com/?utm_source=pmw',
+                'rating'         => 4.8,
+            ],
+        ],
+
+        [
+            'post_title'   => 'JM Bullion',
+            'post_content' => 'Major US online precious metals retailer. Gold, silver, platinum, palladium and copper. $25 per new customer order. Free shipping on $499+ orders.',
+            'post_excerpt' => 'Major US bullion retailer. $25/new customer.',
+            'meta' => [
+                'pmw_partner_key'      => 'jm-bullion',
+                'pmw_value_prop'       => 'Major US online precious metals retailer since 2011. Gold, silver, platinum, palladium. Free shipping on $499+. Competitive spot-based pricing.',
+                'pmw_commission_type'  => 'per_lead',
+                'pmw_commission_rate'  => 25.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 100.0,
+                'pmw_faq_url'          => 'https://www.jmbullion.com/faq/',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.jmbullion.com/?utm_source=pmw',
+                'rating'         => 4.7,
+            ],
+        ],
+
+        [
+            'post_title'   => 'APMEX',
+            'post_content' => 'American Precious Metals Exchange. Largest US online retailer with 30,000+ products. Gold, silver, platinum, palladium. $16B+ in sales. Over 1.5M customers.',
+            'post_excerpt' => 'Largest US retailer. 30,000+ products, $35/new customer.',
+            'meta' => [
+                'pmw_partner_key'      => 'apmex',
+                'pmw_value_prop'       => 'Largest US online precious metals retailer. 30,000+ products across gold, silver, platinum and palladium. $16B+ in sales to 1.5M+ customers.',
+                'pmw_commission_type'  => 'per_lead',
+                'pmw_commission_rate'  => 35.0,
+                'pmw_cookie_days'      => 90,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.apmex.com/faq',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.apmex.com/?utm_source=pmw',
+                'rating'         => 4.6,
+            ],
+        ],
+
+        [
+            'post_title'   => 'SD Bullion',
+            'post_content' => 'Fast-growing US precious metals dealer. Competitive low-premium pricing. Gold, silver, platinum and palladium bars and coins. IRA services available.',
+            'post_excerpt' => 'Fast-growing US dealer. Low premiums.',
+            'meta' => [
+                'pmw_partner_key'      => 'sd-bullion',
+                'pmw_value_prop'       => 'Fast-growing US precious metals dealer. Among the lowest premiums in the industry. Gold, silver, platinum and palladium. IRA services.',
+                'pmw_commission_type'  => 'per_lead',
+                'pmw_commission_rate'  => 20.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://sdbullion.com/faq',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins,ira',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://sdbullion.com/?utm_source=pmw',
+                'rating'         => 4.5,
+            ],
+        ],
+
+        [
+            'post_title'   => 'Money Metals Exchange',
+            'post_content' => 'US precious metals dealer. Gold, silver, platinum and palladium coins, bars and rounds. Monthly savings plans. Precious metals loans. Competitive buy-back programme.',
+            'post_excerpt' => 'US dealer with monthly savings plans. $16/sale.',
+            'meta' => [
+                'pmw_partner_key'      => 'money-metals-exchange',
+                'pmw_value_prop'       => 'US precious metals dealer. Monthly savings plans, precious metals loans, competitive buy-back. Gold, silver, platinum and palladium.',
+                'pmw_commission_type'  => 'per_lead',
+                'pmw_commission_rate'  => 16.0,
+                'pmw_cookie_days'      => 30,
+                'pmw_geo_focus'        => 'us',
+                'pmw_min_transaction'  => 0,
+                'pmw_faq_url'          => 'https://www.moneymetals.com/faq',
+                'pmw_asset_classes'    => 'gold,silver,platinum,palladium',
+                'pmw_product_types'    => 'bars,coins',
+                'pmw_buy_side'         => '1',
+                'pmw_sell_side'        => '1',
+                'pmw_intent_stages'    => 'awareness,consideration,decision',
+                'pmw_affiliate_active' => '1',
+            ],
+            'acf' => [
+                'affiliate_link' => 'https://www.moneymetals.com/?utm_source=pmw',
+                'rating'         => 4.6,
             ],
         ],
     ];
- 
+}
+
+
+/**
+ * Updated seed function — replaces pmw_seed_affiliate_dealer_data()
+ *
+ * Set $update_existing = true to update meta on dealers that already
+ * exist (matched by pmw_partner_key). Default is false (skip existing).
+ */
+function pmw_seed_affiliate_dealer_data() {
+    $update_existing = true;  // Set to true to overwrite existing dealer meta
+    $dealers = pmw_get_complete_dealer_seed_data();
+    $created = 0;
+    $updated = 0;
+    $skipped = 0;
+
     foreach ( $dealers as $d ) {
         // Check if dealer already exists by partner_key
         $existing = get_posts( [
@@ -4156,8 +4643,34 @@ function pmw_seed_affiliate_dealer_data() {
             'meta_key'       => 'pmw_partner_key',
             'meta_value'     => $d['meta']['pmw_partner_key'],
         ] );
-        if ( ! empty( $existing ) ) continue;
- 
+
+        if ( ! empty( $existing ) ) {
+            if ( $update_existing ) {
+                $post_id = $existing[0]->ID;
+                // Update meta fields
+                foreach ( $d['meta'] as $key => $val ) {
+                    update_post_meta( $post_id, $key, $val );
+                }
+                // Update ACF fields if available
+                if ( function_exists( 'update_field' ) && ! empty( $d['acf'] ) ) {
+                    foreach ( $d['acf'] as $field => $val ) {
+                        update_field( $field, $val, $post_id );
+                    }
+                }
+                // Update post content/excerpt
+                wp_update_post( [
+                    'ID'           => $post_id,
+                    'post_content' => $d['post_content'],
+                    'post_excerpt' => $d['post_excerpt'],
+                ] );
+                $updated++;
+            } else {
+                $skipped++;
+            }
+            continue;
+        }
+
+        // Create new dealer
         $post_id = wp_insert_post( [
             'post_type'    => 'dealer',
             'post_title'   => $d['post_title'],
@@ -4165,20 +4678,60 @@ function pmw_seed_affiliate_dealer_data() {
             'post_excerpt' => $d['post_excerpt'],
             'post_status'  => 'publish',
         ], true );
- 
+
         if ( ! $post_id || is_wp_error( $post_id ) ) continue;
- 
+
         // Set pipeline meta fields
         foreach ( $d['meta'] as $key => $val ) {
             update_post_meta( $post_id, $key, $val );
         }
- 
+
         // Set ACF fields if available
         if ( function_exists( 'update_field' ) && ! empty( $d['acf'] ) ) {
             foreach ( $d['acf'] as $field => $val ) {
                 update_field( $field, $val, $post_id );
             }
         }
+
+        $created++;
     }
+
+    // Store results for admin notice
+    set_transient( 'pmw_seed_results', compact( 'created', 'updated', 'skipped' ), 60 );
 }
 
+
+/**
+ * Updated admin page callback — shows results breakdown
+ */
+function pmw_seed_affiliate_dealers_page() {
+    if ( ! current_user_can( 'manage_options' ) ) return;
+    $done = isset( $_GET['pmw_seed_affiliate_dealers'] ) && $_GET['pmw_seed_affiliate_dealers'] === '1';
+
+    echo '<div class="wrap"><h1>Seed Affiliate Dealers</h1>';
+
+    if ( $done ) {
+        $results = get_transient( 'pmw_seed_results' );
+        if ( $results ) {
+            echo '<div class="notice notice-success"><p>';
+            echo sprintf(
+                'Seed complete: %d created, %d updated, %d skipped.',
+                $results['created'],
+                $results['updated'],
+                $results['skipped']
+            );
+            echo ' <a href="' . esc_url( admin_url( 'edit.php?post_type=dealer' ) ) . '">View dealers</a>.';
+            echo '</p></div>';
+            delete_transient( 'pmw_seed_results' );
+        } else {
+            echo '<div class="notice notice-success"><p>Affiliate dealers seeded. <a href="' . esc_url( admin_url( 'edit.php?post_type=dealer' ) ) . '">View dealers</a>.</p></div>';
+        }
+    } else {
+        $total = count( pmw_get_complete_dealer_seed_data() );
+        echo '<p>Creates or updates <strong>' . $total . '</strong> affiliate dealer records with full pipeline meta fields.</p>';
+        echo '<p>Existing dealers (matched by partner_key) will have their meta fields <strong>updated</strong> to the latest values.</p>';
+        echo '<p><a href="' . esc_url( admin_url( 'tools.php?page=pmw-seed-affiliate-dealers&pmw_seed_affiliate_dealers=1&_wpnonce=' . wp_create_nonce( 'pmw_seed_affiliate_dealers' ) ) ) . '" class="button button-primary">Run Seed (' . $total . ' dealers)</a></p>';
+    }
+
+    echo '</div>';
+}
