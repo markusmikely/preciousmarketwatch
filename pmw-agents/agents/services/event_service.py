@@ -216,7 +216,7 @@ class EventService:
                      $5, $6, $7::jsonb, $8::jsonb,
                      $9, $10,
                      $11, $12, $13, $14,
-                     CASE WHEN $3 IN ('complete', 'failed', 'awaiting_restart')
+                     CASE WHEN $3::text IN ('complete', 'failed', 'awaiting_restart')
                           THEN NOW() ELSE NULL END)
                 ON CONFLICT (run_id, stage_name, attempt_number)
                 DO UPDATE SET
