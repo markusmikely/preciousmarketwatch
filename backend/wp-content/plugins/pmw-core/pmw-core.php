@@ -259,6 +259,10 @@ function pmw_register_post_types() {
             'add_new_item'  => 'Add New Topic',
             'edit_item'     => 'Edit Topic',
         ],
+        // ── FIX: Enable WPGraphQL for this CPT ──
+        'show_in_graphql'     => true,
+        'graphql_single_name' => 'pmwTopic',
+        'graphql_plural_name' => 'pmwTopics',
     ] );
 }
 
@@ -627,6 +631,63 @@ function pmw_register_topic_meta() {
             'default'      => $config['type'] === 'integer' ? 0 : ( $config['type'] === 'boolean' ? false : '' ),
         ] );
     }
+}
+add_action( 'graphql_register_types', 'pmw_register_topic_graphql_fields', 20 );
+function pmw_register_topic_graphql_fields() {
+    if ( ! function_exists( 'register_graphql_field' ) ) return;
+ 
+    // Helper: resolve post meta from a pmwTopic object
+    $meta = function( $key, $type = 'String', $default = '' ) {
+        register_graphql_field( 'PmwTopic', pmw_meta_to_graphql_name( $key ), [
+            'type'        => $type,
+            'description' => "Topic meta: $key",
+            'resolve'     => function( $post ) use ( $key, $default, $type ) {
+                $id = isset( $post->databaseId )
+                    ? (int) $post->databaseId
+                    : ( isset( $post->ID ) ? (int) $post->ID : 0 );
+                if ( ! $id ) return $default;
+                $val = get_post_meta( $id, $key, true );
+                if ( $type === 'Int' ) return (int) $val;
+                if ( $type === 'Boolean' ) return (bool) $val;
+                return (string) ( $val ?: $default );
+            },
+        ] );
+    };
+ 
+    // String fields
+    $meta( 'pmw_target_keyword' );
+    $meta( 'pmw_summary' );
+    $meta( 'pmw_include_keywords' );
+    $meta( 'pmw_exclude_keywords' );
+    $meta( 'pmw_asset_class' );
+    $meta( 'pmw_product_type' );
+    $meta( 'pmw_geography', 'String', 'uk' );
+    $meta( 'pmw_intent_stage', 'String', 'consideration' );
+    $meta( 'pmw_schedule_cron' );
+    $meta( 'pmw_agent_status', 'String', 'idle' );
+    $meta( 'pmw_last_run_at' );
+ 
+    // Integer fields
+    $meta( 'pmw_priority', 'Int', 5 );
+    $meta( 'pmw_run_count', 'Int', 0 );
+    $meta( 'pmw_last_run_id', 'Int', 0 );
+    $meta( 'pmw_last_wp_post_id', 'Int', 0 );
+    $meta( 'pmw_wp_category_id', 'Int', 0 );
+    $meta( 'pmw_affiliate_page_id', 'Int', 0 );
+ 
+    // Boolean fields
+    $meta( 'pmw_is_buy_side', 'Boolean', false );
+}
+ 
+/**
+ * Convert pmw_snake_case meta key to pmwCamelCase GraphQL field name.
+ * e.g. "pmw_target_keyword" → "pmwTargetKeyword"
+ *      "pmw_last_run_at"    → "pmwLastRunAt"
+ */
+function pmw_meta_to_graphql_name( string $key ) : string {
+    $parts = explode( '_', $key );
+    // First part stays lowercase ("pmw"), rest are capitalised
+    return $parts[0] . implode( '', array_map( 'ucfirst', array_slice( $parts, 1 ) ) );
 }
 
 // ── Article → Topic link (post ID of pmw_topic) ───────────────────────────────────
