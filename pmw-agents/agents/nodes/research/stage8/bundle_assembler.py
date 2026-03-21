@@ -1,16 +1,13 @@
 """
-Stage 8b — BundleAssembler (NonLLM)
+Stage 8b — BundleAssembler (v3.0 — content-type aware)
 
-Assembles all research state fields into the final research_bundle dict.
-Validates all required sections are present.
-Releases the Postgres topic lock (fire-and-forget).
-Dispatches Stage 9 IntelligenceAggregation as a background task.
+Assembles research state into the final research_bundle dict.
+Validates required sections based on content_type:
+  affiliate       → all sections required
+  authority       → only keyword_research + competitor_analysis
+  market_commentary → only keyword_research + market_context
 
-This is the last node before END in the research graph.
-The research_bundle is the ONLY thing that escapes to the parent graph
-via _make_result().
-
-Depends on: Stage 8a (arc_coherent=True)
+Releases topic lock and dispatches Stage 9 (background).
 """
 
 from __future__ import annotations
@@ -20,18 +17,13 @@ from datetime import datetime, timezone
 
 from nodes.base import BaseAgent, EventType
 
-
-# Required sections in the research bundle
-REQUIRED_SECTIONS = [
-    "brief",
-    "keyword_research",
-    "market_context",
-    "top_factors",
-    "competitor_analysis",
-    "buyer_psychology",
-    "tool_mapping",
-    "arc_validation",
-]
+# Required sections by content type
+REQUIRED_BY_TYPE = {
+    "affiliate": ["brief", "keyword_research", "market_context", "top_factors",
+                   "competitor_analysis", "buyer_psychology", "tool_mapping", "arc_validation"],
+    "authority": ["brief", "keyword_research", "competitor_analysis"],
+    "market_commentary": ["brief", "keyword_research", "market_context"],
+}
 
 
 class BundleAssembler(BaseAgent):
@@ -45,156 +37,89 @@ class BundleAssembler(BaseAgent):
         run_id = state["run_id"]
         brief = state.get("brief") or {}
         topic = brief.get("topic") or state.get("selected_topic") or {}
+        content_type = topic.get("content_type", "affiliate")
 
         await self._emit_event(EventType.STAGE_STARTED, run_id, {})
-        await self._write_stage_record(run_id, status="running", attempt=1)
+        await self._write_stage(run_id, "running")
 
         try:
-            # ── Validate all required sections ────────────────────────
-            missing = []
-            for section in REQUIRED_SECTIONS:
-                if not state.get(section):
-                    missing.append(section)
+            # Validate required sections for this content type
+            required = REQUIRED_BY_TYPE.get(content_type, REQUIRED_BY_TYPE["affiliate"])
+            missing = [s for s in required if not state.get(s)]
 
             if missing:
-                error_msg = f"Research bundle incomplete — missing sections: {missing}"
-                self.log.error(error_msg, run_id=run_id)
-                await self._write_stage_record(
-                    run_id, status="failed", attempt=1, error=error_msg,
-                )
+                error_msg = f"Bundle incomplete for {content_type} — missing: {missing}"
+                self.log.error(error_msg)
+                await self._write_stage(run_id, "failed", error=error_msg)
                 return {
-                    "research_bundle": None,
-                    "current_stage": "stage8.bundle_assembler",
-                    "hitl_required": True,
-                    "hitl_stage": "stage8.bundle_assembler",
-                    "hitl_reason": error_msg,
-                    "status": "hitl",
-                    "errors": state.get("errors", []) + [{
-                        "stage": "stage8.bundle_assembler", "error": error_msg,
-                    }],
+                    "research_bundle": None, "status": "failed",
+                    "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": error_msg}],
                 }
 
-            # ── Assemble the research bundle ──────────────────────────
-            research_bundle = {
+            # Assemble — include whatever sections are available
+            bundle = {
                 "run_id": run_id,
+                "content_type": content_type,
                 "assembled_at": datetime.now(timezone.utc).isoformat(),
-
-                # Stage 1 — Brief
                 "brief": brief,
                 "topic": topic,
-                "primary_affiliate": brief.get("affiliate", {}).get("primary") or state.get("primary_affiliate"),
-                "secondary_affiliate": brief.get("affiliate", {}).get("secondary") or state.get("secondary_affiliate"),
+                "primary_affiliate": brief.get("affiliate", {}).get("primary"),
+                "secondary_affiliate": brief.get("affiliate", {}).get("secondary"),
                 "reader": brief.get("reader", {}),
-
-                # Stage 2 — Keyword & Intent
-                "keyword_research": state["keyword_research"],
-                "confirmed_intent": state["keyword_research"].get("confirmed_intent"),
-                "paa_questions": state["keyword_research"].get("paa_questions", []),
-
-                # Stage 3 — Market Context
-                "market_context": state["market_context"],
-                "market_stance": state["market_context"].get("market_stance"),
-                "emotional_trigger": state["market_context"].get("emotional_trigger"),
-
-                # Stage 4 — Top Factors
-                "top_factors": state["top_factors"],
-
-                # Stage 5 — Competitor Analysis
-                "competitor_analysis": state["competitor_analysis"],
-
-                # Stage 6 — Buyer Psychology
-                "buyer_psychology": state["buyer_psychology"],
-                "compliance_review_required": state["buyer_psychology"].get(
-                    "any_section_requires_review", False
-                ),
-
-                # Stage 7 — Tool Mapping
-                "tool_mapping": state["tool_mapping"],
-
-                # Stage 8a — Arc Validation
-                "arc_validation": state["arc_validation"],
-
-                # Metadata
-                "total_cost_usd": sum(
-                    u.get("cost_usd", 0) for u in state.get("model_usage", [])
-                ),
+                # Research outputs (None if stage didn't run)
+                "keyword_research": state.get("keyword_research"),
+                "confirmed_intent": (state.get("keyword_research") or {}).get("confirmed_intent"),
+                "paa_questions": (state.get("keyword_research") or {}).get("paa_questions", []),
+                "market_context": state.get("market_context"),
+                "market_stance": (state.get("market_context") or {}).get("market_stance"),
+                "emotional_trigger": (state.get("market_context") or {}).get("emotional_trigger"),
+                "top_factors": state.get("top_factors"),
+                "competitor_analysis": state.get("competitor_analysis"),
+                "buyer_psychology": state.get("buyer_psychology"),
+                "tool_mapping": state.get("tool_mapping"),
+                "arc_validation": state.get("arc_validation"),
+                # Cost
+                "total_cost_usd": sum(u.get("cost_usd", 0) for u in state.get("model_usage", [])),
                 "model_usage": state.get("model_usage", []),
             }
 
             output = {
-                "sections": list(research_bundle.keys()),
-                "total_cost_usd": research_bundle["total_cost_usd"],
-                "compliance_review_required": research_bundle["compliance_review_required"],
+                "content_type": content_type,
+                "sections_present": [k for k, v in bundle.items() if v is not None and k not in
+                                     ("run_id", "assembled_at", "total_cost_usd", "model_usage", "content_type")],
+                "total_cost_usd": bundle["total_cost_usd"],
             }
 
+            await self._write_stage(run_id, "complete", passed=True, output=output)
             await self._emit_event(EventType.STAGE_COMPLETE, run_id, output)
-            await self._write_stage_record(
-                run_id, status="complete", attempt=1,
-                passed_threshold=True, output=output,
-            )
 
-            # ── Release topic lock (fire-and-forget) ──────────────────
-            asyncio.create_task(
-                self._release_lock(topic.get("id"), run_id)
-            )
+            # Release lock + dispatch Stage 9 (background, non-blocking)
+            asyncio.create_task(self._release_lock(topic.get("id"), run_id))
+            if content_type == "affiliate":
+                asyncio.create_task(self._dispatch_intelligence(state, run_id))
 
-            # ── Dispatch Stage 9 Intelligence Aggregation (background) ─
-            asyncio.create_task(
-                self._dispatch_intelligence_aggregation(state, run_id)
-            )
-
-            return {
-                "research_bundle": research_bundle,
-                "current_stage": "stage8.bundle_assembler",
-                "status": "complete",
-            }
+            return {"research_bundle": bundle, "status": "complete"}
 
         except Exception as exc:
-            self.log.error(f"BundleAssembler failed: {exc}", run_id=run_id)
-            await self._write_stage_record(
-                run_id, status="failed", attempt=1, error=str(exc),
-            )
+            self.log.error(f"BundleAssembler failed: {exc}")
+            await self._write_stage(run_id, "failed", error=str(exc))
             return {
-                "research_bundle": None,
-                "current_stage": "stage8.bundle_assembler",
-                "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage8.bundle_assembler", "error": str(exc),
-                }],
+                "research_bundle": None, "status": "failed",
+                "errors": state.get("errors", []) + [{"stage": self.stage_name, "error": str(exc)}],
             }
 
-    async def _release_lock(self, topic_wp_id: int | None, run_id: int) -> None:
-        """Release Postgres topic lock and update WP display status."""
-        if not topic_wp_id:
-            return
+    async def _release_lock(self, topic_wp_id, run_id):
+        if not topic_wp_id: return
         try:
             from services import services
-            await services.workflows.release_topic_lock(
-                topic_wp_id=topic_wp_id,
-                run_id=run_id,
-                success=True,
-            )
-            # Fire-and-forget WP display status
-            asyncio.create_task(
-                services.topics.mark_topic_complete(topic_wp_id, run_id)
-            )
+            await services.workflows.release_topic_lock(topic_wp_id=topic_wp_id, run_id=run_id, success=True)
+            asyncio.create_task(services.topics.mark_topic_complete(topic_wp_id, run_id))
         except Exception as exc:
-            self.log.warning(
-                f"Lock release failed (non-blocking): {exc}",
-                run_id=run_id,
-            )
+            self.log.warning(f"Lock release failed: {exc}")
 
-    async def _dispatch_intelligence_aggregation(self, state: dict, run_id: int) -> None:
-        """
-        Dispatch Stage 9 as a background task.
-        Stage 9 is non-blocking — its failure doesn't affect the pipeline result.
-        """
+    async def _dispatch_intelligence(self, state, run_id):
         try:
             from nodes.research.stage9.intelligence_aggregation import IntelligenceAggregation
-            aggregator = IntelligenceAggregation()
-            await aggregator.run(state)
+            await IntelligenceAggregation().run(state)
         except Exception as exc:
-            self.log.warning(
-                f"Intelligence aggregation failed (non-blocking): {exc}",
-                run_id=run_id,
-            )
+            self.log.warning(f"Intelligence aggregation failed (non-blocking): {exc}")
