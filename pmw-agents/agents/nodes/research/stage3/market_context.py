@@ -1,5 +1,5 @@
 """
-Stage 3 — MarketContext
+Stage 3 — MarketContext (model-config patched)
 
 Pre-LLM: Parallel spot price + price trends + recent news fetch
 Algorithmic: Market stance derivation (no LLM needed)
@@ -12,12 +12,9 @@ import asyncio
 import hashlib
 import json
 
-from nodes.base import (
-    BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
-    FailureConfig, EventType, AgentStatus,
-)
+from nodes.base import BaseAgent, JSONOutputMixin, FailureConfig, EventType
+from config.models import get_pipeline_model
 from prompts.registry import PromptRegistry
-from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError
 
 
 class MarketContext(JSONOutputMixin, BaseAgent):
@@ -27,12 +24,7 @@ class MarketContext(JSONOutputMixin, BaseAgent):
         super().__init__(
             agent_name="market_context",
             stage_name="research.stage3.market_context",
-            model_config=ModelConfig(
-                provider=ModelProvider.ANTHROPIC,
-                model_id="claude-sonnet-4-6",
-                temperature=0.2,
-                max_tokens=4096,
-            ),
+            model_config=get_pipeline_model(temperature=0.2, max_tokens=4096),
             failure_config=FailureConfig(
                 failure_message="Market context synthesis failed.",
             ),
@@ -54,7 +46,6 @@ class MarketContext(JSONOutputMixin, BaseAgent):
         try:
             from services import services
 
-            # ── Parallel data fetch ───────────────────────────────────
             spot_price, trend_30d, trend_90d, news = await asyncio.gather(
                 services.market.get_spot_price(asset_class, geography),
                 services.market.get_price_trend(asset_class, days=30, geography=geography),
@@ -62,15 +53,11 @@ class MarketContext(JSONOutputMixin, BaseAgent):
                 services.market.get_recent_news(keyword, geography, days_back=30),
             )
 
-            # ── Algorithmic stance derivation ─────────────────────────
             stance_data = services.market.derive_market_stance(
-                price_data=spot_price,
-                trend_30d=trend_30d,
-                trend_90d=trend_90d,
-                news_articles=news,
+                price_data=spot_price, trend_30d=trend_30d,
+                trend_90d=trend_90d, news_articles=news,
             )
 
-            # ── LLM synthesis ─────────────────────────────────────────
             prompt = PromptRegistry.render("stage3_market_synthesis", {
                 "ASSET_CLASS": asset_class,
                 "GEOGRAPHY": geography,
@@ -83,13 +70,11 @@ class MarketContext(JSONOutputMixin, BaseAgent):
             })
             prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
-            result = await self.call_llm(prompt, run_id, attempt=1)
-            llm_output = result.output
+            result = await self.call_llm(prompt, run_id)
+            llm_output = json.loads(result.text) if isinstance(result.text, str) else result.text
 
-            # Merge algorithmic stance with LLM synthesis
             market_context = {
-                **llm_output,
-                **stance_data,  # algorithmic stance overrides LLM stance
+                **llm_output, **stance_data,
                 "spot_price_gbp": spot_price.get("price_gbp"),
                 "spot_price_usd": spot_price.get("price_usd"),
                 "price_source": spot_price.get("source"),
@@ -100,12 +85,9 @@ class MarketContext(JSONOutputMixin, BaseAgent):
                 "cost_usd": result.cost_usd,
             })
             await self._write_stage_record(
-                run_id, status="complete", attempt=1,
-                passed_threshold=True,
-                output=market_context,
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                cost_usd=result.cost_usd,
+                run_id, status="complete", attempt=1, passed_threshold=True,
+                output=market_context, input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens, cost_usd=result.cost_usd,
                 prompt_hash=prompt_hash,
             )
 
@@ -113,32 +95,17 @@ class MarketContext(JSONOutputMixin, BaseAgent):
                 "market_context": market_context,
                 "current_stage": "stage3.market_context",
                 "model_usage": state.get("model_usage", []) + [{
-                    "stage": self.stage_name,
-                    "model": self.model_config.model_id,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
+                    "stage": self.stage_name, "model": self.model_config.model_id,
+                    "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
                     "cost_usd": result.cost_usd,
                 }],
             }
 
-        except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-            await self._handle_failure(run_id, str(exc))
-            return {
-                "market_context": None,
-                "current_stage": "stage3.market_context",
-                "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage3.market_context", "error": str(exc),
-                }],
-            }
         except Exception as exc:
-            self.log.error(f"MarketContext failed: {exc}", run_id=run_id)
+            self.log.error(f"MarketContext failed: {exc}")
             await self._write_stage_record(run_id, status="failed", attempt=1, error=str(exc))
             return {
-                "market_context": None,
-                "current_stage": "stage3.market_context",
+                "market_context": None, "current_stage": "stage3.market_context",
                 "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage3.market_context", "error": str(exc),
-                }],
+                "errors": state.get("errors", []) + [{"stage": "stage3.market_context", "error": str(exc)}],
             }

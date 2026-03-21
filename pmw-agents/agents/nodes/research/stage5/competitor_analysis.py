@@ -1,22 +1,13 @@
-"""
-Stage 5 — CompetitorAnalysis
-
-Pre-LLM: Fetch competitor URLs via SerpService, fetch page content via CompetitorService
-LLM: Analyse competitor content, gaps, monetisation strategy
-Depends on: Stage 1 (brief) — runs in parallel with Stage 2 and 3
-"""
+"""Stage 5 — CompetitorAnalysis (model-config patched)"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 
-from nodes.base import (
-    BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
-    FailureConfig, EventType, AgentStatus,
-)
+from nodes.base import BaseAgent, JSONOutputMixin, FailureConfig, EventType
+from config.models import get_pipeline_model
 from prompts.registry import PromptRegistry
-from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError
 
 
 class CompetitorAnalysis(JSONOutputMixin, BaseAgent):
@@ -26,15 +17,8 @@ class CompetitorAnalysis(JSONOutputMixin, BaseAgent):
         super().__init__(
             agent_name="competitor_analysis",
             stage_name="research.stage5.competitor_analysis",
-            model_config=ModelConfig(
-                provider=ModelProvider.ANTHROPIC,
-                model_id="claude-sonnet-4-6",
-                temperature=0.2,
-                max_tokens=4096,
-            ),
-            failure_config=FailureConfig(
-                failure_message="Competitor analysis failed after max retries.",
-            ),
+            model_config=get_pipeline_model(temperature=0.2, max_tokens=4096),
+            failure_config=FailureConfig(failure_message="Competitor analysis failed."),
         )
 
     async def run(self, state: dict) -> dict:
@@ -43,26 +27,18 @@ class CompetitorAnalysis(JSONOutputMixin, BaseAgent):
         topic = brief.get("topic") or state.get("selected_topic") or {}
         primary = brief.get("affiliate", {}).get("primary") or state.get("primary_affiliate") or {}
 
-        await self._emit_event(EventType.STAGE_STARTED, run_id, {
-            "model": self.model_config.model_id,
-        })
+        await self._emit_event(EventType.STAGE_STARTED, run_id, {"model": self.model_config.model_id})
         await self._write_stage_record(run_id, status="running", attempt=1)
 
         try:
             from services import services
 
-            # ── Pre-LLM: Get competitor URLs from SERP ────────────────
             competitor_urls = await services.serp.get_competitor_urls(
-                keyword=topic.get("target_keyword", ""),
-                geography=topic.get("geography", "uk"),
-                limit=5,
+                keyword=topic.get("target_keyword", ""), geography=topic.get("geography", "uk"), limit=5,
             )
-
-            # ── Pre-LLM: Fetch page content concurrently ─────────────
             urls = [c.get("link", c.get("url", "")) for c in competitor_urls if c.get("link") or c.get("url")]
             pages = await services.competitors.fetch_multiple(urls[:5], max_concurrent=3)
 
-            # Build competitor data for the prompt
             competitor_data = []
             for url_info, page in zip(competitor_urls, pages):
                 competitor_data.append({
@@ -71,11 +47,10 @@ class CompetitorAnalysis(JSONOutputMixin, BaseAgent):
                     "snippet": url_info.get("snippet", ""),
                     "position": url_info.get("position"),
                     "word_count": page.get("word_count", 0),
-                    "text_preview": page.get("text", "")[:2000],  # Cap for prompt budget
+                    "text_preview": page.get("text", "")[:2000],
                     "available": page.get("available", False),
                 })
 
-            # ── LLM analysis ─────────────────────────────────────────
             prompt = PromptRegistry.render("stage5_competitor_analysis", {
                 "TARGET_KEYWORD": topic.get("target_keyword", ""),
                 "ASSET_CLASS": topic.get("asset_class", ""),
@@ -84,59 +59,31 @@ class CompetitorAnalysis(JSONOutputMixin, BaseAgent):
             })
             prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
-            result = await self.call_llm(prompt, run_id, attempt=1)
-            output = result.output
+            result = await self.call_llm(prompt, run_id)
+            output = json.loads(result.text) if isinstance(result.text, str) else result.text
 
-            await self._emit_event(EventType.STAGE_COMPLETE, run_id, {
-                "competitor_count": len(output.get("competitors", [])),
-                "cost_usd": result.cost_usd,
-            })
+            await self._emit_event(EventType.STAGE_COMPLETE, run_id, {"cost_usd": result.cost_usd})
             await self._write_stage_record(
-                run_id, status="complete", attempt=1,
-                passed_threshold=True, output=output,
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                cost_usd=result.cost_usd,
-                prompt_hash=prompt_hash,
+                run_id, status="complete", attempt=1, passed_threshold=True,
+                output=output, input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens, cost_usd=result.cost_usd, prompt_hash=prompt_hash,
             )
-
             return {
-                "competitor_analysis": output,
-                "current_stage": "stage5.competitor_analysis",
+                "competitor_analysis": output, "current_stage": "stage5.competitor_analysis",
                 "model_usage": state.get("model_usage", []) + [{
-                    "stage": self.stage_name,
-                    "model": self.model_config.model_id,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
+                    "stage": self.stage_name, "model": self.model_config.model_id,
+                    "input_tokens": result.input_tokens, "output_tokens": result.output_tokens,
                     "cost_usd": result.cost_usd,
                 }],
             }
-
-        except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-            await self._handle_failure(run_id, str(exc))
-            return {
-                "competitor_analysis": None,
-                "current_stage": "stage5.competitor_analysis",
-                "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage5.competitor_analysis", "error": str(exc),
-                }],
-            }
         except Exception as exc:
-            self.log.error(f"CompetitorAnalysis failed: {exc}", run_id=run_id)
+            self.log.error(f"CompetitorAnalysis failed: {exc}")
             await self._write_stage_record(run_id, status="failed", attempt=1, error=str(exc))
-            return {
-                "competitor_analysis": None,
-                "current_stage": "stage5.competitor_analysis",
-                "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage5.competitor_analysis", "error": str(exc),
-                }],
-            }
+            return {"competitor_analysis": None, "current_stage": "stage5.competitor_analysis", "status": "failed",
+                    "errors": state.get("errors", []) + [{"stage": "stage5.competitor_analysis", "error": str(exc)}]}
 
     def validate_output(self, raw_output: str) -> dict:
         data = super().validate_output(raw_output)
-        competitors = data.get("competitors", [])
-        if len(competitors) < 3:
-            raise ValueError(f"Only {len(competitors)} competitors analysed (need ≥3)")
+        if len(data.get("competitors", [])) < 3:
+            raise ValueError(f"Only {len(data.get('competitors', []))} competitors (need ≥3)")
         return data
