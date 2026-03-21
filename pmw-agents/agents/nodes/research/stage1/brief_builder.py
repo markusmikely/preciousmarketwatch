@@ -2,20 +2,18 @@
 Stage 1c — BriefBuilder
 
 For each topic in all_topics:
-  1. Score ALL affiliates (all 21+) against the topic
-  2. All affiliates scoring >= threshold are attached to the brief
-  3. If at least 1 qualifies → lock topic + LLM coherence check
-  4. If coherence >= threshold → brief passes with full affiliate list
-  5. Otherwise → saved to topic_briefs table for HITL review
+  1. Score all affiliates → pick best primary + secondary
+  2. If fit_score >= threshold → lock topic + LLM coherence check
+  3. If coherence >= threshold → brief passes → locked_briefs
+  4. Otherwise → saved to topic_briefs table (dashboard HITL review)
 
-The brief contains:
-  - primary_affiliate: highest-scoring affiliate
-  - secondary_affiliate: second-highest (or None)
-  - all_affiliates: full ranked list of ALL qualifying affiliates
+Single-topic failure never halts the run. The output is a list.
 
-Downstream stages (content, planning) use primary_affiliate for the
-main CTA but can reference all_affiliates for comparison sections,
-dealer tables, and alternative recommendations.
+Changes from previous version:
+  - Exponential backoff on 529/overloaded errors (up to 3 retries)
+  - 1-second delay between topics to avoid API rate pressure
+  - all_qualifying affiliates attached to each brief (not just primary/secondary)
+  - Decimal→float conversion for JSON serialisation safety
 """
 
 from __future__ import annotations
@@ -31,17 +29,23 @@ from prompts.registry import PromptRegistry
 
 log = logging.getLogger("pmw.node.brief_builder")
 
+# Retry config for 529/overloaded errors
+MAX_LLM_RETRIES = 3
+INITIAL_BACKOFF_SECS = 2.0
+BACKOFF_MULTIPLIER = 2.0
+
+# Delay between topic processing to avoid API rate pressure
+INTER_TOPIC_DELAY_SECS = 1.0
+
 
 def _clean(obj):
-    """Deep-convert Decimals to floats for JSON serialisation."""
+    """Deep-convert Decimal values to float for JSON safety."""
     if isinstance(obj, Decimal):
         return float(obj)
     if isinstance(obj, dict):
         return {k: _clean(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_clean(v) for v in obj]
-    if hasattr(obj, 'isoformat'):
-        return obj.isoformat()
     return obj
 
 
@@ -77,128 +81,129 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
         review = []
         usage = []
 
-        for topic in all_topics:
+        for i, topic in enumerate(all_topics):
+            tid = topic.get("id")
             title = topic.get("title", "Untitled")
+
+            # ── Rate-limit: pause between topics to avoid API pressure ──
+            if i > 0:
+                await asyncio.sleep(INTER_TOPIC_DELAY_SECS)
+
             try:
-                result = await self._process_one(topic, all_affiliates, run_id, services)
+                result = await self._process_one_topic(
+                    topic, all_affiliates, run_id, services,
+                )
 
                 if result["status"] == "passed":
                     locked.append(result["brief"])
                     if result.get("usage"):
                         usage.append(result["usage"])
-                    qualifying = result.get("qualifying_count", 0)
                     self.log.info(
-                        f"✓ '{title}' passed — {qualifying} affiliate(s) qualifying, "
-                        f"primary={result.get('affiliate_name')}, "
-                        f"coherence={result.get('coherence', 0):.2f}"
+                        f"✓ '{title}' → passed "
+                        f"(affiliate={result['affiliate_name']}, "
+                        f"fit={result['fit_score']:.2f}, "
+                        f"coherence={result['coherence']:.2f}, "
+                        f"qualifying={result.get('qualifying_count', '?')}/{result.get('total_scored', '?')})"
                     )
                 elif result["status"] == "skipped":
-                    self.log.info(f"⊘ '{title}' skipped (locked)")
+                    self.log.info(f"⊘ '{title}' → skipped (already locked)")
                 else:
-                    review.append(result.get("review_item", {}))
-                    self.log.info(f"⚠ '{title}' needs_review: {result.get('reason', '?')}")
+                    review.append(result["review_item"])
+                    self.log.info(f"⚠ '{title}' → needs_review ({result['reason']})")
 
+                # Save to topic_briefs table (both passed and review)
                 if result["status"] in ("passed", "needs_review"):
                     await self._save_to_db(run_id, result)
 
             except Exception as exc:
-                self.log.error(f"✗ '{title}': {exc}")
+                self.log.error(f"✗ '{title}' → error: {exc}")
                 review.append({"topic": topic, "reason": str(exc), "status": "needs_review"})
 
+        # Write stage record
         output = {"locked": len(locked), "review": len(review), "total": len(all_topics)}
         await self._write_stage(run_id, "complete", passed=len(locked) > 0, output=output,
                                 cost_usd=sum(u.get("cost_usd", 0) for u in usage))
+        await self._emit("stage.complete", run_id, output)
 
         return {
-            "locked_briefs": locked, "review_items": review, "completed_bundles": [],
-            "current_stage": self.stage_name, "status": "complete",
+            "locked_briefs": locked,
+            "review_items": review,
+            "completed_bundles": [],
+            "current_stage": self.stage_name,
             "model_usage": state.get("model_usage", []) + usage,
+            "status": "complete" if not state.get("status") == "failed" else "failed",
         }
 
-    async def _process_one(self, topic, affiliates, run_id, services):
+    # ── Per-topic processing ──────────────────────────────────────────────
+
+    async def _process_one_topic(
+        self, topic: dict, affiliates: list[dict], run_id: int, services,
+    ) -> dict:
+        """Process a single topic. Returns a result dict with status + data."""
         tid = topic.get("id")
 
-        # ── 1. Score ALL affiliates against this topic ────────────────
-        # Returns every affiliate with a score, sorted descending.
-        # We then split into qualifying (>= threshold) and below.
+        # 1. Score affiliates (pure Python — no LLM call)
         scored = await services.affiliates.score_affiliates_for_topic(topic, affiliates)
 
-        # scored is already sorted by fit_score descending and filtered
-        # to only those >= threshold. If empty, no affiliate qualifies.
         if not scored:
             return {
-                "status": "needs_review", "topic": topic,
-                "reason": (
-                    f"No affiliate scored above {settings.AFFILIATE_FIT_THRESHOLD} "
-                    f"(scored {len(affiliates)} affiliates)"
-                ),
-                "review_item": {
-                    "topic": topic,
-                    "reason": "No qualifying affiliate",
-                    "affiliates_scored": len(affiliates),
-                },
+                "status": "needs_review",
+                "reason": f"No affiliate scored above {settings.AFFILIATE_FIT_THRESHOLD}",
+                "review_item": {"topic": topic, "reason": "No qualifying affiliate", "scores": []},
+                "topic": topic,
             }
 
-        # Clean all Decimals from scored affiliates
-        qualifying = [_clean(a) for a in scored]
+        # All qualifying affiliates (above threshold), ranked by score
+        qualifying = _clean(scored)  # Decimal safety
         primary = qualifying[0]
         secondary = qualifying[1] if len(qualifying) > 1 else None
 
         self.log.info(
-            f"Topic '{topic.get('title')}': {len(qualifying)}/{len(affiliates)} "
-            f"affiliates qualify (threshold={settings.AFFILIATE_FIT_THRESHOLD})"
+            f"Topic '{topic.get('title', '?')}': "
+            f"{len(qualifying)}/{len(affiliates)} affiliates qualify "
+            f"(threshold={settings.AFFILIATE_FIT_THRESHOLD})"
         )
 
-        # ── 2. Acquire topic lock ─────────────────────────────────────
-        acquired = await services.workflows.acquire_topic_lock(
-            topic_wp_id=tid, run_id=run_id,
-        )
+        # 2. Acquire topic lock
+        acquired = await services.workflows.acquire_topic_lock(topic_wp_id=tid, run_id=run_id)
         if not acquired:
             return {"status": "skipped", "topic": topic}
 
-        # ── 3. LLM coherence check (uses primary affiliate) ──────────
+        # 3. LLM coherence check — WITH exponential backoff on 529
         try:
-            prompt = self._coherence_prompt(topic, primary)
-            result = await self.call_llm(prompt, run_id)
-            enrichments = json.loads(result.text) if isinstance(result.text, str) else result.text
+            enrichments, llm_usage = await self._coherence_check_with_backoff(
+                topic, primary, run_id,
+            )
             coherence = float(enrichments.get("coherence_score", 0))
         except Exception as exc:
-            await services.workflows.release_topic_lock(
-                topic_wp_id=tid, run_id=run_id, success=False,
-            )
+            # LLM failed after all retries — release lock, add to review
+            await services.workflows.release_topic_lock(topic_wp_id=tid, run_id=run_id, success=False)
             return {
-                "status": "needs_review", "topic": topic,
-                "reason": f"LLM failed: {exc}",
-                "review_item": {"topic": topic, "reason": str(exc)},
+                "status": "needs_review",
+                "reason": f"LLM coherence check failed: {exc}",
+                "review_item": {"topic": topic, "reason": str(exc), "affiliate": primary["name"]},
+                "topic": topic,
             }
 
-        # ── 4. Coherence threshold check ──────────────────────────────
+        # 4. Check coherence threshold
         if coherence < settings.COHERENCE_THRESHOLD:
-            await services.workflows.release_topic_lock(
-                topic_wp_id=tid, run_id=run_id, success=False,
-            )
+            await services.workflows.release_topic_lock(topic_wp_id=tid, run_id=run_id, success=False)
             return {
-                "status": "needs_review", "topic": topic,
+                "status": "needs_review",
                 "reason": f"Coherence {coherence:.2f} < {settings.COHERENCE_THRESHOLD}",
+                "review_item": {"topic": topic, "coherence": coherence, "affiliate": primary["name"]},
+                "topic": topic,
                 "coherence": coherence,
-                "fit_score": float(primary.get("fit_score", 0)),
-                "affiliate_name": primary.get("name", ""),
-                "review_item": {"topic": topic, "coherence": coherence},
+                "affiliate_name": primary["name"],
+                "fit_score": float(primary["fit_score"]),
             }
 
-        # ── 5. Build brief with ALL qualifying affiliates ─────────────
+        # 5. Brief passed — assemble with all qualifying affiliates
         brief = {
-            "topic": topic,
+            "topic": _clean(topic),
             "affiliate": {
-                # Primary = highest scoring affiliate (used for main CTA)
                 "primary": primary,
-                # Secondary = second-highest (used for comparison/alternative)
                 "secondary": secondary,
-                # All qualifying affiliates, ranked by score.
-                # Planning/content stages can use this for:
-                #   - Dealer comparison sections
-                #   - "Other options" blocks
-                #   - Diversified CTA strategy
                 "all_qualifying": qualifying,
                 "qualifying_count": len(qualifying),
                 "total_scored": len(affiliates),
@@ -207,10 +212,7 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
                 "run_id": run_id,
                 "coherence_score": coherence,
                 "validation_passed": True,
-                "warnings": [
-                    i for i in enrichments.get("issues", [])
-                    if i.get("severity") == "warning"
-                ],
+                "warnings": [i for i in enrichments.get("issues", []) if i.get("severity") == "warning"],
             },
             "reader": {
                 "profile": enrichments.get("enriched_reader_profile", ""),
@@ -219,7 +221,7 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
             },
         }
 
-        # Mark running in Postgres (no WP write)
+        # Fire-and-forget WP status update
         asyncio.create_task(services.topics.mark_topic_running(tid, run_id))
 
         return {
@@ -227,23 +229,78 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
             "brief": brief,
             "topic": topic,
             "coherence": coherence,
-            "fit_score": float(primary.get("fit_score", 0)),
-            "affiliate_name": primary.get("name", ""),
+            "affiliate_name": primary["name"],
+            "fit_score": float(primary["fit_score"]),
             "affiliate_id": primary.get("id"),
             "secondary_id": secondary.get("id") if secondary else None,
             "qualifying_count": len(qualifying),
-            "usage": {
-                "stage": f"{self.stage_name}.{tid}",
-                "model": self.model_config.model_id,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd": result.cost_usd,
-            },
+            "total_scored": len(affiliates),
+            "usage": llm_usage,
         }
 
-    # ── Prompt ────────────────────────────────────────────────────────
+    # ── LLM call with exponential backoff ─────────────────────────────────
 
-    def _coherence_prompt(self, topic, affiliate):
+    async def _coherence_check_with_backoff(
+        self, topic: dict, affiliate: dict, run_id: int,
+    ) -> tuple[dict, dict]:
+        """
+        Call the LLM for coherence check with exponential backoff on 529 errors.
+
+        Returns:
+            (enrichments_dict, usage_dict)
+
+        Raises:
+            Exception if all retries exhausted.
+        """
+        prompt = self._coherence_prompt(topic, affiliate)
+        last_exc = None
+        backoff = INITIAL_BACKOFF_SECS
+
+        for attempt in range(1, MAX_LLM_RETRIES + 1):
+            try:
+                result = await self.call_llm(prompt, run_id)
+                enrichments = json.loads(result.text) if isinstance(result.text, str) else result.text
+
+                usage = {
+                    "stage": f"{self.stage_name}.{topic.get('id')}",
+                    "model": self.model_config.model_id,
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                    "cost_usd": result.cost_usd,
+                }
+                return enrichments, usage
+
+            except Exception as exc:
+                last_exc = exc
+                exc_str = str(exc)
+
+                # Check if this is a retryable 529/overloaded error
+                is_overloaded = (
+                    "529" in exc_str
+                    or "overloaded" in exc_str.lower()
+                    or "rate" in exc_str.lower()
+                )
+
+                if is_overloaded and attempt < MAX_LLM_RETRIES:
+                    self.log.warning(
+                        f"LLM call failed (attempt {attempt}/{MAX_LLM_RETRIES}): {exc_str}. "
+                        f"Retrying in {backoff:.0f}s..."
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff *= BACKOFF_MULTIPLIER
+                    continue
+                else:
+                    # Non-retryable error, or final retry exhausted
+                    self.log.warning(
+                        f"LLM call failed (attempt {attempt}/{MAX_LLM_RETRIES}): {exc_str}"
+                    )
+                    break
+
+        raise last_exc  # type: ignore[misc]
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _coherence_prompt(self, topic: dict, affiliate: dict) -> str:
         return PromptRegistry.render("stage1_5_brief_validation", {
             "TOPIC_TITLE": topic.get("title", ""),
             "TARGET_KEYWORD": topic.get("target_keyword", ""),
@@ -259,21 +316,21 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
             "COMMISSION_TYPE": affiliate.get("commission_type", ""),
         })
 
-    def validate_output(self, raw_output):
+    def validate_output(self, raw_output: str) -> dict:
         data = super().validate_output(raw_output)
         if "coherence_score" not in data:
-            raise ValueError("Missing 'coherence_score'")
+            raise ValueError("Missing 'coherence_score' in LLM output")
         return data
 
-    # ── DB write ──────────────────────────────────────────────────────
-
-    async def _save_to_db(self, run_id, result):
+    async def _save_to_db(self, run_id: int, result: dict) -> None:
         try:
             from infrastructure import get_infrastructure
             infra = get_infrastructure()
             topic = result.get("topic", {})
-            brief = _clean(result.get("brief"))
-            review = _clean(result.get("review_item", {}))
+
+            # Clean all data for JSON serialisation (Decimal safety)
+            brief_json = json.dumps(_clean(result.get("brief"))) if result.get("brief") else None
+            review_json = json.dumps(_clean(result.get("review_item", {})))
 
             await infra.postgres.execute(
                 """
@@ -286,11 +343,12 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
                 run_id, topic.get("id"), topic.get("title", ""),
                 result.get("affiliate_id"), result.get("affiliate_name"),
                 result.get("secondary_id"),
-                float(result.get("fit_score") or 0),
-                float(result.get("coherence") or 0),
-                result["status"], result.get("reason"),
-                json.dumps(brief) if brief else None,
-                json.dumps(review) if review else None,
+                float(result.get("fit_score")) if result.get("fit_score") is not None else None,
+                float(result.get("coherence")) if result.get("coherence") is not None else None,
+                result["status"],
+                result.get("reason"),
+                brief_json,
+                review_json,
             )
         except Exception as exc:
             self.log.warning(f"topic_briefs write failed: {exc}")
