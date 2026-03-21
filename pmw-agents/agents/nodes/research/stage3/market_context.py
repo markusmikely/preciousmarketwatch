@@ -14,7 +14,7 @@ import json
 
 from nodes.base import (
     BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
-    FailureConfig, EventType,
+    FailureConfig, EventType, AgentStatus,
 )
 from prompts.registry import PromptRegistry
 from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError

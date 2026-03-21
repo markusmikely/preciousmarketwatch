@@ -23,7 +23,10 @@ import json
 import logging
 from decimal import Decimal
 
-from nodes.base import BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider
+from nodes.base import (
+    BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
+    FailureConfig, EventType, AgentStatus,
+)
 from config.settings import settings
 from prompts.registry import PromptRegistry
 
@@ -353,7 +356,7 @@ class BriefBuilder(JSONOutputMixin, BaseAgent):
         except Exception as exc:
             self.log.warning(f"topic_briefs write failed: {exc}")
 
-    def _done(self, state, locked, review, msg):
+    def _done(self, state, locked, review, msg):gi
         return {
             "locked_briefs": locked, "review_items": review, "completed_bundles": [],
             "current_stage": self.stage_name, "status": "complete",

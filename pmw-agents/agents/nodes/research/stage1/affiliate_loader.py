@@ -6,8 +6,10 @@ WP fetch and sync failures are non-fatal — falls back to existing Postgres dat
 """
 
 from __future__ import annotations
-import logging
-from nodes.base import BaseAgent
+from nodes.base import (
+    BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
+    FailureConfig, EventType, AgentStatus,
+)
 
 log = logging.getLogger("pmw.node.affiliate_loader")
 
