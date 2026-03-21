@@ -1,17 +1,12 @@
 """
-Research Pipeline — plain async orchestrator for stages 2-8.
+Research Pipeline — plain async orchestrator for stages 2-8. (v2.2)
 
-This replaces the LangGraph inner loop with direct async Python.
-Each brief gets its own stages 2-8 run. Multiple briefs run
-concurrently up to BRIEF_CONCURRENCY limit.
+v2.2 changes:
+  - Each stage result is persisted to topic_research_results table
+  - Results survive process crashes and are visible in dashboard
+  - _run_stage helper consolidates stage execution + persistence
 
-Benefits over the old LangGraph loop:
-  - asyncio.gather with semaphore = true concurrency (not sequential)
-  - No checkpointing overhead per-brief (crash = skip that brief)
-  - Direct function calls = no state serialisation per stage
-  - Failed brief = logged and skipped, others continue
-
-Usage (called from research_graph._process_briefs node):
+Usage (called from research_graph._research_briefs_node):
     from nodes.research.pipeline import research_briefs
     results = await research_briefs(locked_briefs, run_id, triggered_by)
 """
@@ -19,12 +14,12 @@ Usage (called from research_graph._process_briefs node):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
 from config.settings import settings
 
-# Stage nodes
 from nodes.research.stage2.keyword_research import KeywordResearch
 from nodes.research.stage3.market_context import MarketContext
 from nodes.research.stage4.top_factors import TopFactors
@@ -44,31 +39,13 @@ async def research_briefs(
     run_id: int,
     triggered_by: str = "scheduler",
 ) -> dict:
-    """
-    Process multiple briefs through stages 2-8 with controlled concurrency.
-
-    Args:
-        locked_briefs: List of brief dicts from BriefBuilder (passed coherence).
-        run_id: workflow_runs.id shared by all briefs.
-        triggered_by: "scheduler" | "manual"
-
-    Returns:
-        {
-            "completed_bundles": [research_bundle, ...],
-            "errors": [{"topic_title": str, "stage": str, "error": str}, ...],
-            "model_usage": [usage_dict, ...],
-        }
-    """
     if not locked_briefs:
         return {"completed_bundles": [], "errors": [], "model_usage": []}
 
     concurrency = max(1, settings.BRIEF_CONCURRENCY)
     semaphore = asyncio.Semaphore(concurrency)
 
-    log.info(
-        f"Research pipeline: {len(locked_briefs)} brief(s), "
-        f"concurrency={concurrency}"
-    )
+    log.info(f"Research pipeline: {len(locked_briefs)} brief(s), concurrency={concurrency}")
 
     async def process_with_limit(brief: dict, index: int) -> dict:
         async with semaphore:
@@ -79,19 +56,13 @@ async def research_briefs(
         return_exceptions=True,
     )
 
-    # Collect results
-    bundles = []
-    errors = []
-    usage = []
-
+    bundles, errors, usage = [], [], []
     for i, result in enumerate(results):
         title = locked_briefs[i].get("topic", {}).get("title", f"Brief #{i}")
-
         if isinstance(result, Exception):
             log.error(f"Brief '{title}' raised: {result}")
             errors.append({"topic_title": title, "stage": "pipeline", "error": str(result)})
             continue
-
         if result.get("bundle"):
             bundles.append(result["bundle"])
         if result.get("errors"):
@@ -100,30 +71,18 @@ async def research_briefs(
             usage.extend(result["model_usage"])
 
     log.info(f"Research pipeline done: {len(bundles)}/{len(locked_briefs)} completed")
-
     return {"completed_bundles": bundles, "errors": errors, "model_usage": usage}
 
 
 async def _research_one_brief(
-    brief: dict,
-    index: int,
-    total: int,
-    run_id: int,
-    triggered_by: str,
+    brief: dict, index: int, total: int, run_id: int, triggered_by: str,
 ) -> dict:
-    """
-    Run stages 2-8 for a single brief. Returns {bundle, errors, model_usage}.
-
-    Each stage is a direct async function call. No LangGraph state merging.
-    The brief_state dict is updated in place as stages complete.
-    """
     topic = brief.get("topic", {})
     title = topic.get("title", f"Brief #{index}")
     topic_id = topic.get("id")
 
     log.info(f"━━━ [{index+1}/{total}] '{title}' starting stages 2-8 ━━━")
 
-    # Build per-brief state (plain dict — not LangGraph state)
     s = {
         "run_id": run_id,
         "triggered_by": triggered_by,
@@ -147,28 +106,26 @@ async def _research_one_brief(
         "model_usage": [],
     }
 
-    # Instantiate stage nodes
     stages = {
-        "keyword":     KeywordResearch(),
-        "market":      MarketContext(),
-        "competitor":  CompetitorAnalysis(),
-        "factors":     TopFactors(),
-        "data_fetch":  DataFetcher(),
-        "psychology":  PsychologySynthesis(),
-        "tool_load":   ToolLoader(),
-        "tool_map":    ToolMapping(),
-        "arc":         ArcCoherence(),
-        "bundle":      BundleAssembler(),
+        "keyword":    KeywordResearch(),
+        "market":     MarketContext(),
+        "competitor": CompetitorAnalysis(),
+        "factors":    TopFactors(),
+        "data_fetch": DataFetcher(),
+        "psychology": PsychologySynthesis(),
+        "tool_load":  ToolLoader(),
+        "tool_map":   ToolMapping(),
+        "arc":        ArcCoherence(),
+        "bundle":     BundleAssembler(),
     }
 
     try:
-        # ── Stages 2, 3, 5 — can run concurrently ─────────────────
+        # ── Stages 2, 3, 5 — concurrent ──────────────────────────
         kw_result, market_result, comp_result = await asyncio.gather(
-            stages["keyword"].run(s),
-            stages["market"].run(s),
-            stages["competitor"].run(s),
+            _run_stage(stages["keyword"], s, run_id, topic_id, title),
+            _run_stage(stages["market"], s, run_id, topic_id, title),
+            _run_stage(stages["competitor"], s, run_id, topic_id, title),
         )
-
         _merge(s, kw_result)
         _merge(s, market_result)
         _merge(s, comp_result)
@@ -176,28 +133,23 @@ async def _research_one_brief(
         if _any_failed(s, kw_result, market_result, comp_result):
             return _brief_error(s, title, "stages 2/3/5")
 
-        # ── Stage 4 — needs keyword + market ──────────────────────
-        _merge(s, await stages["factors"].run(s))
+        # ── Stage 4 ──────────────────────────────────────────────
+        _merge(s, await _run_stage(stages["factors"], s, run_id, topic_id, title))
         if s.get("status") == "failed":
             return _brief_error(s, title, "stage4")
 
-        # ── Stage 6a + 6b — data fetch then synthesis ─────────────
-        _merge(s, await stages["data_fetch"].run(s))
-        # data_fetch failure is non-fatal (synthesis gets empty sources)
-
-        _merge(s, await stages["psychology"].run(s))
+        # ── Stage 6a + 6b ────────────────────────────────────────
+        _merge(s, await _run_stage(stages["data_fetch"], s, run_id, topic_id, title))
+        _merge(s, await _run_stage(stages["psychology"], s, run_id, topic_id, title))
         if s.get("status") == "failed":
             return _brief_error(s, title, "stage6")
 
-        # ── Stage 7a + 7b — tool load then mapping ───────────────
-        _merge(s, await stages["tool_load"].run(s))
-        # tool_load failure is non-fatal
+        # ── Stage 7a + 7b ────────────────────────────────────────
+        _merge(s, await _run_stage(stages["tool_load"], s, run_id, topic_id, title))
+        _merge(s, await _run_stage(stages["tool_map"], s, run_id, topic_id, title))
 
-        _merge(s, await stages["tool_map"].run(s))
-        # tool_map failure is non-fatal
-
-        # ── Stage 8a — arc coherence ──────────────────────────────
-        _merge(s, await stages["arc"].run(s))
+        # ── Stage 8a — arc coherence ─────────────────────────────
+        _merge(s, await _run_stage(stages["arc"], s, run_id, topic_id, title))
         arc = s.get("arc_validation") or {}
         if not arc.get("arc_coherent", False):
             log.warning(f"'{title}' failed arc coherence — skipping")
@@ -209,8 +161,8 @@ async def _research_one_brief(
                 "model_usage": s.get("model_usage", []),
             }
 
-        # ── Stage 8b — bundle assembly ────────────────────────────
-        _merge(s, await stages["bundle"].run(s))
+        # ── Stage 8b — bundle assembly ───────────────────────────
+        _merge(s, await _run_stage(stages["bundle"], s, run_id, topic_id, title))
         bundle = s.get("research_bundle")
 
         if bundle:
@@ -235,10 +187,118 @@ async def _research_one_brief(
         }
 
 
+# ── Stage runner with persistence ─────────────────────────────────────
+
+async def _run_stage(
+    stage_node,
+    state: dict,
+    run_id: int,
+    topic_wp_id: int | None,
+    topic_title: str,
+) -> dict:
+    """
+    Run a stage node and persist the result to topic_research_results.
+    This is fire-and-forget for persistence — stage failures are NOT
+    caused by DB write failures.
+    """
+    stage_name = getattr(stage_node, "stage_name", stage_node.__class__.__name__)
+
+    # Persist "running" status
+    await _save_result(run_id, topic_wp_id, topic_title, stage_name, "running")
+
+    # Run the actual stage
+    result = await stage_node.run(state)
+
+    # Persist the result
+    status = "failed" if result.get("status") == "failed" else "complete"
+    output_key = _find_output_key(result, stage_name)
+    output_data = result.get(output_key) if output_key else None
+    error = None
+    if result.get("errors"):
+        last_err = result["errors"][-1] if isinstance(result["errors"], list) else result["errors"]
+        error = last_err.get("error", str(last_err)) if isinstance(last_err, dict) else str(last_err)
+
+    # Extract cost info from model_usage if present
+    cost_usd = 0.0
+    in_tok = 0
+    out_tok = 0
+    model_used = None
+    for u in result.get("model_usage", []):
+        if isinstance(u, dict) and stage_name in u.get("stage", ""):
+            cost_usd += u.get("cost_usd", 0)
+            in_tok += u.get("input_tokens", 0)
+            out_tok += u.get("output_tokens", 0)
+            model_used = u.get("model", model_used)
+
+    await _save_result(
+        run_id, topic_wp_id, topic_title, stage_name, status,
+        output=output_data, error=error,
+        model_used=model_used, input_tokens=in_tok, output_tokens=out_tok,
+        cost_usd=cost_usd,
+    )
+
+    return result
+
+
+async def _save_result(
+    run_id: int,
+    topic_wp_id: int | None,
+    topic_title: str,
+    stage_name: str,
+    status: str,
+    output: Any = None,
+    error: str | None = None,
+    model_used: str | None = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_usd: float = 0.0,
+) -> None:
+    """Fire-and-forget persistence to topic_research_results. Never raises."""
+    if not topic_wp_id:
+        return
+    try:
+        from services import services
+        await services.research_results.save(
+            run_id=run_id,
+            topic_wp_id=topic_wp_id,
+            topic_title=topic_title,
+            stage_name=stage_name,
+            status=status,
+            output=output if isinstance(output, dict) else None,
+            error=error,
+            model_used=model_used,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+        )
+    except Exception as exc:
+        log.debug(f"Research result persistence failed (non-blocking): {exc}")
+
+
+def _find_output_key(result: dict, stage_name: str) -> str | None:
+    """Find the primary output key in a stage result dict."""
+    # Map stage names to their output keys
+    key_map = {
+        "keyword_research": "keyword_research",
+        "market_context": "market_context",
+        "competitor_analysis": "competitor_analysis",
+        "top_factors": "top_factors",
+        "data_fetcher": "raw_sources_cache_key",
+        "psychology_synthesis": "buyer_psychology",
+        "tool_loader": "available_tools",
+        "tool_mapping": "tool_mapping",
+        "arc_coherence": "arc_validation",
+        "bundle_assembler": "research_bundle",
+    }
+    for pattern, key in key_map.items():
+        if pattern in stage_name:
+            return key
+    return None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _merge(state: dict, updates: dict) -> None:
-    """Merge node output into state dict. In-place, no copy."""
     for key, value in updates.items():
         if value is not None or key in ("status", "errors", "model_usage"):
             if key == "errors" and isinstance(value, list):
@@ -250,7 +310,6 @@ def _merge(state: dict, updates: dict) -> None:
 
 
 def _any_failed(*dicts) -> bool:
-    """Check if any of the result dicts have status=failed."""
     for d in dicts:
         if isinstance(d, dict) and d.get("status") == "failed":
             return True
@@ -258,7 +317,6 @@ def _any_failed(*dicts) -> bool:
 
 
 def _brief_error(state: dict, title: str, stage: str) -> dict:
-    """Build error return for a failed brief."""
     errors = state.get("errors", [])
     last_err = errors[-1]["error"] if errors else "Unknown"
     log.warning(f"'{title}' failed at {stage}: {last_err}")
@@ -272,7 +330,6 @@ def _brief_error(state: dict, title: str, stage: str) -> dict:
 
 
 def _release_lock(topic_id: int | None, run_id: int) -> None:
-    """Fire-and-forget lock release."""
     if not topic_id:
         return
     try:

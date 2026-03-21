@@ -1,22 +1,31 @@
 """
-Stage 2 — KeywordResearch
+Stage 2 — KeywordResearch (v2.2)
 
 Pre-LLM: Fetch SERP data via services.serp.research_keyword()
 LLM: Analyse SERP data, confirm intent, identify PAA opportunities
 Validation: confidence ≥ 0.75, ≥5 secondary keywords, ≥3 PAA questions
+
+Fixes from v2.1:
+  - Removed imports of LLMTimeoutError/LLMRateLimitError/LLMProviderError
+    (call_llm in base.py handles retries internally and re-raises on exhaustion)
+  - call_llm returns LLMResult with .text (validated string), not .output
+  - Graceful fallback when SERP service is unavailable or returns empty data
+  - Exception handler writes "failed" stage record on all error paths
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 from nodes.base import (
     BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
-    FailureConfig, EventType, AgentStatus,
+    FailureConfig, EventType,
 )
 from prompts.registry import PromptRegistry
-from services.llm_service import LLMTimeoutError, LLMRateLimitError, LLMProviderError
+
+log = logging.getLogger("pmw.node.keyword_research")
 
 
 class KeywordResearch(JSONOutputMixin, BaseAgent):
@@ -48,15 +57,8 @@ class KeywordResearch(JSONOutputMixin, BaseAgent):
         await self._write_stage_record(run_id, status="running", attempt=1)
 
         try:
-            from services import services
-
             # ── Pre-LLM: Fetch SERP data ──────────────────────────────
-            serp_bundle = await services.serp.research_keyword(
-                keyword=topic.get("target_keyword", ""),
-                geography=topic.get("geography", "uk"),
-                include_keywords=topic.get("include_keywords", ""),
-                exclude_keywords=topic.get("exclude_keywords", ""),
-            )
+            serp_bundle = await self._fetch_serp_data(topic)
 
             # ── Build prompt ──────────────────────────────────────────
             prompt = PromptRegistry.render("stage2_keyword_serp", {
@@ -68,19 +70,29 @@ class KeywordResearch(JSONOutputMixin, BaseAgent):
             })
             prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
-            # ── LLM call ──────────────────────────────────────────────
-            result = await self.call_llm(prompt, run_id, attempt=1)
-            output = result.output  # validated JSON
+            # ── LLM call (base.py handles retries via call_llm) ───────
+            result = await self.call_llm(prompt, run_id)
 
-            # Merge SERP bundle data into the output for downstream stages
+            # call_llm returns LLMResult. .text is the validated output
+            # (validate_output ran inside call_llm). JSONOutputMixin
+            # returns a dict from validate_output, but call_llm
+            # json.dumps it back to string for LLMResult.text.
+            if isinstance(result.text, str):
+                output = json.loads(result.text)
+            else:
+                output = result.text
+
+            # Merge SERP bundle data for downstream stages
             output["serp_bundle"] = serp_bundle
 
             await self._emit_event(EventType.STAGE_COMPLETE, run_id, {
                 "confidence": output.get("confidence"),
+                "secondary_count": len(output.get("secondary_keywords", [])),
+                "paa_count": len(output.get("paa_questions", [])),
                 "cost_usd": result.cost_usd,
             })
             await self._write_stage_record(
-                run_id, status="complete", attempt=1,
+                run_id, status="complete", attempt=result.attempts,
                 passed_threshold=True,
                 score=output.get("confidence"),
                 output=output,
@@ -102,19 +114,8 @@ class KeywordResearch(JSONOutputMixin, BaseAgent):
                 }],
             }
 
-        except (LLMTimeoutError, LLMRateLimitError, LLMProviderError, ValueError) as exc:
-            failure = await self._handle_failure(run_id, str(exc))
-            return {
-                "keyword_research": None,
-                "current_stage": "stage2.keyword_research",
-                "status": "failed",
-                "errors": state.get("errors", []) + [{
-                    "stage": "stage2.keyword_research",
-                    "error": str(exc),
-                }],
-            }
         except Exception as exc:
-            self.log.error(f"KeywordResearch failed: {exc}", run_id=run_id)
+            self.log.error(f"KeywordResearch failed: {exc}")
             await self._write_stage_record(
                 run_id, status="failed", attempt=1, error=str(exc),
             )
@@ -128,7 +129,40 @@ class KeywordResearch(JSONOutputMixin, BaseAgent):
                 }],
             }
 
+    async def _fetch_serp_data(self, topic: dict) -> dict:
+        """
+        Fetch SERP data via services.serp.research_keyword().
+        Returns a SerpBundle dict on success, or a minimal stub on failure
+        so the LLM can still attempt analysis from the topic definition alone.
+        """
+        try:
+            from services import services
+            return await services.serp.research_keyword(
+                keyword=topic.get("target_keyword", ""),
+                geography=topic.get("geography", "uk"),
+                include_keywords=topic.get("include_keywords", ""),
+                exclude_keywords=topic.get("exclude_keywords", ""),
+            )
+        except Exception as exc:
+            self.log.warning(f"SERP fetch failed, using stub: {exc}")
+            return {
+                "keyword": topic.get("target_keyword", ""),
+                "geography": topic.get("geography", "uk"),
+                "organic_results": [],
+                "paa_questions": [],
+                "related_searches": [],
+                "top_formats": [],
+                "content_gap_signals": [],
+                "competitor_count": 0,
+                "own_ranking": None,
+                "serp_unavailable": True,
+            }
+
     def validate_output(self, raw_output: str) -> dict:
+        """
+        Parse JSON and validate keyword research quality thresholds.
+        Raises ValueError to trigger retry via call_llm.
+        """
         data = super().validate_output(raw_output)
         confidence = data.get("confidence", 0)
         if confidence < 0.75:
