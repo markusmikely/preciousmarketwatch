@@ -25,7 +25,7 @@ from decimal import Decimal
 
 from nodes.base import (
     BaseAgent, JSONOutputMixin, ModelConfig, ModelProvider,
-    FailureConfig, EventType, AgentStatus,
+    EventType, AgentStatus,
 )
 from config.settings import settings
 from prompts.registry import PromptRegistry
