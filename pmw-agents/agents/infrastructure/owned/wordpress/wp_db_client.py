@@ -201,36 +201,37 @@ class WordpressClient:
             List of topic dicts matching the old REST API shape.
         """
         query = """
-        query GetTopics($status: PostStatusEnum, $first: Int) {
-            pmwTopics(
-                where: { status: $status }
-                first: $first
-            ) {
-                nodes {
-                    databaseId
-                    title
-                    status
-                    pmwTargetKeyword
-                    pmwSummary
-                    pmwIncludeKeywords
-                    pmwExcludeKeywords
-                    pmwAssetClass
-                    pmwProductType
-                    pmwGeography
-                    pmwIsBuySide
-                    pmwIntentStage
-                    pmwPriority
-                    pmwScheduleCron
-                    pmwAgentStatus
-                    pmwLastRunAt
-                    pmwRunCount
-                    pmwLastRunId
-                    pmwLastWpPostId
-                    pmwWpCategoryId
-                    pmwAffiliatePageId
+            query GetTopics($status: PostStatusEnum, $first: Int) {
+                pmwTopics(
+                    where: { status: $status }
+                    first: $first
+                ) {
+                    nodes {
+                        databaseId
+                        title
+                        status
+                        pmwTargetKeyword
+                        pmwSummary
+                        pmwIncludeKeywords
+                        pmwExcludeKeywords
+                        pmwAssetClass
+                        pmwProductType
+                        pmwGeography
+                        pmwIsBuySide
+                        pmwIntentStage
+                        pmwPriority
+                        pmwScheduleCron
+                        pmwAgentStatus
+                        pmwLastRunAt
+                        pmwRunCount
+                        pmwLastRunId
+                        pmwLastWpPostId
+                        pmwWpCategoryId
+                        pmwAffiliatePageId
+                        pmwContentType
+                    }
                 }
             }
-        }
         """
         data = await self.execute(query, variables={
             "status": status,
@@ -248,6 +249,7 @@ class WordpressClient:
                 "meta": {
                     "pmw_target_keyword": node.get("pmwTargetKeyword", ""),
                     "pmw_summary": node.get("pmwSummary", ""),
+                    "pmw_content_type": node.get("pmwContentType", "affiliate"),
                     "pmw_include_keywords": node.get("pmwIncludeKeywords", ""),
                     "pmw_exclude_keywords": node.get("pmwExcludeKeywords", ""),
                     "pmw_asset_class": node.get("pmwAssetClass", ""),

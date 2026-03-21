@@ -608,6 +608,7 @@ function pmw_register_topic_meta() {
         'pmw_target_keyword'    => [ 'type' => 'string'  ],
         'pmw_summary'           => [ 'type' => 'string'  ],
         'pmw_include_keywords'  => [ 'type' => 'string'  ],
+        'pmw_content_type'      => [ 'type' => 'string' ],
         'pmw_exclude_keywords'  => [ 'type' => 'string'  ],
         'pmw_asset_class'       => [ 'type' => 'string'  ],
         'pmw_product_type'      => [ 'type' => 'string'  ],
